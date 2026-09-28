@@ -1,0 +1,36 @@
+# .NET / C#
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+TestResults/
+*.DotSettings.user
+
+# Node / Angular
+node_modules/
+dist/
+.angular/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Environment / Secrets
+appsettings.Development.json
+appsettings.Local.json
+*.env
+*.env.local
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+
+# Local build / coverage
+coverage/
+.nyc_output/
