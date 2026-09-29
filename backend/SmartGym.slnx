@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SmartGym.Application/SmartGym.Application.csproj" />
+    <Project Path="src/SmartGym.Domain/SmartGym.Domain.csproj" />
+    <Project Path="src/SmartGym.Infrastructure/SmartGym.Infrastructure.csproj" />
+    <Project Path="src/SmartGym.WebApi/SmartGym.WebApi.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SmartGym.Domain.UnitTests/SmartGym.Domain.UnitTests.csproj" />
+  </Folder>
+</Solution>
