@@ -48,13 +48,13 @@
 
 ## 8. Frontend Angular 22 & Vistas de Usuario
 
-- [ ] 8.1 Implementar servicios de autenticación, interceptores JWT y guardas de rutas por rol
-- [ ] 8.2 Construir vistas públicas: landing page, catálogo de actividades públicas y horarios disponibles
-- [ ] 8.3 Desarrollar portal del alumno: consulta de membresía, saldo de clases, calendario y reserva/cancelación de clases
-- [ ] 8.4 Desarrollar portal del instructor y secretario: calendario de clases asignadas, control de asistencias y gestión de turnos
-- [ ] 8.5 Desarrollar portal administrativo: dashboard con métricas clave, gestión de personas, planes, promociones y reportes
+- [x] 8.1 Implementar servicios de autenticación, interceptores JWT y guardas de rutas por rol
+- [x] 8.2 Construir vistas públicas: landing page, catálogo de actividades públicas y horarios disponibles
+- [x] 8.3 Desarrollar portal del alumno: consulta de membresía, saldo de clases, calendario y reserva/cancelación de clases
+- [x] 8.4 Desarrollar portal del instructor y secretario: calendario de clases asignadas, control de asistencias y gestión de turnos
+- [x] 8.5 Desarrollar portal administrativo: dashboard con métricas clave, gestión de personas, planes, promociones y reportes
 
 ## 9. Verificación y Pruebas End-to-End
 
-- [ ] 9.1 Ejecutar pruebas unitarias y de integración para validar consistencia de cupos y movimientos de créditos bajo concurrencia
-- [ ] 9.2 Realizar verificación de flujos completos (adquisición de plan → reserva → asistencia → consumo de crédito)
+- [x] 9.1 Ejecutar pruebas unitarias y de integración para validar consistencia de cupos y movimientos de créditos bajo concurrencia
+- [x] 9.2 Realizar verificación de flujos completos (adquisición de plan → reserva → asistencia → consumo de crédito)
