@@ -22,10 +22,12 @@ public class ReservationService : IReservationService
         Guid currentUserId,
         CancellationToken cancellationToken = default)
     {
-        // Ejecución transaccional con aislamiento estricto
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-        // 1. Obtener la sesión de clase con bloqueo
+        // 1. Bloquear la clase antes de leerla: serializa las reservas concurrentes para que el control
+        //    de cupo, duplicados y posición en lista de espera se evalúe sobre datos actualizados.
+        await _dbContext.LockClassSessionForUpdateAsync(request.ClassSessionId, cancellationToken);
+
         var session = await _dbContext.ClassSessions
             .Include(cs => cs.Activity)
             .Include(cs => cs.Room)
@@ -106,6 +108,7 @@ public class ReservationService : IReservationService
                 }
 
                 creditMovement = activeMembership.DeductCredit(session.Id, $"Reserva de clase: {session.Activity.Name}", session.Date);
+                _dbContext.MembershipCreditMovements.Add(creditMovement);
                 membershipId = activeMembership.Id;
             }
             else
@@ -176,6 +179,16 @@ public class ReservationService : IReservationService
         CancellationToken cancellationToken = default)
     {
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        var classSessionId = await _dbContext.Reservations
+            .Where(r => r.Id == reservationId && r.IsActive)
+            .Select(r => (Guid?)r.ClassSessionId)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new ArgumentException("Reserva no encontrada.");
+
+        // Bloquear la clase antes de leer la reserva: evita cancelaciones duplicadas (doble devolución de crédito)
+        // y carreras con reservas concurrentes al liberar el cupo o promover la lista de espera.
+        await _dbContext.LockClassSessionForUpdateAsync(classSessionId, cancellationToken);
 
         var reservation = await _dbContext.Reservations
             .Include(r => r.ClassSession)

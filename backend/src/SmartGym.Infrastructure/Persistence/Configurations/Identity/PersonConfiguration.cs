@@ -21,11 +21,11 @@ public class PersonConfiguration : IEntityTypeConfiguration<Person>
             .HasMaxLength(100);
 
         builder.Property(p => p.Dni)
-            .IsRequired()
             .HasMaxLength(20);
 
         builder.HasIndex(p => p.Dni)
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("\"Dni\" IS NOT NULL");
 
         builder.Property(p => p.Email)
             .IsRequired()

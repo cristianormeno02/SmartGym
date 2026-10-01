@@ -38,6 +38,24 @@ public class SmartGymDbContext : DbContext, ISmartGymDbContext
     public DbSet<NotificationMessage> NotificationMessages => Set<NotificationMessage>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
+    public virtual async Task LockClassSessionForUpdateAsync(Guid classSessionId, CancellationToken cancellationToken = default)
+    {
+        // Proveedores sin bloqueo de filas (p. ej. InMemory en pruebas) no aplican.
+        if (!Database.IsNpgsql())
+        {
+            return;
+        }
+
+        if (Database.CurrentTransaction == null)
+        {
+            throw new InvalidOperationException("El bloqueo de la clase requiere una transacción activa.");
+        }
+
+        await Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT 1 FROM \"ClassSessions\" WHERE \"Id\" = {classSessionId} FOR UPDATE",
+            cancellationToken);
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

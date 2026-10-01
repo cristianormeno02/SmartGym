@@ -150,6 +150,8 @@ public class GoogleAuthTests
         Assert.NotNull(createdUser);
         Assert.Equal("Lucía Fernández", createdUser.Person.FullName);
         Assert.True(createdUser.Person.HasRole(RoleType.Student));
+        // Google no provee DNI: se deja sin informar (null) en lugar de un valor vacío que colisione en el índice único
+        Assert.Null(createdUser.Person.Dni);
     }
 
     [Fact]

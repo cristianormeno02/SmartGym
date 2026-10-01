@@ -6,8 +6,7 @@ public record RegisterRequest(
     string Dni,
     string Email,
     string Password,
-    string? PhoneNumber = null,
-    List<string>? Roles = null
+    string? PhoneNumber = null
 );
 
 public record LoginRequest(

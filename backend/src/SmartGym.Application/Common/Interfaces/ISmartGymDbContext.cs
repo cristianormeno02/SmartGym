@@ -31,5 +31,12 @@ public interface ISmartGymDbContext
     DbSet<SmartGym.Domain.Entities.Operations.AuditLog> AuditLogs { get; }
 
     Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade Database { get; }
+
+    /// <summary>
+    /// Bloquea la fila de la clase hasta el fin de la transacción actual, serializando las operaciones
+    /// concurrentes que modifican su cupo. Debe invocarse dentro de una transacción y antes de leer la clase.
+    /// </summary>
+    Task LockClassSessionForUpdateAsync(Guid classSessionId, CancellationToken cancellationToken = default);
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

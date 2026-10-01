@@ -7,7 +7,8 @@ public class Person : BaseEntity
 {
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
-    public string Dni { get; set; } = string.Empty;
+    // Opcional: las altas vía Google no lo informan; cuando existe, es único.
+    public string? Dni { get; set; }
     public string Email { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
     public DateTime? BirthDate { get; set; }

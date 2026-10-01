@@ -31,7 +31,6 @@ export interface RegisterRequest {
   email: string;
   password: string;
   phoneNumber?: string;
-  roleType?: number;
 }
 
 export interface GoogleAuthRequest {

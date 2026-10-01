@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SmartGym.Application.Modules.Identity.Dtos;
@@ -145,5 +146,83 @@ public class AuthServiceTests
 
         // Act & Assert
         await Assert.ThrowsAsync<InvalidOperationException>(() => _authService.RegisterAsync(request));
+    }
+
+    [Fact]
+    public async Task RegisterAsync_ShouldIgnoreRolesSentByClient_AndAssignOnlyStudent()
+    {
+        // Arrange: payload público que intenta auto-asignarse roles privilegiados
+        const string json = """
+        {
+          "firstName": "Mallory",
+          "lastName": "Attacker",
+          "dni": "99000111",
+          "email": "mallory@example.com",
+          "password": "Password123!",
+          "roles": ["Administrator", "Secretary"]
+        }
+        """;
+        var request = JsonSerializer.Deserialize<RegisterRequest>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+
+        // Act
+        var result = await _authService.RegisterAsync(request);
+
+        // Assert
+        Assert.Equal(new[] { "Student" }, result.Roles);
+
+        var person = await _dbContext.People
+            .Include(p => p.PersonRoles)
+            .FirstAsync(p => p.Email == "mallory@example.com");
+        Assert.False(person.HasRole(RoleType.Administrator));
+        Assert.False(person.HasRole(RoleType.Secretary));
+    }
+
+    [Theory]
+    [InlineData("otro@example.com", "20333444")] // mismo DNI, otro email
+    [InlineData("instructor@example.com", "11111111")] // mismo email, otro DNI
+    public async Task RegisterAsync_ShouldReject_WhenPersonAlreadyExistsWithoutAccount(string email, string dni)
+    {
+        // Arrange: persona cargada por administración, con rol privilegiado y sin cuenta de usuario
+        var existing = new Person
+        {
+            Id = Guid.NewGuid(),
+            FirstName = "Florencia",
+            LastName = "Instructora",
+            Dni = "20333444",
+            Email = "instructor@example.com"
+        };
+        existing.AddRole(await _dbContext.Roles.FirstAsync(r => r.Id == (int)RoleType.Administrator));
+        _dbContext.People.Add(existing);
+        await _dbContext.SaveChangesAsync();
+
+        var request = new RegisterRequest(
+            FirstName: "Mallory",
+            LastName: "Attacker",
+            Dni: dni,
+            Email: email,
+            Password: "Password123!"
+        );
+
+        // Act & Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _authService.RegisterAsync(request));
+
+        Assert.False(await _dbContext.Users.AnyAsync(u => u.PersonId == existing.Id));
+        Assert.False(await _dbContext.Users.AnyAsync(u => u.Username == email));
+    }
+
+    [Theory]
+    [InlineData("", "Tester", "30111222", "a@example.com", "Password123!")]
+    [InlineData("Ana", "", "30111222", "a@example.com", "Password123!")]
+    [InlineData("Ana", "Tester", "", "a@example.com", "Password123!")]
+    [InlineData("Ana", "Tester", "   ", "a@example.com", "Password123!")]
+    [InlineData("Ana", "Tester", "30111222", "", "Password123!")]
+    [InlineData("Ana", "Tester", "30111222", "a@example.com", "")]
+    public async Task RegisterAsync_ShouldRejectMissingRequiredFields(
+        string firstName, string lastName, string dni, string email, string password)
+    {
+        var request = new RegisterRequest(firstName, lastName, dni, email, password);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => _authService.RegisterAsync(request));
+        Assert.False(await _dbContext.Users.AnyAsync());
     }
 }

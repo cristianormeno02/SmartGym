@@ -27,42 +27,43 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
-        var existingUser = await _dbContext.Users
-            .FirstOrDefaultAsync(u => u.Username.ToLower() == request.Email.ToLower(), cancellationToken);
+        ValidateRegisterRequest(request);
 
-        if (existingUser != null)
+        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+        var normalizedDni = request.Dni.Trim();
+
+        var emailInUse = await _dbContext.Users
+            .AnyAsync(u => u.Username.ToLower() == normalizedEmail, cancellationToken);
+
+        // El registro público nunca se vincula a una Persona existente: sin verificar la identidad,
+        // cualquiera podría apropiarse de la ficha (y los roles) de otra persona usando su DNI o email.
+        var personExists = await _dbContext.People
+            .AnyAsync(p => p.Email.ToLower() == normalizedEmail || p.Dni == normalizedDni, cancellationToken);
+
+        if (emailInUse || personExists)
         {
-            throw new InvalidOperationException("Ya existe un usuario registrado con este correo electrónico.");
+            throw new InvalidOperationException(
+                "No se pudo completar el registro con los datos ingresados. Si ya sos alumno del gimnasio, solicitá el alta de tu cuenta en recepción.");
         }
 
-        // Buscar si ya existe la Persona física (ej. cargada previamente por administración)
-        var person = await _dbContext.People
-            .Include(p => p.PersonRoles)
-                .ThenInclude(pr => pr.Role)
-            .FirstOrDefaultAsync(p => p.Email.ToLower() == request.Email.ToLower() || p.Dni == request.Dni, cancellationToken);
-
-        if (person == null)
+        var person = new Person
         {
-            person = new Person
-            {
-                Id = Guid.NewGuid(),
-                FirstName = request.FirstName.Trim(),
-                LastName = request.LastName.Trim(),
-                Dni = request.Dni.Trim(),
-                Email = request.Email.Trim().ToLowerInvariant(),
-                PhoneNumber = request.PhoneNumber?.Trim(),
-                CreatedAtUtc = DateTime.UtcNow
-            };
-            _dbContext.People.Add(person);
-        }
+            Id = Guid.NewGuid(),
+            FirstName = request.FirstName.Trim(),
+            LastName = request.LastName.Trim(),
+            Dni = normalizedDni,
+            Email = normalizedEmail,
+            PhoneNumber = request.PhoneNumber?.Trim(),
+            CreatedAtUtc = DateTime.UtcNow
+        };
+        _dbContext.People.Add(person);
 
-        // Crear cuenta de usuario asociada
         var user = new User
         {
             Id = Guid.NewGuid(),
             PersonId = person.Id,
             Person = person,
-            Username = request.Email.Trim().ToLowerInvariant(),
+            Username = normalizedEmail,
             PasswordHash = _passwordHasher.HashPassword(request.Password),
             IsEmailConfirmed = false,
             CreatedAtUtc = DateTime.UtcNow
@@ -70,21 +71,11 @@ public class AuthService : IAuthService
         _dbContext.Users.Add(user);
         person.User = user;
 
-        // Asignar rol por defecto (Student) o roles especificados
-        var requestedRoles = (request.Roles != null && request.Roles.Count > 0)
-            ? request.Roles
-            : new List<string> { RoleType.Student.ToString() };
-
-        var allRoles = await _dbContext.Roles.ToListAsync(cancellationToken);
-
-        foreach (var roleName in requestedRoles)
-        {
-            var role = allRoles.FirstOrDefault(r => r.Name.Equals(roleName, StringComparison.OrdinalIgnoreCase));
-            if (role != null)
-            {
-                person.AddRole(role);
-            }
-        }
+        // El registro público solo otorga el rol Alumno; los roles privilegiados se asignan explícitamente por administración.
+        var studentRole = await _dbContext.Roles
+            .FirstOrDefaultAsync(r => r.Id == (int)RoleType.Student, cancellationToken)
+            ?? throw new InvalidOperationException("El rol Alumno no está configurado en el sistema.");
+        person.AddRole(studentRole);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -103,6 +94,18 @@ public class AuthService : IAuthService
             FullName: person.FullName,
             Roles: activeRoleNames
         );
+    }
+
+    private static void ValidateRegisterRequest(RegisterRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.FirstName) ||
+            string.IsNullOrWhiteSpace(request.LastName) ||
+            string.IsNullOrWhiteSpace(request.Dni) ||
+            string.IsNullOrWhiteSpace(request.Email) ||
+            string.IsNullOrWhiteSpace(request.Password))
+        {
+            throw new ArgumentException("Nombre, apellido, DNI, correo electrónico y contraseña son obligatorios.");
+        }
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
@@ -224,7 +227,7 @@ public class AuthService : IAuthService
                 FirstName = string.IsNullOrWhiteSpace(googlePayload.GivenName) ? "Usuario" : googlePayload.GivenName.Trim(),
                 LastName = googlePayload.FamilyName?.Trim() ?? string.Empty,
                 Email = normalizedEmail,
-                Dni = string.Empty,
+                Dni = null,
                 PhotoUrl = googlePayload.PictureUrl,
                 CreatedAtUtc = DateTime.UtcNow
             };

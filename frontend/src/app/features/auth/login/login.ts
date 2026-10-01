@@ -206,8 +206,7 @@ export class LoginComponent {
       lastName: this.regLastName,
       dni: this.regDni,
       email: this.regEmail,
-      password: this.regPassword,
-      roleType: 4 // Student
+      password: this.regPassword
     }).subscribe({
       next: (res) => {
         this.isLoading.set(false);

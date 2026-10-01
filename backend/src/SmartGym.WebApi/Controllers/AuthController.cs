@@ -23,6 +23,10 @@ public class AuthController : ControllerBase
             var response = await _authService.RegisterAsync(request, cancellationToken);
             return Ok(response);
         }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
         catch (InvalidOperationException ex)
         {
             return BadRequest(new { message = ex.Message });

@@ -16,8 +16,12 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("DefaultConnection")
-            ?? "Host=localhost;Database=smartgym_db;Username=postgres;Password=postgres";
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException(
+                "Falta la cadena de conexión 'ConnectionStrings:DefaultConnection'. Configurala con user-secrets o variables de entorno.");
+        }
 
         services.AddDbContext<SmartGymDbContext>(options =>
             options.UseNpgsql(connectionString, npgsqlOptions =>
@@ -52,6 +56,11 @@ public static class DependencyInjection
         services.AddSingleton<IGoogleTokenValidator, GoogleTokenValidator>();
 
         var jwtOptions = configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
+        if (Encoding.UTF8.GetByteCount(jwtOptions.SecretKey) < JwtOptions.MinSecretKeyBytes)
+        {
+            throw new InvalidOperationException(
+                $"Falta 'Jwt:SecretKey' o tiene menos de {JwtOptions.MinSecretKeyBytes} bytes. Configurala con user-secrets o variables de entorno.");
+        }
         var key = Encoding.UTF8.GetBytes(jwtOptions.SecretKey);
 
         services.AddAuthentication(options =>
