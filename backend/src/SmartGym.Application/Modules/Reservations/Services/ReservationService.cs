@@ -290,6 +290,11 @@ public class ReservationService : IReservationService
             throw new InvalidOperationException($"No se puede registrar asistencia para una reserva en estado {reservation.Status}.");
         }
 
+        if (!reservation.Student.IsActive)
+        {
+            throw new InvalidOperationException("No se puede registrar asistencia para un alumno que no se encuentra activo.");
+        }
+
         reservation.MarkAttended(request.Source, currentUserId);
         reservation.ClassSession.AttendedCount++;
 
@@ -403,6 +408,8 @@ public class ReservationService : IReservationService
             r.IsLateCancellation,
             r.AttendedAtUtc,
             r.AttendanceSource,
-            r.WaitListPosition
+            r.WaitListPosition,
+            r.Student?.Document?.Type,
+            r.Student?.Document?.Number ?? r.Student?.Dni
         );
 }

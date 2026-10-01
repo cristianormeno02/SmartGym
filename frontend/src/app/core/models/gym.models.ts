@@ -83,7 +83,9 @@ export interface Membership {
   id: string;
   studentId: string;
   studentName: string;
-  studentDni: string;
+  studentDni?: string;
+  documentType?: number | string;
+  documentNumber?: string;
   membershipPlanId: string;
   membershipPlanName: string;
   startDate: string;
@@ -104,7 +106,9 @@ export interface Reservation {
   roomName: string;
   studentId: string;
   studentName: string;
-  studentDni: string;
+  studentDni?: string;
+  documentType?: number | string;
+  documentNumber?: string;
   membershipId?: string;
   status: number; // 0=Reserved, 1=Confirmed, 2=Cancelled, 3=Attended, 4=NoShow, 5=WaitList
   reservedAtUtc: string;
@@ -193,7 +197,9 @@ export interface AdminUserOverview {
   personId: string;
   fullName: string;
   email: string;
-  dni: string;
+  documentType?: number | string;
+  documentNumber?: string;
+  dni?: string;
   isActive: boolean;
   roles: string[];
 }

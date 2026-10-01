@@ -65,14 +65,7 @@ public class GoogleAuthTests
     public async Task LoginWithGoogleAsync_ShouldLinkGoogleId_WhenLocalUserAlreadyExistsWithSameEmail()
     {
         // Arrange
-        var person = new Person
-        {
-            Id = Guid.NewGuid(),
-            FirstName = "Roberto",
-            LastName = "Gómez",
-            Dni = "20123456",
-            Email = "roberto@example.com"
-        };
+        var person = Person.Create("Roberto", "Gómez", "roberto@example.com", document: IdentificationDocument.Create(DocumentType.Dni, "20123456"));
         var user = new User
         {
             Id = Guid.NewGuid(),

@@ -152,7 +152,9 @@ public class MembershipService : IMembershipService
             m.TotalCredits,
             m.AvailableCredits,
             m.Status,
-            m.IsValidOn(today)
+            m.IsValidOn(today),
+            m.Student?.Document?.Type,
+            m.Student?.Document?.Number ?? m.Student?.Dni
         );
     }
 }

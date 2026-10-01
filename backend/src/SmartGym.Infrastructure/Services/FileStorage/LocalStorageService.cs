@@ -68,4 +68,24 @@ public class LocalStorageService : IFileStorageService
 
         return Task.FromResult(false);
     }
+
+    public Task<string> GetAccessUrlAsync(
+        string fileUrlOrKey,
+        TimeSpan expiresIn,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedKey = fileUrlOrKey.Trim();
+        if (normalizedKey.StartsWith("/storage/", StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult(normalizedKey);
+        }
+
+        if (normalizedKey.StartsWith("storage/", StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult($"/{normalizedKey}");
+        }
+
+        var path = normalizedKey.TrimStart('/');
+        return Task.FromResult($"/storage/{path}");
+    }
 }

@@ -34,13 +34,7 @@ public class OperationsTests
     public void Person_MedicalCertificate_ShouldValidateExpirationCorrectly()
     {
         // Arrange
-        var person = new Person
-        {
-            Id = Guid.NewGuid(),
-            FirstName = "Carlos",
-            LastName = "Tevez",
-            BirthDate = new DateTime(1984, 2, 5)
-        };
+        var person = Person.Create("Carlos", "Tevez", birthDate: new DateTime(1984, 2, 5));
 
         // Act & Assert (Sin certificado aún)
         Assert.False(person.IsMedicalCertificateValid);
@@ -57,25 +51,18 @@ public class OperationsTests
     [Fact]
     public void Person_Underage_ShouldValidateEmergencyContact()
     {
-        // Arrange
-        var minor = new Person
-        {
-            Id = Guid.NewGuid(),
-            FirstName = "Lucas",
-            LastName = "Menor",
-            BirthDate = DateTime.UtcNow.AddYears(-15) // 15 años
-        };
+        // Arrange & Act
+        var minor = Person.Create(
+            "Lucas",
+            "Menor",
+            birthDate: DateTime.UtcNow.AddYears(-15),
+            emergencyContact: EmergencyContact.Create("Padre Responsable", "+5491123456789", "Padre"));
 
         // Assert
         Assert.True(minor.IsUnderage());
-        Assert.False(minor.HasValidEmergencyContact());
-
-        // Act
-        minor.EmergencyContactName = "Padre Responsable";
-        minor.EmergencyContactPhone = "+5491123456789";
-        minor.EmergencyContactRelationship = "Padre";
-
-        // Assert
         Assert.True(minor.HasValidEmergencyContact());
+        Assert.Equal("Padre Responsable", minor.EmergencyContactName);
+        Assert.Equal("+5491123456789", minor.EmergencyContactPhone);
+        Assert.Equal("Padre", minor.EmergencyContactRelationship);
     }
 }

@@ -1,9 +1,11 @@
+using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using SmartGym.Application.Common.Interfaces;
 using SmartGym.Application.Modules.Activities.Services;
 using SmartGym.Application.Modules.Identity.Services;
 using SmartGym.Application.Modules.Memberships.Services;
 using SmartGym.Application.Modules.Operations.Services;
+using SmartGym.Application.Modules.People.Services;
 using SmartGym.Application.Modules.Promotions.Services;
 using SmartGym.Application.Modules.Reservations.Services;
 
@@ -13,6 +15,9 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
+        services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly);
+
+        services.AddScoped<IPeopleService, PeopleService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IRoomService, RoomService>();
         services.AddScoped<IActivityService, ActivityService>();

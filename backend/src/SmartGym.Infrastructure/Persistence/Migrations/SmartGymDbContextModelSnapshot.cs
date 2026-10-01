@@ -286,31 +286,22 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Dni")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
                     b.Property<string>("Email")
-                        .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
-                    b.Property<string>("EmergencyContactName")
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)");
-
-                    b.Property<string>("EmergencyContactPhone")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("EmergencyContactRelationship")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                    b.Property<string>("ExternalAvatarUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<string>("FirstName")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Gender")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
@@ -327,27 +318,63 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
-                    b.Property<string>("PhoneNumber")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                    b.Property<string>("PrimaryPhone")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
 
-                    b.Property<string>("PhotoUrl")
+                    b.Property<string>("SearchName")
+                        .IsRequired()
+                        .HasMaxLength(201)
+                        .HasColumnType("character varying(201)");
+
+                    b.Property<string>("SecondaryPhone")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("StatusChangedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("StatusChangedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("StatusReason")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("Dni")
-                        .IsUnique()
-                        .HasFilter("\"Dni\" IS NOT NULL");
-
                     b.HasIndex("Email")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("IX_People_Email_Unique")
+                        .HasFilter("\"Email\" IS NOT NULL");
 
-                    b.ToTable("People", (string)null);
+                    b.HasIndex("SearchName")
+                        .HasDatabaseName("IX_People_SearchName_Trgm");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("SearchName"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("SearchName"), new[] { "gin_trgm_ops" });
+
+                    b.HasIndex("LastName", "FirstName")
+                        .HasDatabaseName("IX_People_LastName_FirstName");
+
+                    b.ToTable("People", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_People_Document_Consistency", "(\"DocumentType\" IS NULL AND \"DocumentIssuingCountry\" IS NULL AND \"DocumentNumber\" IS NULL AND \"DocumentNumberNormalized\" IS NULL) OR (\"DocumentType\" IS NOT NULL AND \"DocumentIssuingCountry\" IS NOT NULL AND \"DocumentNumber\" IS NOT NULL AND \"DocumentNumberNormalized\" IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Identity.PersonRole", b =>
@@ -1163,6 +1190,173 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.Navigation("Instructor");
 
                     b.Navigation("Room");
+                });
+
+            modelBuilder.Entity("SmartGym.Domain.Entities.Identity.Person", b =>
+                {
+                    b.OwnsOne("SmartGym.Domain.Entities.Identity.Address", "Address", b1 =>
+                        {
+                            b1.Property<Guid>("PersonId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<string>("Apartment")
+                                .HasMaxLength(10)
+                                .HasColumnType("character varying(10)")
+                                .HasColumnName("AddressApartment");
+
+                            b1.Property<string>("City")
+                                .HasMaxLength(100)
+                                .HasColumnType("character varying(100)")
+                                .HasColumnName("AddressCity");
+
+                            b1.Property<string>("CountryCode")
+                                .HasMaxLength(2)
+                                .HasColumnType("character varying(2)")
+                                .HasColumnName("AddressCountryCode");
+
+                            b1.Property<string>("Floor")
+                                .HasMaxLength(10)
+                                .HasColumnType("character varying(10)")
+                                .HasColumnName("AddressFloor");
+
+                            b1.Property<string>("Number")
+                                .HasMaxLength(20)
+                                .HasColumnType("character varying(20)")
+                                .HasColumnName("AddressNumber");
+
+                            b1.Property<string>("PostalCode")
+                                .HasMaxLength(20)
+                                .HasColumnType("character varying(20)")
+                                .HasColumnName("AddressPostalCode");
+
+                            b1.Property<string>("StateProvince")
+                                .HasMaxLength(100)
+                                .HasColumnType("character varying(100)")
+                                .HasColumnName("AddressStateProvince");
+
+                            b1.Property<string>("Street")
+                                .HasMaxLength(150)
+                                .HasColumnType("character varying(150)")
+                                .HasColumnName("AddressStreet");
+
+                            b1.HasKey("PersonId");
+
+                            b1.ToTable("People");
+
+                            b1.WithOwner()
+                                .HasForeignKey("PersonId");
+                        });
+
+                    b.OwnsOne("SmartGym.Domain.Entities.Identity.EmergencyContact", "EmergencyContact", b1 =>
+                        {
+                            b1.Property<Guid>("PersonId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<string>("Name")
+                                .HasMaxLength(150)
+                                .HasColumnType("character varying(150)")
+                                .HasColumnName("EmergencyContactName");
+
+                            b1.Property<string>("Phone")
+                                .HasMaxLength(50)
+                                .HasColumnType("character varying(50)")
+                                .HasColumnName("EmergencyContactPhone");
+
+                            b1.Property<string>("Relationship")
+                                .HasMaxLength(50)
+                                .HasColumnType("character varying(50)")
+                                .HasColumnName("EmergencyContactRelationship");
+
+                            b1.HasKey("PersonId");
+
+                            b1.ToTable("People");
+
+                            b1.WithOwner()
+                                .HasForeignKey("PersonId");
+                        });
+
+                    b.OwnsOne("SmartGym.Domain.Entities.Identity.IdentificationDocument", "Document", b1 =>
+                        {
+                            b1.Property<Guid>("PersonId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<string>("IssuingCountry")
+                                .IsRequired()
+                                .HasMaxLength(2)
+                                .HasColumnType("character varying(2)")
+                                .HasColumnName("DocumentIssuingCountry");
+
+                            b1.Property<string>("NormalizedNumber")
+                                .IsRequired()
+                                .HasMaxLength(50)
+                                .HasColumnType("character varying(50)")
+                                .HasColumnName("DocumentNumberNormalized");
+
+                            b1.Property<string>("Number")
+                                .IsRequired()
+                                .HasMaxLength(50)
+                                .HasColumnType("character varying(50)")
+                                .HasColumnName("DocumentNumber");
+
+                            b1.Property<string>("Type")
+                                .IsRequired()
+                                .HasMaxLength(20)
+                                .HasColumnType("character varying(20)")
+                                .HasColumnName("DocumentType");
+
+                            b1.HasKey("PersonId");
+
+                            b1.HasIndex("Type", "IssuingCountry", "NormalizedNumber")
+                                .IsUnique()
+                                .HasDatabaseName("IX_People_Document_Unique")
+                                .HasFilter("\"DocumentNumberNormalized\" IS NOT NULL");
+
+                            b1.ToTable("People");
+
+                            b1.WithOwner()
+                                .HasForeignKey("PersonId");
+                        });
+
+                    b.OwnsOne("SmartGym.Domain.Entities.Identity.ProfileImage", "ProfileImage", b1 =>
+                        {
+                            b1.Property<Guid>("PersonId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<string>("ContentType")
+                                .IsRequired()
+                                .HasMaxLength(50)
+                                .HasColumnType("character varying(50)")
+                                .HasColumnName("ProfileImageContentType");
+
+                            b1.Property<string>("Key")
+                                .IsRequired()
+                                .HasMaxLength(500)
+                                .HasColumnType("character varying(500)")
+                                .HasColumnName("ProfileImageKey");
+
+                            b1.Property<long>("SizeBytes")
+                                .HasColumnType("bigint")
+                                .HasColumnName("ProfileImageSizeBytes");
+
+                            b1.Property<DateTime>("UploadedAtUtc")
+                                .HasColumnType("timestamp with time zone")
+                                .HasColumnName("ProfileImageUploadedAtUtc");
+
+                            b1.HasKey("PersonId");
+
+                            b1.ToTable("People");
+
+                            b1.WithOwner()
+                                .HasForeignKey("PersonId");
+                        });
+
+                    b.Navigation("Address");
+
+                    b.Navigation("Document");
+
+                    b.Navigation("EmergencyContact");
+
+                    b.Navigation("ProfileImage");
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Identity.PersonRole", b =>

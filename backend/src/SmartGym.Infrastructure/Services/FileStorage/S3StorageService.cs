@@ -12,28 +12,35 @@ public class S3StorageService : IFileStorageService
     private readonly S3StorageOptions _options;
 
     public S3StorageService(IOptions<S3StorageOptions> options)
+        : this(options, CreateClient(options.Value))
+    {
+    }
+
+    public S3StorageService(IOptions<S3StorageOptions> options, IAmazonS3 s3Client)
     {
         _options = options.Value;
+        _s3Client = s3Client;
+    }
 
+    private static IAmazonS3 CreateClient(S3StorageOptions options)
+    {
         var config = new AmazonS3Config();
-        if (!string.IsNullOrWhiteSpace(_options.ServiceUrl))
+        if (!string.IsNullOrWhiteSpace(options.ServiceUrl))
         {
-            config.ServiceURL = _options.ServiceUrl;
+            config.ServiceURL = options.ServiceUrl;
             config.ForcePathStyle = true;
         }
         else
         {
-            config.RegionEndpoint = RegionEndpoint.GetBySystemName(_options.Region);
+            config.RegionEndpoint = RegionEndpoint.GetBySystemName(options.Region);
         }
 
-        if (!string.IsNullOrWhiteSpace(_options.AccessKey) && !string.IsNullOrWhiteSpace(_options.SecretKey))
+        if (!string.IsNullOrWhiteSpace(options.AccessKey) && !string.IsNullOrWhiteSpace(options.SecretKey))
         {
-            _s3Client = new AmazonS3Client(_options.AccessKey, _options.SecretKey, config);
+            return new AmazonS3Client(options.AccessKey, options.SecretKey, config);
         }
-        else
-        {
-            _s3Client = new AmazonS3Client(config);
-        }
+
+        return new AmazonS3Client(config);
     }
 
     public async Task<string> UploadFileAsync(
@@ -97,5 +104,21 @@ public class S3StorageService : IFileStorageService
         {
             return false;
         }
+    }
+
+    public Task<string> GetAccessUrlAsync(
+        string fileUrlOrKey,
+        TimeSpan expiresIn,
+        CancellationToken cancellationToken = default)
+    {
+        var request = new GetPreSignedUrlRequest
+        {
+            BucketName = _options.BucketName,
+            Key = fileUrlOrKey,
+            Expires = DateTime.UtcNow.Add(expiresIn)
+        };
+
+        var url = _s3Client.GetPreSignedURL(request);
+        return Task.FromResult(url);
     }
 }

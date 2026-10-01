@@ -183,14 +183,7 @@ public class AuthServiceTests
     public async Task RegisterAsync_ShouldReject_WhenPersonAlreadyExistsWithoutAccount(string email, string dni)
     {
         // Arrange: persona cargada por administración, con rol privilegiado y sin cuenta de usuario
-        var existing = new Person
-        {
-            Id = Guid.NewGuid(),
-            FirstName = "Florencia",
-            LastName = "Instructora",
-            Dni = "20333444",
-            Email = "instructor@example.com"
-        };
+        var existing = Person.Create("Florencia", "Instructora", "instructor@example.com", document: IdentificationDocument.Create(DocumentType.Dni, "20333444"));
         existing.AddRole(await _dbContext.Roles.FirstAsync(r => r.Id == (int)RoleType.Administrator));
         _dbContext.People.Add(existing);
         await _dbContext.SaveChangesAsync();
@@ -224,5 +217,38 @@ public class AuthServiceTests
 
         await Assert.ThrowsAsync<ArgumentException>(() => _authService.RegisterAsync(request));
         Assert.False(await _dbContext.Users.AnyAsync());
+    }
+
+    [Fact]
+    public async Task RegisterAsync_FormattedDni_NormalizesAndDetectsCollision()
+    {
+        var existing = Person.Create("Ana", "Silva", "ana@example.com", document: IdentificationDocument.Create(DocumentType.Dni, "34567890"));
+        _dbContext.People.Add(existing);
+        await _dbContext.SaveChangesAsync();
+
+        var request = new RegisterRequest("Carlos", "Gomez", "34.567.890", "carlos@example.com", "Password123!");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _authService.RegisterAsync(request));
+    }
+
+    [Fact]
+    public async Task LoginAsync_DeceasedPerson_ThrowsUnauthorizedAccessException()
+    {
+        var person = Person.Create("Juan", "Perez", "juan@example.com");
+        person.ChangeStatus(PersonStatus.Deceased, "Fallecimiento", Guid.NewGuid(), isAdmin: true);
+        _dbContext.People.Add(person);
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            PersonId = person.Id,
+            Person = person,
+            Username = "juan@example.com",
+            PasswordHash = _passwordHasher.HashPassword("Password123!")
+        };
+        _dbContext.Users.Add(user);
+        await _dbContext.SaveChangesAsync();
+
+        var request = new LoginRequest("juan@example.com", "Password123!");
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => _authService.LoginAsync(request));
     }
 }

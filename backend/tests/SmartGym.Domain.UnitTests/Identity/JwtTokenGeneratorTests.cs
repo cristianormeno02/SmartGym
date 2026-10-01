@@ -23,14 +23,7 @@ public class JwtTokenGeneratorTests
     {
         // Arrange
         var generator = new JwtTokenGenerator(Options.Create(_options));
-        var person = new Person
-        {
-            Id = Guid.NewGuid(),
-            FirstName = "Juan",
-            LastName = "Pérez",
-            Email = "juan@example.com",
-            Dni = "12345678"
-        };
+        var person = Person.Create("Juan", "Pérez", "juan@example.com", document: IdentificationDocument.Create(DocumentType.Dni, "12345678"));
         var user = new User
         {
             Id = Guid.NewGuid(),

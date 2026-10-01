@@ -46,6 +46,8 @@ public static class DependencyInjection
             services.AddSingleton<IFileStorageService, S3StorageService>();
         }
 
+        services.AddSingleton<IProfileImageProcessor, ProfileImageProcessor>();
+
         // Authentication & JWT Services
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));

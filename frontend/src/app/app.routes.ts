@@ -27,5 +27,30 @@ export const routes: Routes = [
     canActivate: [authGuard, roleGuard(['Administrator'])],
     loadComponent: () => import('./features/portal/admin/admin-portal').then(m => m.AdminPortalComponent)
   },
+  {
+    path: 'portal/personas',
+    canActivate: [authGuard, roleGuard(['Secretary', 'Administrator'])],
+    loadComponent: () => import('./features/people/people-list').then(m => m.PeopleListComponent)
+  },
+  {
+    path: 'portal/personas/nueva',
+    canActivate: [authGuard, roleGuard(['Secretary', 'Administrator'])],
+    loadComponent: () => import('./features/people/person-form').then(m => m.PersonFormComponent)
+  },
+  {
+    path: 'portal/personas/:id',
+    canActivate: [authGuard, roleGuard(['Secretary', 'Administrator'])],
+    loadComponent: () => import('./features/people/person-detail').then(m => m.PersonDetailComponent)
+  },
+  {
+    path: 'portal/personas/:id/editar',
+    canActivate: [authGuard, roleGuard(['Secretary', 'Administrator'])],
+    loadComponent: () => import('./features/people/person-form').then(m => m.PersonFormComponent)
+  },
+  {
+    path: 'portal/mis-datos',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/people/my-profile').then(m => m.MyProfileComponent)
+  },
   { path: '**', redirectTo: '' }
 ];

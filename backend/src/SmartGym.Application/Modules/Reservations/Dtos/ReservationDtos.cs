@@ -22,7 +22,9 @@ public record ReservationDto(
     bool IsLateCancellation,
     DateTime? AttendedAtUtc,
     AttendanceSource? AttendanceSource,
-    int? WaitListPosition
+    int? WaitListPosition,
+    DocumentType? DocumentType = null,
+    string? DocumentNumber = null
 );
 
 public record CreateReservationRequest(

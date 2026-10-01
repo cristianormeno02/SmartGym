@@ -145,7 +145,7 @@ import {
                         <thead class="text-xs text-slate-400 bg-slate-950/70 border-b border-slate-800 uppercase">
                           <tr>
                             <th class="py-3 px-4">Alumno</th>
-                            <th class="py-3 px-4">DNI</th>
+                            <th class="py-3 px-4">Documento</th>
                             <th class="py-3 px-4">Estado</th>
                             <th class="py-3 px-4 text-right">Control de Asistencia</th>
                           </tr>
@@ -154,7 +154,7 @@ import {
                           @for (item of roster(); track item.id) {
                             <tr class="hover:bg-slate-800/30 transition">
                               <td class="py-3 px-4 font-semibold text-slate-100">{{ item.studentName }}</td>
-                              <td class="py-3 px-4 text-slate-400 text-xs">{{ item.studentDni }}</td>
+                              <td class="py-3 px-4 text-slate-400 text-xs">{{ item.documentNumber ?? item.studentDni }}</td>
                               <td class="py-3 px-4">
                                 <span class="text-xs px-2 py-0.5 rounded font-bold"
                                       [ngClass]="getReservationBadgeClass(item.status)">

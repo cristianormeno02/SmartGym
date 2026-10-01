@@ -10,15 +10,12 @@ public class PersonTests
     public void Person_CanHaveMultipleSimultaneousRoles_WithoutDuplicatingData()
     {
         // Arrange
-        var person = new Person
-        {
-            Id = Guid.NewGuid(),
-            FirstName = "Juan",
-            LastName = "Pérez",
-            Dni = "12345678",
-            Email = "juan.perez@example.com",
-            PhoneNumber = "+5491112345678"
-        };
+        var person = Person.Create(
+            "Juan",
+            "Pérez",
+            "juan.perez@example.com",
+            primaryPhone: "+5491112345678",
+            document: IdentificationDocument.Create(DocumentType.Dni, "12345678"));
 
         var instructorRole = new Role
         {
@@ -50,14 +47,11 @@ public class PersonTests
     public void Person_CanBeLinkedToUser_WithCredentialsAndGoogleIdentity()
     {
         // Arrange
-        var person = new Person
-        {
-            Id = Guid.NewGuid(),
-            FirstName = "María",
-            LastName = "Gómez",
-            Dni = "87654321",
-            Email = "maria.gomez@example.com"
-        };
+        var person = Person.Create(
+            "María",
+            "Gómez",
+            "maria.gomez@example.com",
+            document: IdentificationDocument.Create(DocumentType.Dni, "87654321"));
 
         var user = new User
         {

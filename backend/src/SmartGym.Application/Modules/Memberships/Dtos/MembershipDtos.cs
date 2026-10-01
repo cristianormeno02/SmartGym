@@ -14,7 +14,9 @@ public record MembershipDto(
     int TotalCredits,
     int AvailableCredits,
     MembershipStatus Status,
-    bool IsValidToday
+    bool IsValidToday,
+    DocumentType? DocumentType = null,
+    string? DocumentNumber = null
 );
 
 public record AssignMembershipRequest(

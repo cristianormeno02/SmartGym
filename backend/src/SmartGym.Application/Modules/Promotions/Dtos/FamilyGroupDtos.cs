@@ -1,3 +1,5 @@
+using SmartGym.Domain.Enums;
+
 namespace SmartGym.Application.Modules.Promotions.Dtos;
 
 public record FamilyGroupMemberDto(
@@ -5,7 +7,9 @@ public record FamilyGroupMemberDto(
     string FullName,
     string Dni,
     string Relationship,
-    DateTime JoinedAtUtc
+    DateTime JoinedAtUtc,
+    DocumentType? DocumentType = null,
+    string? DocumentNumber = null
 );
 
 public record FamilyGroupDto(

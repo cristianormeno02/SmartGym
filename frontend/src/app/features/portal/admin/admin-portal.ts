@@ -135,7 +135,7 @@ import {
                   <tr>
                     <th class="py-3 px-4">Nombre y Apellido</th>
                     <th class="py-3 px-4">Email</th>
-                    <th class="py-3 px-4">DNI</th>
+                    <th class="py-3 px-4">Documento</th>
                     <th class="py-3 px-4">Roles Asignados</th>
                     <th class="py-3 px-4 text-center">Estado</th>
                   </tr>
@@ -145,7 +145,7 @@ import {
                     <tr class="hover:bg-slate-800/30 transition">
                       <td class="py-3 px-4 font-semibold text-slate-100">{{ u.fullName }}</td>
                       <td class="py-3 px-4 text-slate-400 text-xs">{{ u.email }}</td>
-                      <td class="py-3 px-4 text-slate-400 text-xs">{{ u.dni }}</td>
+                      <td class="py-3 px-4 text-slate-400 text-xs">{{ u.documentNumber ?? u.dni }}</td>
                       <td class="py-3 px-4">
                         <div class="flex flex-wrap gap-1">
                           @for (r of u.roles; track r) {

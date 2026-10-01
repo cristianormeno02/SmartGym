@@ -26,6 +26,10 @@ import { AuthService } from '../../../core/services/auth.service';
             <a routerLink="/planes" routerLinkActive="text-cyan-400 font-semibold" class="text-slate-300 hover:text-white transition">Planes</a>
 
             @if (authService.isAuthenticated()) {
+              <a routerLink="/portal/mis-datos" routerLinkActive="text-cyan-400 font-semibold" class="text-slate-300 hover:text-white transition">Mis Datos</a>
+              @if (authService.isStaff()) {
+                <a routerLink="/portal/personas" routerLinkActive="text-cyan-400 font-semibold" class="text-slate-300 hover:text-white transition">Personas</a>
+              }
               @if (authService.isStudent()) {
                 <a routerLink="/portal/alumno" routerLinkActive="text-cyan-400 font-semibold" class="bg-cyan-500/20 text-cyan-300 px-3 py-1.5 rounded-lg border border-cyan-500/30 hover:bg-cyan-500/30 transition">Mi Portal</a>
               }
@@ -41,6 +45,9 @@ import { AuthService } from '../../../core/services/auth.service';
           <!-- User / Auth Buttons -->
           <div class="flex items-center space-x-3">
             @if (authService.isAuthenticated()) {
+              @if (authService.currentUser()?.photoUrl) {
+                <img [src]="authService.currentUser()?.photoUrl" alt="Avatar" class="w-8 h-8 rounded-full object-cover border border-slate-700" />
+              }
               <div class="text-right hidden sm:block">
                 <div class="text-sm font-semibold text-slate-200">{{ authService.currentUser()?.fullName }}</div>
                 <div class="text-xs text-slate-400">{{ authService.userRoles().join(', ') }}</div>

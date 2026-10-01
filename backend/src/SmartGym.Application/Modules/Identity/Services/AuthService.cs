@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SmartGym.Application.Common.Interfaces;
 using SmartGym.Application.Modules.Identity.Dtos;
+using SmartGym.Domain.Common;
 using SmartGym.Domain.Entities.Identity;
 using SmartGym.Domain.Enums;
 
@@ -30,7 +31,7 @@ public class AuthService : IAuthService
         ValidateRegisterRequest(request);
 
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
-        var normalizedDni = request.Dni.Trim();
+        var (normalizedDni, _) = DocumentNormalizer.Normalize(DocumentType.Dni, request.Dni, "AR");
 
         var emailInUse = await _dbContext.Users
             .AnyAsync(u => u.Username.ToLower() == normalizedEmail, cancellationToken);
@@ -38,7 +39,9 @@ public class AuthService : IAuthService
         // El registro público nunca se vincula a una Persona existente: sin verificar la identidad,
         // cualquiera podría apropiarse de la ficha (y los roles) de otra persona usando su DNI o email.
         var personExists = await _dbContext.People
-            .AnyAsync(p => p.Email.ToLower() == normalizedEmail || p.Dni == normalizedDni, cancellationToken);
+            .AnyAsync(p => (p.Email != null && p.Email.ToLower() == normalizedEmail) ||
+                           (p.Document != null && p.Document.Type == DocumentType.Dni && p.Document.IssuingCountry == "AR" && p.Document.NormalizedNumber == normalizedDni),
+                      cancellationToken);
 
         if (emailInUse || personExists)
         {
@@ -46,16 +49,12 @@ public class AuthService : IAuthService
                 "No se pudo completar el registro con los datos ingresados. Si ya sos alumno del gimnasio, solicitá el alta de tu cuenta en recepción.");
         }
 
-        var person = new Person
-        {
-            Id = Guid.NewGuid(),
-            FirstName = request.FirstName.Trim(),
-            LastName = request.LastName.Trim(),
-            Dni = normalizedDni,
-            Email = normalizedEmail,
-            PhoneNumber = request.PhoneNumber?.Trim(),
-            CreatedAtUtc = DateTime.UtcNow
-        };
+        var person = Person.Create(
+            request.FirstName.Trim(),
+            request.LastName.Trim(),
+            normalizedEmail,
+            document: IdentificationDocument.Create(DocumentType.Dni, request.Dni.Trim(), "AR"),
+            primaryPhone: request.PhoneNumber?.Trim());
         _dbContext.People.Add(person);
 
         var user = new User
@@ -121,6 +120,11 @@ public class AuthService : IAuthService
             throw new UnauthorizedAccessException("Credenciales inválidas.");
         }
 
+        if (user.Person.Status == PersonStatus.Deceased)
+        {
+            throw new UnauthorizedAccessException("El acceso a esta cuenta no está permitido.");
+        }
+
         if (user.IsLockedOut)
         {
             throw new UnauthorizedAccessException("La cuenta se encuentra temporalmente bloqueada.");
@@ -171,6 +175,11 @@ public class AuthService : IAuthService
 
         if (user != null)
         {
+            if (user.Person.Status == PersonStatus.Deceased)
+            {
+                throw new UnauthorizedAccessException("El acceso a esta cuenta no está permitido.");
+            }
+
             if (user.IsLockedOut)
             {
                 throw new UnauthorizedAccessException("La cuenta se encuentra temporalmente bloqueada.");
@@ -194,14 +203,19 @@ public class AuthService : IAuthService
 
         if (user != null)
         {
+            if (user.Person.Status == PersonStatus.Deceased)
+            {
+                throw new UnauthorizedAccessException("El acceso a esta cuenta no está permitido.");
+            }
+
             // Vincular identidad Google a la cuenta y persona existente
             user.GoogleSubjectId = googlePayload.SubjectId;
             user.IsEmailConfirmed = true;
             user.LastLoginUtc = DateTime.UtcNow;
 
-            if (string.IsNullOrEmpty(user.Person.PhotoUrl) && !string.IsNullOrEmpty(googlePayload.PictureUrl))
+            if (string.IsNullOrEmpty(user.Person.ExternalAvatarUrl) && !string.IsNullOrEmpty(googlePayload.PictureUrl))
             {
-                user.Person.PhotoUrl = googlePayload.PictureUrl;
+                user.Person.ExternalAvatarUrl = googlePayload.PictureUrl;
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -216,22 +230,28 @@ public class AuthService : IAuthService
         var person = await _dbContext.People
             .Include(p => p.PersonRoles)
                 .ThenInclude(pr => pr.Role)
-            .FirstOrDefaultAsync(p => p.Email.ToLower() == normalizedEmail, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Email != null && p.Email.ToLower() == normalizedEmail, cancellationToken);
+
+        if (person != null && person.Status == PersonStatus.Deceased)
+        {
+            throw new UnauthorizedAccessException("El acceso a esta cuenta no está permitido.");
+        }
 
         if (person == null)
         {
-            // Crear nueva Persona
-            person = new Person
-            {
-                Id = Guid.NewGuid(),
-                FirstName = string.IsNullOrWhiteSpace(googlePayload.GivenName) ? "Usuario" : googlePayload.GivenName.Trim(),
-                LastName = googlePayload.FamilyName?.Trim() ?? string.Empty,
-                Email = normalizedEmail,
-                Dni = null,
-                PhotoUrl = googlePayload.PictureUrl,
-                CreatedAtUtc = DateTime.UtcNow
-            };
+            var firstName = string.IsNullOrWhiteSpace(googlePayload.GivenName) ? "Usuario" : googlePayload.GivenName.Trim();
+            var lastName = string.IsNullOrWhiteSpace(googlePayload.FamilyName) ? Person.MissingLastNamePlaceholder : googlePayload.FamilyName.Trim();
+
+            person = Person.Create(
+                firstName,
+                lastName,
+                normalizedEmail,
+                externalAvatarUrl: googlePayload.PictureUrl);
             _dbContext.People.Add(person);
+        }
+        else if (string.IsNullOrEmpty(person.ExternalAvatarUrl) && !string.IsNullOrEmpty(googlePayload.PictureUrl))
+        {
+            person.ExternalAvatarUrl = googlePayload.PictureUrl;
         }
 
         user = new User

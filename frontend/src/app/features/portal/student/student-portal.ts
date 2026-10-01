@@ -22,13 +22,18 @@ import {
 
         <!-- Top Header Profile -->
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <div class="flex items-center gap-3">
-              <span class="h-3 w-3 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span class="text-xs uppercase tracking-widest font-semibold text-emerald-400">Portal del Alumno</span>
+          <div class="flex items-center gap-4">
+            @if (authService.currentUser()?.photoUrl) {
+              <img [src]="authService.currentUser()?.photoUrl" alt="Avatar" class="w-14 h-14 rounded-full object-cover border-2 border-slate-700 shadow" />
+            }
+            <div>
+              <div class="flex items-center gap-3">
+                <span class="h-3 w-3 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span class="text-xs uppercase tracking-widest font-semibold text-emerald-400">Portal del Alumno</span>
+              </div>
+              <h1 class="text-3xl font-extrabold text-white mt-1">{{ authService.currentUser()?.fullName }}</h1>
+              <p class="text-sm text-slate-400">Documento: {{ authService.currentUser()?.documentNumber ?? authService.currentUser()?.dni }} | Email: {{ authService.currentUser()?.email }}</p>
             </div>
-            <h1 class="text-3xl font-extrabold text-white mt-1">{{ authService.currentUser()?.fullName }}</h1>
-            <p class="text-sm text-slate-400">DNI: {{ authService.currentUser()?.dni }} | Email: {{ authService.currentUser()?.email }}</p>
           </div>
 
           <!-- Quick Metrics Bar -->

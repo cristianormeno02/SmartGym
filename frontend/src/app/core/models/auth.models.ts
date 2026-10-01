@@ -3,6 +3,8 @@ export interface User {
   personId: string;
   fullName: string;
   email: string;
+  documentType?: number | string;
+  documentNumber?: string;
   dni?: string;
   phoneNumber?: string;
   photoUrl?: string;

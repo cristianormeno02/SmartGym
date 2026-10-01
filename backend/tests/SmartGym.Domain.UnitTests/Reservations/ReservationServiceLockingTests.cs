@@ -52,9 +52,10 @@ public class ReservationServiceLockingTests
         var studentRole = new Role { Id = (int)RoleType.Student, Name = "Student", Description = "Student" };
         seed.Roles.Add(studentRole);
 
-        var student = new Person { Id = _studentId, FirstName = "Juan", LastName = "Pérez", Dni = "30000001", Email = "juan@example.com" };
+        var student = Person.Create("Juan", "Pérez", "juan@example.com", document: IdentificationDocument.Create(DocumentType.Dni, "30000001"));
+        student.Id = _studentId;
         student.AddRole(studentRole);
-        var instructor = new Person { Id = Guid.NewGuid(), FirstName = "Florencia", LastName = "Inst", Dni = "30000002", Email = "flor@example.com" };
+        var instructor = Person.Create("Florencia", "Inst", "flor@example.com", document: IdentificationDocument.Create(DocumentType.Dni, "30000002"));
         var room = new Room { Id = Guid.NewGuid(), Name = "Indoor", Capacity = 20 };
         var activity = new Activity { Id = Guid.NewGuid(), Name = "Funcional", MaxCapacity = 10 };
         var classDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(3));
@@ -117,5 +118,33 @@ public class ReservationServiceLockingTests
         var call = Assert.Single(_dbContext.LockCalls);
         Assert.Equal(_sessionId, call.ClassSessionId);
         Assert.False(call.SessionAlreadyLoaded);
+    }
+
+    [Fact]
+    public async Task CreateReservationAsync_WhenStudentIsBlocked_ShouldThrowArgumentException()
+    {
+        var student = await _dbContext.People.FindAsync(_studentId);
+        student!.ChangeStatus(PersonStatus.Blocked, "Sanción disciplinaria", Guid.NewGuid(), isAdmin: true);
+        await _dbContext.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            _service.CreateReservationAsync(new CreateReservationRequest(_sessionId, _studentId), Guid.NewGuid()));
+
+        Assert.Equal("El alumno especificado no existe o no tiene el rol de Alumno activo.", ex.Message);
+    }
+
+    [Fact]
+    public async Task RecordAttendanceAsync_WhenStudentIsBlocked_ShouldThrowInvalidOperationException()
+    {
+        var reservation = await _service.CreateReservationAsync(new CreateReservationRequest(_sessionId, _studentId), Guid.NewGuid());
+
+        var student = await _dbContext.People.FindAsync(_studentId);
+        student!.ChangeStatus(PersonStatus.Blocked, "Sanción disciplinaria", Guid.NewGuid(), isAdmin: true);
+        await _dbContext.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.RecordAttendanceAsync(new RecordAttendanceRequest(reservation.Id, AttendanceSource.InstructorInRoom), Guid.NewGuid()));
+
+        Assert.Contains("no se encuentra activo", ex.Message);
     }
 }
