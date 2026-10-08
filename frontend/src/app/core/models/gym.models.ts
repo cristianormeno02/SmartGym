@@ -1,3 +1,4 @@
+import { DocumentType } from './person.model';
 export interface Room {
   id: string;
   name: string;
@@ -84,7 +85,7 @@ export interface Membership {
   studentId: string;
   studentName: string;
   studentDni?: string;
-  documentType?: number | string;
+  documentType?: DocumentType;
   documentNumber?: string;
   membershipPlanId: string;
   membershipPlanName: string;
@@ -107,7 +108,7 @@ export interface Reservation {
   studentId: string;
   studentName: string;
   studentDni?: string;
-  documentType?: number | string;
+  documentType?: DocumentType;
   documentNumber?: string;
   membershipId?: string;
   status: number; // 0=Reserved, 1=Confirmed, 2=Cancelled, 3=Attended, 4=NoShow, 5=WaitList
@@ -197,7 +198,7 @@ export interface AdminUserOverview {
   personId: string;
   fullName: string;
   email: string;
-  documentType?: number | string;
+  documentType?: DocumentType;
   documentNumber?: string;
   dni?: string;
   isActive: boolean;

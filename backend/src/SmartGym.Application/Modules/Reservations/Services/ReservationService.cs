@@ -410,6 +410,6 @@ public class ReservationService : IReservationService
             r.AttendanceSource,
             r.WaitListPosition,
             r.Student?.Document?.Type,
-            r.Student?.Document?.Number ?? r.Student?.Dni
+            r.Student?.Document?.Number
         );
 }

@@ -16,6 +16,9 @@ namespace SmartGym.Application.Modules.People.Services;
 
 public class PeopleService : IPeopleService
 {
+    private const string ConcurrentModificationMessage =
+        "La ficha de la persona fue modificada concurrentemente. Por favor, recargue la información e intente nuevamente.";
+
     private readonly ISmartGymDbContext _dbContext;
     private readonly ICurrentUserService _currentUserService;
     private readonly IFileStorageService _fileStorageService;
@@ -235,16 +238,7 @@ public class PeopleService : IPeopleService
             emergencyContact);
 
         _dbContext.People.Add(person);
-
-        try
-        {
-            await _dbContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException ex)
-        {
-            HandleDbUpdateException(ex);
-            throw;
-        }
+        await SaveChangesMappingConflictsAsync(cancellationToken);
 
         return MapDetailDto(person, null, false);
     }
@@ -272,7 +266,7 @@ public class PeopleService : IPeopleService
         // Concurrency check
         if (person.Version != request.Version)
         {
-            throw new ConflictException("La ficha de la persona fue modificada concurrentemente. Por favor, recargue la información e intente nuevamente.");
+            throw new ConflictException(ConcurrentModificationMessage);
         }
 
         bool hasUser = await _dbContext.Users.AnyAsync(u => u.PersonId == id, cancellationToken);
@@ -358,19 +352,7 @@ public class PeopleService : IPeopleService
         person.SetDocument(doc);
         person.UpdateContact(newNormalizedEmail, request.PrimaryPhone, request.SecondaryPhone, address, emergencyContact);
 
-        try
-        {
-            await _dbContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            throw new ConflictException("La ficha de la persona fue modificada concurrentemente. Por favor, recargue la información e intente nuevamente.");
-        }
-        catch (DbUpdateException ex)
-        {
-            HandleDbUpdateException(ex);
-            throw;
-        }
+        await SaveChangesMappingConflictsAsync(cancellationToken);
 
         var photoUrl = await ResolvePhotoUrlAsync(person, cancellationToken);
         return MapDetailDto(person, photoUrl, hasUser);
@@ -410,7 +392,7 @@ public class PeopleService : IPeopleService
             throw new ConflictException(ex.Message);
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveChangesMappingConflictsAsync(cancellationToken);
 
         bool hasUser = await _dbContext.Users.AnyAsync(u => u.PersonId == id, cancellationToken);
         var photoUrl = await ResolvePhotoUrlAsync(person, cancellationToken);
@@ -454,7 +436,7 @@ public class PeopleService : IPeopleService
 
         try
         {
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await SaveChangesMappingConflictsAsync(cancellationToken);
         }
         catch
         {
@@ -504,7 +486,7 @@ public class PeopleService : IPeopleService
         var oldStorageKey = person.ProfileImage?.Key;
         person.ClearProfileImage();
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveChangesMappingConflictsAsync(cancellationToken);
 
         if (!string.IsNullOrWhiteSpace(oldStorageKey))
         {
@@ -579,7 +561,7 @@ public class PeopleService : IPeopleService
         // Only updates phone, address, and emergency contact. Protected fields remain unchanged.
         person.UpdateContact(person.Email, request.PrimaryPhone, request.SecondaryPhone, address, emergencyContact);
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveChangesMappingConflictsAsync(cancellationToken);
 
         bool hasUser = await _dbContext.Users.AnyAsync(u => u.PersonId == personId, cancellationToken);
         var photoUrl = await ResolvePhotoUrlAsync(person, cancellationToken);
@@ -606,7 +588,7 @@ public class PeopleService : IPeopleService
     {
         if (!_currentUserService.PersonId.HasValue || _currentUserService.PersonId.Value == Guid.Empty)
         {
-            throw new UnauthorizedAccessException("El usuario no tiene una persona asociada.");
+            throw new ForbiddenException("El usuario no tiene una persona asociada.");
         }
 
         return _currentUserService.PersonId.Value;
@@ -732,6 +714,23 @@ public class PeopleService : IPeopleService
             : fullDocCondition;
 
         return Expression.Lambda<Func<Person, bool>>(combined, parameter);
+    }
+
+    private async Task SaveChangesMappingConflictsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConflictException(ConcurrentModificationMessage, ex);
+        }
+        catch (DbUpdateException ex)
+        {
+            HandleDbUpdateException(ex);
+            throw;
+        }
     }
 
     private static void HandleDbUpdateException(DbUpdateException ex)

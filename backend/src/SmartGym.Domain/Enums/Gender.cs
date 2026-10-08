@@ -1,7 +1,9 @@
 using System.Text.Json.Serialization;
+using SmartGym.Domain.Common;
 
 namespace SmartGym.Domain.Enums;
 
+[JsonConverter(typeof(StrictStringEnumConverter<Gender>))]
 public enum Gender
 {
     [JsonStringEnumMemberName("MASCULINO")]

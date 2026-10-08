@@ -56,6 +56,21 @@ public class ProfileImageProcessorTests
         Assert.Equal(400, result.Height);
     }
 
+    [Theory]
+    [InlineData(SKEncodedImageFormat.Png, "image/jpeg")]
+    [InlineData(SKEncodedImageFormat.Jpeg, "image/png")]
+    [InlineData(SKEncodedImageFormat.Webp, "image/jpeg")]
+    [InlineData(SKEncodedImageFormat.Jpeg, "image/webp")]
+    public async Task ProcessProfileImageAsync_SignatureDoesNotMatchDeclaredType_ThrowsArgumentException(
+        SKEncodedImageFormat actualFormat, string declaredContentType)
+    {
+        var bytes = CreateImage(50, 50, actualFormat);
+        using var stream = new MemoryStream(bytes);
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            _processor.ProcessProfileImageAsync(stream, declaredContentType, bytes.Length));
+    }
+
     [Fact]
     public async Task ProcessProfileImageAsync_OversizedDimensions_ResizesToMax1024()
     {
@@ -143,6 +158,104 @@ public class ProfileImageProcessorTests
         Assert.DoesNotContain("GPSLatitude", outputString);
         Assert.DoesNotContain("Exif", outputString);
         Assert.DoesNotContain("GPS", outputString);
+    }
+
+    [Fact]
+    public async Task ProcessProfileImageAsync_JpegWithExifOrientation_AppliesRotationBeforeStrippingMetadata()
+    {
+        // Foto "acostada" de 200x100 (izquierda roja, derecha azul) con EXIF Orientation = 6 (rotar 90° horario).
+        // Al quitar el EXIF sin aplicar la rotación, la foto quedaría acostada.
+        var bytes = InsertExifOrientation(CreateTwoColorImage(200, 100), orientation: 6);
+        using var stream = new MemoryStream(bytes);
+
+        var result = await _processor.ProcessProfileImageAsync(stream, "image/jpeg", bytes.Length);
+
+        Assert.Equal(100, result.Width);
+        Assert.Equal(200, result.Height);
+
+        result.Stream.Position = 0;
+        using var decoded = SKBitmap.Decode(result.Stream);
+        var top = decoded.GetPixel(50, 20);
+        var bottom = decoded.GetPixel(50, 180);
+        Assert.True(top.Red > 200 && top.Blue < 60, $"Arriba debería quedar el rojo y quedó {top}");
+        Assert.True(bottom.Blue > 200 && bottom.Red < 60, $"Abajo debería quedar el azul y quedó {bottom}");
+    }
+
+    [Fact]
+    public async Task ProcessProfileImageAsync_DeclaredDimensionsAboveLimit_RejectsBeforeDecoding()
+    {
+        // Archivo de pocos bytes que declara 20000x20000 px: decodificarlo reservaría ~1.6 GB de memoria.
+        var bytes = CreatePngDeclaringDimensions(20000, 20000);
+        using var stream = new MemoryStream(bytes);
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            _processor.ProcessProfileImageAsync(stream, "image/png", bytes.Length));
+
+        Assert.Contains("megapíxeles", ex.Message);
+    }
+
+    private static byte[] CreateTwoColorImage(int width, int height)
+    {
+        using var bitmap = new SKBitmap(width, height);
+        using var canvas = new SKCanvas(bitmap);
+        using var red = new SKPaint { Color = SKColors.Red };
+        using var blue = new SKPaint { Color = SKColors.Blue };
+        canvas.DrawRect(0, 0, width / 2f, height, red);
+        canvas.DrawRect(width / 2f, 0, width / 2f, height, blue);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Jpeg, 95);
+        return data.ToArray();
+    }
+
+    private static byte[] InsertExifOrientation(byte[] jpeg, ushort orientation)
+    {
+        byte[] payload =
+        [
+            .. Encoding.ASCII.GetBytes("Exif  "),
+            0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00,             // TIFF little-endian, IFD0 en offset 8
+            0x01, 0x00,                                                 // 1 entrada
+            0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00,             // tag 0x0112 Orientation, SHORT, count 1
+            (byte)orientation, (byte)(orientation >> 8), 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00                                      // sin IFD siguiente
+        ];
+        var length = payload.Length + 2;
+        byte[] app1 = [0xFF, 0xE1, (byte)(length >> 8), (byte)(length & 0xFF), .. payload];
+
+        return [.. jpeg[..2], .. app1, .. jpeg[2..]];
+    }
+
+    private static byte[] CreatePngDeclaringDimensions(int width, int height)
+    {
+        var png = CreateImage(1, 1, SKEncodedImageFormat.Png);
+
+        // IHDR: longitud(8..11) tipo(12..15) ancho(16..19) alto(20..23) ... CRC(29..32) sobre tipo+datos(12..28)
+        WriteBigEndian(png, 16, (uint)width);
+        WriteBigEndian(png, 20, (uint)height);
+        WriteBigEndian(png, 29, Crc32(png.AsSpan(12, 17)));
+        return png;
+    }
+
+    private static void WriteBigEndian(byte[] buffer, int offset, uint value)
+    {
+        buffer[offset] = (byte)(value >> 24);
+        buffer[offset + 1] = (byte)(value >> 16);
+        buffer[offset + 2] = (byte)(value >> 8);
+        buffer[offset + 3] = (byte)value;
+    }
+
+    private static uint Crc32(ReadOnlySpan<byte> data)
+    {
+        var crc = 0xFFFFFFFFu;
+        foreach (var b in data)
+        {
+            crc ^= b;
+            for (var k = 0; k < 8; k++)
+            {
+                crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320u : crc >> 1;
+            }
+        }
+
+        return ~crc;
     }
 
     private static byte[] CreateImage(int width, int height, SKEncodedImageFormat format)

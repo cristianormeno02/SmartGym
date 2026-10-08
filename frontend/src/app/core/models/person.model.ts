@@ -1,22 +1,23 @@
+// Los valores son los códigos que serializa la API (JsonStringEnumMemberName en el backend).
 export enum DocumentType {
-  Dni = 0,
-  Passport = 1,
-  ForeignId = 2,
-  Other = 3
+  Dni = 'DNI',
+  Passport = 'PASAPORTE',
+  IdentityCard = 'CI',
+  Other = 'OTRO'
 }
 
 export const DocumentTypeLabels: Record<DocumentType, string> = {
   [DocumentType.Dni]: 'DNI',
   [DocumentType.Passport]: 'Pasaporte',
-  [DocumentType.ForeignId]: 'Cédula de Identidad',
+  [DocumentType.IdentityCard]: 'Cédula de Identidad',
   [DocumentType.Other]: 'Otro'
 };
 
 export enum PersonStatus {
-  Active = 0,
-  Inactive = 1,
-  Blocked = 2,
-  Deceased = 3
+  Active = 'ACTIVA',
+  Inactive = 'INACTIVA',
+  Blocked = 'BLOQUEADA',
+  Deceased = 'FALLECIDA'
 }
 
 export const PersonStatusLabels: Record<PersonStatus, string> = {
@@ -27,15 +28,17 @@ export const PersonStatusLabels: Record<PersonStatus, string> = {
 };
 
 export enum Gender {
-  Male = 0,
-  Female = 1,
-  Other = 2
+  Male = 'MASCULINO',
+  Female = 'FEMENINO',
+  X = 'X',
+  NotInformed = 'NO_INFORMA'
 }
 
 export const GenderLabels: Record<Gender, string> = {
   [Gender.Male]: 'Masculino',
   [Gender.Female]: 'Femenino',
-  [Gender.Other]: 'Otro'
+  [Gender.X]: 'X',
+  [Gender.NotInformed]: 'Prefiere no informar'
 };
 
 export interface AddressDto {

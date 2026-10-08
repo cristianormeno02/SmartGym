@@ -1,5 +1,7 @@
 using SmartGym.Application;
 using SmartGym.Infrastructure;
+using SmartGym.Infrastructure.Services.FileStorage;
+using SmartGym.WebApi.Common;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,6 +20,13 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// Con almacenamiento local (desarrollo) las fotos de perfil se sirven desde la propia API.
+var storageOptions = builder.Configuration.GetSection(S3StorageOptions.SectionName).Get<S3StorageOptions>() ?? new S3StorageOptions();
+if (storageOptions.UseLocalStorage)
+{
+    app.UseStaticFiles(LocalAvatarStaticFiles.CreateOptions(LocalStorageService.DefaultRootPath));
+}
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

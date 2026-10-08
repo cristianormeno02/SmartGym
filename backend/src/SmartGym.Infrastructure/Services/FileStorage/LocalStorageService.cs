@@ -1,14 +1,23 @@
+using Microsoft.AspNetCore.Http;
 using SmartGym.Application.Common.Interfaces;
 
 namespace SmartGym.Infrastructure.Services.FileStorage;
 
 public class LocalStorageService : IFileStorageService
 {
+    public static readonly string DefaultRootPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Storage");
+
     private readonly string _baseStoragePath;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
+
+    public LocalStorageService(IHttpContextAccessor httpContextAccessor) : this()
+    {
+        _httpContextAccessor = httpContextAccessor;
+    }
 
     public LocalStorageService()
     {
-        _baseStoragePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Storage");
+        _baseStoragePath = DefaultRootPath;
         if (!Directory.Exists(_baseStoragePath))
         {
             Directory.CreateDirectory(_baseStoragePath);
@@ -75,17 +84,19 @@ public class LocalStorageService : IFileStorageService
         CancellationToken cancellationToken = default)
     {
         var normalizedKey = fileUrlOrKey.Trim();
-        if (normalizedKey.StartsWith("/storage/", StringComparison.OrdinalIgnoreCase))
+        var relativeUrl = normalizedKey.StartsWith("/storage/", StringComparison.OrdinalIgnoreCase)
+            ? normalizedKey
+            : normalizedKey.StartsWith("storage/", StringComparison.OrdinalIgnoreCase)
+                ? $"/{normalizedKey}"
+                : $"/storage/{normalizedKey.TrimStart('/')}";
+
+        // El frontend corre en otro origen: durante un request se devuelve la URL absoluta del host de la API.
+        var request = _httpContextAccessor?.HttpContext?.Request;
+        if (request != null && request.Host.HasValue)
         {
-            return Task.FromResult(normalizedKey);
+            return Task.FromResult($"{request.Scheme}://{request.Host}{request.PathBase}{relativeUrl}");
         }
 
-        if (normalizedKey.StartsWith("storage/", StringComparison.OrdinalIgnoreCase))
-        {
-            return Task.FromResult($"/{normalizedKey}");
-        }
-
-        var path = normalizedKey.TrimStart('/');
-        return Task.FromResult($"/storage/{path}");
+        return Task.FromResult(relativeUrl);
     }
 }

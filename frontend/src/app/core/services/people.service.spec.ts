@@ -77,8 +77,8 @@ describe('PeopleService', () => {
     const req = httpMock.expectOne(r =>
       r.url === apiUrl &&
       r.params.get('search') === 'juan' &&
-      r.params.get('status') === '0' &&
-      r.params.get('documentType') === '0' &&
+      r.params.get('status') === 'ACTIVA' &&
+      r.params.get('documentType') === 'DNI' &&
       r.params.get('pageNumber') === '1' &&
       r.params.get('pageSize') === '20'
     );

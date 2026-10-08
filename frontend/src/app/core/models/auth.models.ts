@@ -1,9 +1,10 @@
+import { DocumentType } from './person.model';
 export interface User {
   userId: string;
   personId: string;
   fullName: string;
   email: string;
-  documentType?: number | string;
+  documentType?: DocumentType;
   documentNumber?: string;
   dni?: string;
   phoneNumber?: string;

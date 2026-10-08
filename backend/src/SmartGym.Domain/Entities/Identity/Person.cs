@@ -12,6 +12,19 @@ public class Person : BaseEntity
     public string SearchName { get; private set; } = string.Empty;
 
     public PersonStatus Status { get; private set; } = PersonStatus.Active;
+
+    // Valor de la columna IsActive que EF completa al materializar; no es fuente de verdad.
+#pragma warning disable CS0414
+    private bool _isActiveColumn = true;
+#pragma warning restore CS0414
+
+    // Derivado del estado. Se conserva como columna porque otros módulos filtran por IsActive.
+    public override bool IsActive
+    {
+        get => Status == PersonStatus.Active;
+        set => throw new InvalidOperationException(
+            "IsActive de una persona se deriva de su estado; use ChangeStatus.");
+    }
     public string? StatusReason { get; private set; }
     public DateTime? StatusChangedAtUtc { get; private set; }
     public Guid? StatusChangedByUserId { get; private set; }
@@ -24,7 +37,7 @@ public class Person : BaseEntity
     public string? SecondaryPhone { get; private set; }
     public Address? Address { get; private set; }
     public ProfileImage? ProfileImage { get; private set; }
-    public string? ExternalAvatarUrl { get; set; }
+    public string? ExternalAvatarUrl { get; private set; }
     public EmergencyContact? EmergencyContact { get; private set; }
 
     // Concurrency token (PostgreSQL xmin)
@@ -40,30 +53,8 @@ public class Person : BaseEntity
     public User? User { get; set; }
     public ICollection<PersonRole> PersonRoles { get; set; } = new List<PersonRole>();
 
-    // Backward compatibility helpers
-    public string? PhoneNumber
-    {
-        get => PrimaryPhone;
-        set => PrimaryPhone = value?.Trim();
-    }
-
-    public string? PhotoUrl
-    {
-        get => ExternalAvatarUrl;
-        set => ExternalAvatarUrl = value?.Trim();
-    }
-
-    public string? Dni
-    {
-        get => Document?.Type == DocumentType.Dni ? Document.Number : null;
-        set
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                SetDocument(IdentificationDocument.Create(DocumentType.Dni, value));
-            }
-        }
-    }
+    // DNI tal como fue ingresado, para los contratos que todavía exponen un campo "dni".
+    public string? Dni => Document?.Type == DocumentType.Dni ? Document.Number : null;
 
     public string? EmergencyContactName => EmergencyContact?.Name;
     public string? EmergencyContactPhone => EmergencyContact?.Phone;
@@ -95,7 +86,6 @@ public class Person : BaseEntity
             FirstName = firstName.Trim(),
             LastName = lastName.Trim(),
             Status = PersonStatus.Active,
-            IsActive = true,
             CreatedAtUtc = DateTime.UtcNow,
             BirthDate = birthDate,
             Gender = gender,
@@ -112,7 +102,7 @@ public class Person : BaseEntity
 
         if (person.IsUnderage() && !person.HasValidEmergencyContact())
         {
-            throw new InvalidOperationException("Minors require a complete emergency contact.");
+            throw new ArgumentException("Minors require a complete emergency contact.", nameof(EmergencyContact));
         }
 
         return person;
@@ -141,7 +131,7 @@ public class Person : BaseEntity
 
         if (IsUnderage() && !HasValidEmergencyContact())
         {
-            throw new InvalidOperationException("Minors require a complete emergency contact.");
+            throw new ArgumentException("Minors require a complete emergency contact.", nameof(EmergencyContact));
         }
 
         RecalculateSearchName();
@@ -167,7 +157,7 @@ public class Person : BaseEntity
             EmergencyContact = emergencyContact;
             if (IsUnderage() && !HasValidEmergencyContact())
             {
-                throw new InvalidOperationException("Minors require a complete emergency contact.");
+                throw new ArgumentException("Minors require a complete emergency contact.", nameof(EmergencyContact));
             }
         }
 
@@ -178,6 +168,12 @@ public class Person : BaseEntity
     {
         EnsureNotDeceased();
         Document = document;
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    public void SetExternalAvatarUrl(string? url)
+    {
+        ExternalAvatarUrl = string.IsNullOrWhiteSpace(url) ? null : url.Trim();
         UpdatedAtUtc = DateTime.UtcNow;
     }
 
@@ -245,7 +241,6 @@ public class Person : BaseEntity
         StatusReason = string.IsNullOrWhiteSpace(trimmedReason) ? null : trimmedReason;
         StatusChangedAtUtc = DateTime.UtcNow;
         StatusChangedByUserId = changedByUserId;
-        IsActive = (newStatus == PersonStatus.Active);
         UpdatedAtUtc = DateTime.UtcNow;
     }
 

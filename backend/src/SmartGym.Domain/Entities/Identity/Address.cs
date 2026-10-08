@@ -43,6 +43,12 @@ public class Address
         string? stateProvince,
         string? countryCode = "AR")
     {
+        if (!string.IsNullOrWhiteSpace(countryCode) &&
+            (countryCode.Trim().Length != 2 || !countryCode.Trim().All(char.IsAsciiLetter)))
+        {
+            throw new ArgumentException("Country must be a 2-letter ISO 3166-1 code.", nameof(countryCode));
+        }
+
         return new Address(street, number, floor, apartment, postalCode, city, stateProvince, countryCode);
     }
 }

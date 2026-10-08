@@ -117,10 +117,37 @@ public class PeopleControllerTests
         _mockService.Setup(s => s.SearchAsync("juan", PersonStatus.Active, DocumentType.Dni, 1, 20, It.IsAny<CancellationToken>()))
             .ReturnsAsync(pagedResult);
 
-        var result = await _controller.Search("juan", PersonStatus.Active, DocumentType.Dni, 1, 20);
+        var result = await _controller.Search("juan", "ACTIVA", "DNI", 1, 20);
 
         var okResult = Assert.IsType<OkObjectResult>(result);
         Assert.Equal(pagedResult, okResult.Value);
+    }
+
+    [Fact]
+    public async Task Search_WithSpanishStatusCode_FiltersByMatchingEnum()
+    {
+        var pagedResult = new PagedResult<PersonSummaryDto>(new List<PersonSummaryDto>(), 0, 1, 20);
+        _mockService.Setup(s => s.SearchAsync(null, PersonStatus.Blocked, DocumentType.Passport, 1, 20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pagedResult);
+
+        var result = await _controller.Search(null, "BLOQUEADA", "PASAPORTE", 1, 20);
+
+        Assert.IsType<OkObjectResult>(result);
+        _mockService.Verify(s => s.SearchAsync(null, PersonStatus.Blocked, DocumentType.Passport, 1, 20, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("Blocked", null)]
+    [InlineData("3", null)]
+    [InlineData("NO_EXISTE", null)]
+    [InlineData(null, "Passport")]
+    public async Task Search_WithUnknownEnumCode_ShouldReturn400(string? status, string? documentType)
+    {
+        var result = await _controller.Search(null, status, documentType, 1, 20);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        _mockService.Verify(s => s.SearchAsync(It.IsAny<string?>(), It.IsAny<PersonStatus?>(), It.IsAny<DocumentType?>(),
+            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -262,6 +289,39 @@ public class PeopleControllerTests
     }
 
     [Fact]
+    public async Task UploadPhoto_WhenFileIsExactly5Mb_ShouldCallService()
+    {
+        const long fiveMb = 5 * 1024 * 1024;
+        var id = Guid.NewGuid();
+        var fileMock = new Mock<IFormFile>();
+        fileMock.Setup(f => f.Length).Returns(fiveMb);
+        fileMock.Setup(f => f.ContentType).Returns("image/jpeg");
+        fileMock.Setup(f => f.OpenReadStream()).Returns(new MemoryStream());
+
+        _mockService.Setup(s => s.UploadPhotoAsync(id, It.IsAny<Stream>(), "image/jpeg", fiveMb, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateDetailDto(id));
+
+        var result = await _controller.UploadPhoto(id, fileMock.Object);
+
+        Assert.IsType<OkObjectResult>(result);
+    }
+
+    [Theory]
+    [InlineData(nameof(PeopleController.UploadPhoto))]
+    [InlineData(nameof(PeopleController.UploadOwnPhoto))]
+    public void PhotoEndpoints_RequestSizeLimit_LeavesRoomForMultipartOverheadAbove5Mb(string endpointName)
+    {
+        // El límite del request incluye cabeceras multipart: si fuera exactamente 5 MB, un archivo de
+        // 5 MB sería rechazado por Kestrel con 413 antes de llegar a la validación (que responde 400).
+        var method = typeof(PeopleController).GetMethod(endpointName)!;
+        var limit = method.GetCustomAttribute<RequestSizeLimitAttribute>();
+
+        Assert.NotNull(limit);
+        var bytes = ((Microsoft.AspNetCore.Http.Metadata.IRequestSizeLimitMetadata)limit).MaxRequestBodySize;
+        Assert.True(bytes > 5 * 1024 * 1024 + 64 * 1024);
+    }
+
+    [Fact]
     public async Task UploadPhoto_WhenValid_ShouldCallServiceAndReturnOk()
     {
         var id = Guid.NewGuid();
@@ -324,5 +384,21 @@ public class PeopleControllerTests
 
         var okResult = Assert.IsType<OkObjectResult>(result);
         Assert.Equal(detail, okResult.Value);
+    }
+
+    private static Task<PersonDetailDto> FailInsideService() =>
+        throw new InvalidCastException("fallo inesperado");
+
+    [Fact]
+    public async Task UnexpectedException_PropagatesWithOriginalStackTrace()
+    {
+        // Las excepciones no mapeadas deben llegar al middleware con su origen intacto para poder diagnosticarlas.
+        var id = Guid.NewGuid();
+        _mockService.Setup(s => s.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+            .Returns(() => FailInsideService());
+
+        var ex = await Assert.ThrowsAsync<InvalidCastException>(() => _controller.GetById(id));
+
+        Assert.Contains(nameof(FailInsideService), ex.StackTrace);
     }
 }

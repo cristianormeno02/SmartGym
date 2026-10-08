@@ -43,10 +43,11 @@ public class GoogleTokenValidator : IGoogleTokenValidator
             return new GoogleAuthPayload(
                 SubjectId: payload.Subject,
                 Email: payload.Email,
-                GivenName: payload.GivenName ?? payload.Name ?? string.Empty,
+                GivenName: payload.GivenName ?? string.Empty,
                 FamilyName: payload.FamilyName ?? string.Empty,
                 PictureUrl: payload.Picture,
-                EmailVerified: payload.EmailVerified
+                EmailVerified: payload.EmailVerified,
+                FullName: payload.Name
             );
         }
         catch (Exception ex)

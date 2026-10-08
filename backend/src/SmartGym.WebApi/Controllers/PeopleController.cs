@@ -6,6 +6,7 @@ using SmartGym.Application.Common.Security;
 using SmartGym.Application.Modules.People.Dtos;
 using SmartGym.Application.Modules.People.Services;
 using SmartGym.Domain.Enums;
+using SmartGym.WebApi.Common;
 
 namespace SmartGym.WebApi.Controllers;
 
@@ -14,6 +15,10 @@ namespace SmartGym.WebApi.Controllers;
 public class PeopleController : ControllerBase
 {
     private const long MaxPhotoSizeBytes = 5 * 1024 * 1024; // 5 MB
+
+    // Tope del request completo: deja margen para las cabeceras multipart, de modo que los archivos
+    // de hasta 5 MB lleguen al controller y los que superan ese tamaño reciban un 400 explícito.
+    private const long MaxPhotoRequestBytes = 10 * 1024 * 1024;
     private readonly IPeopleService _peopleService;
 
     public PeopleController(IPeopleService peopleService)
@@ -24,24 +29,47 @@ public class PeopleController : ControllerBase
     [HttpGet]
     [Authorize(Policy = Policies.RequireStaff)]
     [ProducesResponseType(typeof(PagedResult<PersonSummaryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> Search(
         [FromQuery] string? search,
-        [FromQuery] PersonStatus? status,
-        [FromQuery] DocumentType? documentType,
+        [FromQuery] string? status,
+        [FromQuery] string? documentType,
         [FromQuery] int pageNumber = 1,
         [FromQuery] int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
+        PersonStatus? statusFilter = null;
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (!ApiEnumCodes.TryParse<PersonStatus>(status, out var parsedStatus))
+            {
+                return BadRequest(new { message = $"Estado desconocido: '{status}'. Valores admitidos: ACTIVA, INACTIVA, BLOQUEADA, FALLECIDA." });
+            }
+
+            statusFilter = parsedStatus;
+        }
+
+        DocumentType? documentTypeFilter = null;
+        if (!string.IsNullOrWhiteSpace(documentType))
+        {
+            if (!ApiEnumCodes.TryParse<DocumentType>(documentType, out var parsedDocumentType))
+            {
+                return BadRequest(new { message = $"Tipo de documento desconocido: '{documentType}'. Valores admitidos: DNI, PASAPORTE, CI, OTRO." });
+            }
+
+            documentTypeFilter = parsedDocumentType;
+        }
+
         try
         {
-            var result = await _peopleService.SearchAsync(search, status, documentType, pageNumber, pageSize, cancellationToken);
+            var result = await _peopleService.SearchAsync(search, statusFilter, documentTypeFilter, pageNumber, pageSize, cancellationToken);
             return Ok(result);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (TryMapException(ex, out var error))
         {
-            return HandleException(ex);
+            return error;
         }
     }
 
@@ -58,9 +86,9 @@ public class PeopleController : ControllerBase
             var result = await _peopleService.GetByIdAsync(id, cancellationToken);
             return Ok(result);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (TryMapException(ex, out var error))
         {
-            return HandleException(ex);
+            return error;
         }
     }
 
@@ -78,9 +106,9 @@ public class PeopleController : ControllerBase
             var result = await _peopleService.CreateAsync(request, cancellationToken);
             return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (TryMapException(ex, out var error))
         {
-            return HandleException(ex);
+            return error;
         }
     }
 
@@ -99,9 +127,9 @@ public class PeopleController : ControllerBase
             var result = await _peopleService.UpdateAsync(id, request, cancellationToken);
             return Ok(result);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (TryMapException(ex, out var error))
         {
-            return HandleException(ex);
+            return error;
         }
     }
 
@@ -120,15 +148,15 @@ public class PeopleController : ControllerBase
             var result = await _peopleService.ChangeStatusAsync(id, request, cancellationToken);
             return Ok(result);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (TryMapException(ex, out var error))
         {
-            return HandleException(ex);
+            return error;
         }
     }
 
     [HttpPut("{id:guid}/photo")]
     [Authorize(Policy = Policies.RequireStaff)]
-    [RequestSizeLimit(MaxPhotoSizeBytes)]
+    [RequestSizeLimit(MaxPhotoRequestBytes)]
     [ProducesResponseType(typeof(PersonDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -153,9 +181,9 @@ public class PeopleController : ControllerBase
             var result = await _peopleService.UploadPhotoAsync(id, stream, file.ContentType, file.Length, cancellationToken);
             return Ok(result);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (TryMapException(ex, out var error))
         {
-            return HandleException(ex);
+            return error;
         }
     }
 
@@ -173,9 +201,9 @@ public class PeopleController : ControllerBase
             var result = await _peopleService.DeletePhotoAsync(id, cancellationToken);
             return Ok(result);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (TryMapException(ex, out var error))
         {
-            return HandleException(ex);
+            return error;
         }
     }
 
@@ -191,9 +219,9 @@ public class PeopleController : ControllerBase
             var result = await _peopleService.GetOwnAsync(cancellationToken);
             return Ok(result);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (TryMapException(ex, out var error))
         {
-            return HandleException(ex);
+            return error;
         }
     }
 
@@ -210,15 +238,15 @@ public class PeopleController : ControllerBase
             var result = await _peopleService.UpdateOwnContactAsync(request, cancellationToken);
             return Ok(result);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (TryMapException(ex, out var error))
         {
-            return HandleException(ex);
+            return error;
         }
     }
 
     [HttpPut("me/photo")]
     [Authorize]
-    [RequestSizeLimit(MaxPhotoSizeBytes)]
+    [RequestSizeLimit(MaxPhotoRequestBytes)]
     [ProducesResponseType(typeof(PersonDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -242,9 +270,9 @@ public class PeopleController : ControllerBase
             var result = await _peopleService.UploadOwnPhotoAsync(stream, file.ContentType, file.Length, cancellationToken);
             return Ok(result);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (TryMapException(ex, out var error))
         {
-            return HandleException(ex);
+            return error;
         }
     }
 
@@ -261,15 +289,17 @@ public class PeopleController : ControllerBase
             var result = await _peopleService.DeleteOwnPhotoAsync(cancellationToken);
             return Ok(result);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (TryMapException(ex, out var error))
         {
-            return HandleException(ex);
+            return error;
         }
     }
 
-    private IActionResult HandleException(Exception ex)
+    // Sólo se capturan las excepciones con una respuesta HTTP definida; el resto sigue su curso
+    // sin perder el stack trace original.
+    private bool TryMapException(Exception ex, out IActionResult result)
     {
-        return ex switch
+        IActionResult? mapped = ex switch
         {
             ValidationException vex => BadRequest(new { message = vex.Message, errors = vex.Errors }),
             NotFoundException nfe => NotFound(new { message = nfe.Message }),
@@ -277,7 +307,10 @@ public class PeopleController : ControllerBase
             ConflictException ce => Conflict(new { message = ce.Message }),
             ArgumentException aex => BadRequest(new { message = aex.Message }),
             InvalidOperationException ioex => Conflict(new { message = ioex.Message }),
-            _ => throw ex
+            _ => null
         };
+
+        result = mapped!;
+        return mapped != null;
     }
 }

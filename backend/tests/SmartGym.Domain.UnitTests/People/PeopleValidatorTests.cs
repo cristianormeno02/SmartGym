@@ -156,4 +156,78 @@ public class PeopleValidatorTests
         var result = _statusValidator.TestValidate(request);
         result.ShouldNotHaveAnyValidationErrors();
     }
+
+    // Valores que superan el largo de las columnas o el formato ISO terminaban en un error de base (500).
+    public static TheoryData<AddressDto> InvalidAddresses => new()
+    {
+        new AddressDto(Country: "Argentina"),
+        new AddressDto(Country: "A1"),
+        new AddressDto(Street: new string('x', 151)),
+        new AddressDto(Number: new string('1', 21)),
+        new AddressDto(Floor: new string('1', 11)),
+        new AddressDto(Apartment: new string('A', 11)),
+        new AddressDto(City: new string('x', 101)),
+        new AddressDto(State: new string('x', 101)),
+        new AddressDto(PostalCode: new string('1', 21))
+    };
+
+    public static TheoryData<EmergencyContactDto> InvalidEmergencyContacts => new()
+    {
+        new EmergencyContactDto(new string('x', 151), "11223344", "Madre"),
+        new EmergencyContactDto("Laura", new string('1', 51), "Madre"),
+        new EmergencyContactDto("Laura", "11223344", new string('x', 51))
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidAddresses))]
+    public void CreatePerson_InvalidAddress_FailsValidation(AddressDto address)
+    {
+        Assert.False(_createValidator.TestValidate(new CreatePersonRequest("Juan", "Pérez", Address: address)).IsValid);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidAddresses))]
+    public void UpdatePerson_InvalidAddress_FailsValidation(AddressDto address)
+    {
+        var validator = new UpdatePersonRequestValidator();
+        Assert.False(validator.TestValidate(new UpdatePersonRequest("Juan", "Pérez", 1, Address: address)).IsValid);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidAddresses))]
+    public void UpdateOwnContact_InvalidAddress_FailsValidation(AddressDto address)
+    {
+        Assert.False(_ownContactValidator.TestValidate(new UpdateOwnContactRequest(Address: address)).IsValid);
+    }
+
+    [Fact]
+    public void CreatePerson_AddressWithIsoCountry_PassesValidation()
+    {
+        var address = new AddressDto("Av. Siempre Viva", "742", City: "Springfield", Country: "ar");
+        _createValidator.TestValidate(new CreatePersonRequest("Juan", "Pérez", Address: address)).ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidEmergencyContacts))]
+    public void CreatePerson_EmergencyContactTooLong_FailsValidation(EmergencyContactDto contact)
+    {
+        Assert.False(_createValidator.TestValidate(new CreatePersonRequest("Juan", "Pérez", EmergencyContact: contact)).IsValid);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidEmergencyContacts))]
+    public void UpdateOwnContact_EmergencyContactTooLong_FailsValidation(EmergencyContactDto contact)
+    {
+        Assert.False(_ownContactValidator.TestValidate(new UpdateOwnContactRequest(EmergencyContact: contact)).IsValid);
+    }
+
+    [Fact]
+    public void CreatePerson_DocumentNumberLongerThanColumn_FailsValidation()
+    {
+        // 51 caracteres tal como se ingresan: el normalizado tiene 9 dígitos, pero el original no entra en la columna.
+        var number = "1" + new string(' ', 42) + "23456789";
+        var request = new CreatePersonRequest("Juan", "Pérez", DocumentType.Dni, number);
+
+        _createValidator.TestValidate(request).ShouldHaveValidationErrorFor(x => x.DocumentNumber);
+    }
 }

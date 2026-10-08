@@ -154,7 +154,7 @@ public class MembershipService : IMembershipService
             m.Status,
             m.IsValidOn(today),
             m.Student?.Document?.Type,
-            m.Student?.Document?.Number ?? m.Student?.Dni
+            m.Student?.Document?.Number
         );
     }
 }

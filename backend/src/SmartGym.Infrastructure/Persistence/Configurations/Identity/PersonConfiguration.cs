@@ -14,9 +14,20 @@ public class PersonConfiguration : IEntityTypeConfiguration<Person>
                 "CK_People_Document_Consistency",
                 "(\"DocumentType\" IS NULL AND \"DocumentIssuingCountry\" IS NULL AND \"DocumentNumber\" IS NULL AND \"DocumentNumberNormalized\" IS NULL) OR " +
                 "(\"DocumentType\" IS NOT NULL AND \"DocumentIssuingCountry\" IS NOT NULL AND \"DocumentNumber\" IS NOT NULL AND \"DocumentNumberNormalized\" IS NOT NULL)");
+
+            // El índice único parcial sólo excluye NULL: un "" persistido colisionaría con cualquier otro "".
+            t.HasCheckConstraint(
+                "CK_People_DocumentNumberNormalized_NotEmpty",
+                "\"DocumentNumberNormalized\" <> ''");
         });
 
         builder.HasKey(p => p.Id);
+
+        // IsActive se deriva de Status: EF escribe la columna leyendo la propiedad, pero al materializar
+        // completa un campo privado para no invocar el setter (que rechaza asignaciones directas).
+        builder.Property(p => p.IsActive)
+            .HasField("_isActiveColumn")
+            .UsePropertyAccessMode(PropertyAccessMode.FieldDuringConstruction);
 
         // Concurrencia optimista con PostgreSQL xmin
         builder.Property(p => p.Version).IsRowVersion();
@@ -135,8 +146,6 @@ public class PersonConfiguration : IEntityTypeConfiguration<Person>
         // Ignored unmapped helper properties
         builder.Ignore(p => p.FullName);
         builder.Ignore(p => p.IsMedicalCertificateValid);
-        builder.Ignore(p => p.PhoneNumber);
-        builder.Ignore(p => p.PhotoUrl);
         builder.Ignore(p => p.Dni);
         builder.Ignore(p => p.EmergencyContactName);
         builder.Ignore(p => p.EmergencyContactPhone);

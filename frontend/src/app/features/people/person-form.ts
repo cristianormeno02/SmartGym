@@ -13,34 +13,50 @@ import {
   UpdatePersonRequest
 } from '../../core/models/person.model';
 
+/**
+ * Replica las reglas de DocumentNormalizer (backend) para dar feedback inmediato.
+ * Devuelve el mensaje de error o null si el documento es válido.
+ */
+export function documentNumberError(
+  type: DocumentType | null | undefined,
+  number: string | null | undefined,
+  issuingCountry: string | null | undefined
+): string | null {
+  if (!type || !number || !number.trim()) return null;
+
+  if (type === DocumentType.Dni) {
+    if (!/^[\d.\-\s]+$/.test(number.trim())) {
+      return 'El DNI sólo admite dígitos, puntos, guiones y espacios.';
+    }
+    const digits = number.replace(/\D/g, '').replace(/^0+/, '');
+    if (digits.length < 1 || digits.length > 9) {
+      return 'El DNI debe tener entre 1 y 9 dígitos y no puede ser cero.';
+    }
+    return null;
+  }
+
+  if (!issuingCountry || !/^[a-zA-Z]{2}$/.test(issuingCountry.trim())) {
+    return 'Indicá el país emisor con su código ISO de 2 letras (por ejemplo BR).';
+  }
+
+  const normalized = number.replace(/[^a-zA-Z0-9]/g, '');
+  if (normalized.length < 3 || normalized.length > 30) {
+    return 'El número debe tener entre 3 y 30 letras o dígitos.';
+  }
+  return null;
+}
+
 export function documentValidator(): ValidatorFn {
   return (control: AbstractControl): ValidationErrors | null => {
     const parent = control.parent;
     if (!parent) return null;
-    const docType = parent.get('documentType')?.value;
-    const docNumber = control.value;
-    const country = parent.get('documentIssuingCountry')?.value || 'AR';
 
-    if (!docNumber) return null;
-
-    if (docType === DocumentType.Dni || docType === 0) {
-      const clean = docNumber.toString().replace(/\D/g, '');
-      if (country === 'AR' && (clean.length < 7 || clean.length > 8)) {
-        return { invalidDni: 'El DNI argentino debe contener 7 u 8 dígitos numéricos.' };
-      }
-      if (clean.length < 5 || clean.length > 10) {
-        return { invalidDni: 'El DNI debe contener entre 5 y 10 dígitos.' };
-      }
-    } else if (docType === DocumentType.Passport || docType === 1) {
-      if (!/^[a-zA-Z0-9]{6,12}$/.test(docNumber)) {
-        return { invalidPassport: 'El pasaporte debe contener entre 6 y 12 caracteres alfanuméricos.' };
-      }
-    } else if (docType === DocumentType.ForeignId || docType === 2) {
-      if (!/^[a-zA-Z0-9]{6,15}$/.test(docNumber)) {
-        return { invalidForeignId: 'La cédula debe contener entre 6 y 15 caracteres alfanuméricos.' };
-      }
-    }
-    return null;
+    const error = documentNumberError(
+      parent.get('documentType')?.value,
+      control.value,
+      parent.get('documentIssuingCountry')?.value
+    );
+    return error ? { invalidDocument: error } : null;
   };
 }
 
@@ -135,7 +151,7 @@ export function isMinor(birthDateStr: string | null | undefined): boolean {
                   <option [ngValue]="null">Sin documento</option>
                   <option [ngValue]="DocumentType.Dni">DNI</option>
                   <option [ngValue]="DocumentType.Passport">Pasaporte</option>
-                  <option [ngValue]="DocumentType.ForeignId">Cédula de Identidad</option>
+                  <option [ngValue]="DocumentType.IdentityCard">Cédula de Identidad</option>
                   <option [ngValue]="DocumentType.Other">Otro</option>
                 </select>
               </div>
@@ -146,10 +162,7 @@ export function isMinor(birthDateStr: string | null | undefined): boolean {
                        class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500 font-mono" />
                 @if (form.get('documentNumber')?.touched && form.get('documentNumber')?.errors) {
                   <p class="text-xs text-rose-400 mt-1">
-                    {{ form.get('documentNumber')?.errors?.['invalidDni'] ||
-                       form.get('documentNumber')?.errors?.['invalidPassport'] ||
-                       form.get('documentNumber')?.errors?.['invalidForeignId'] ||
-                       'Documento no válido' }}
+                    {{ form.get('documentNumber')?.errors?.['invalidDocument'] || 'Documento no válido' }}
                   </p>
                 }
               </div>
@@ -168,7 +181,8 @@ export function isMinor(birthDateStr: string | null | undefined): boolean {
                   <option [ngValue]="null">No especificado</option>
                   <option [ngValue]="Gender.Male">Masculino</option>
                   <option [ngValue]="Gender.Female">Femenino</option>
-                  <option [ngValue]="Gender.Other">Otro</option>
+                  <option [ngValue]="Gender.X">X</option>
+                  <option [ngValue]="Gender.NotInformed">Prefiere no informar</option>
                 </select>
               </div>
 
@@ -403,6 +417,10 @@ export class PersonFormComponent implements OnInit {
     });
 
     this.form.get('documentType')?.valueChanges.subscribe(() => {
+      this.form.get('documentNumber')?.updateValueAndValidity();
+    });
+
+    this.form.get('documentIssuingCountry')?.valueChanges.subscribe(() => {
       this.form.get('documentNumber')?.updateValueAndValidity();
     });
   }

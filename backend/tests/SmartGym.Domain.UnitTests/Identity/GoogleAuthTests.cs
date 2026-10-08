@@ -106,7 +106,7 @@ public class GoogleAuthTests
 
         var updatedUser = await _dbContext.Users.Include(u => u.Person).FirstAsync(u => u.Username == "roberto@example.com");
         Assert.Equal("google_subject_999", updatedUser.GoogleSubjectId);
-        Assert.Equal("https://lh3.googleusercontent.com/photo.jpg", updatedUser.Person.PhotoUrl);
+        Assert.Equal("https://lh3.googleusercontent.com/photo.jpg", updatedUser.Person.ExternalAvatarUrl);
     }
 
     [Fact]
@@ -157,5 +157,34 @@ public class GoogleAuthTests
         // Act & Assert
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
             authService.LoginWithGoogleAsync(new GoogleLoginRequest("invalid_token")));
+    }
+
+    [Theory]
+    [InlineData("Juan Carlos", "", "Juan Carlos Pérez", "Juan Carlos", "Pérez")]
+    [InlineData("", "", "Ana María Gómez", "Ana", "María Gómez")]
+    [InlineData("Lucía", "", "  Lucía   De la Fuente ", "Lucía", "De la Fuente")]
+    [InlineData("Madonna", "", "Madonna", "Madonna", Person.MissingLastNamePlaceholder)]
+    [InlineData("Pedro", "", null, "Pedro", Person.MissingLastNamePlaceholder)]
+    [InlineData("", "", null, "Usuario", Person.MissingLastNamePlaceholder)]
+    public async Task LoginWithGoogleAsync_WithoutFamilyName_DerivesLastNameFromFullName(
+        string givenName, string familyName, string? fullName, string expectedFirstName, string expectedLastName)
+    {
+        var subject = $"google_{Guid.NewGuid():N}";
+        var validator = new TestGoogleTokenValidator(_ => new GoogleAuthPayload(
+            SubjectId: subject,
+            Email: $"{subject}@example.com",
+            GivenName: givenName,
+            FamilyName: familyName,
+            PictureUrl: null,
+            EmailVerified: true,
+            FullName: fullName));
+
+        var authService = new AuthService(_dbContext, _passwordHasher, _jwtTokenGenerator, validator);
+
+        await authService.LoginWithGoogleAsync(new GoogleLoginRequest("token"));
+
+        var person = await _dbContext.Users.Where(u => u.GoogleSubjectId == subject).Select(u => u.Person).SingleAsync();
+        Assert.Equal(expectedFirstName, person.FirstName);
+        Assert.Equal(expectedLastName, person.LastName);
     }
 }

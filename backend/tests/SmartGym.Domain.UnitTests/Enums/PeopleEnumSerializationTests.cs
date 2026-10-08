@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using SmartGym.Application.Modules.People.Dtos;
 using SmartGym.Domain.Enums;
 using Xunit;
 
@@ -7,10 +8,9 @@ namespace SmartGym.Domain.UnitTests.Enums;
 
 public class PeopleEnumSerializationTests
 {
-    private readonly JsonSerializerOptions _jsonOptions = new()
-    {
-        Converters = { new JsonStringEnumConverter() }
-    };
+    // Mismas opciones que usa ASP.NET Core por defecto (sin converters adicionales):
+    // el contrato en español debe salir de los propios tipos, no de una configuración externa.
+    private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
 
     [Theory]
     [InlineData(DocumentType.Dni, "\"DNI\"")]
@@ -52,5 +52,40 @@ public class PeopleEnumSerializationTests
 
         var deserialized = JsonSerializer.Deserialize<PersonStatus>(expectedJson, _jsonOptions);
         Assert.Equal(status, deserialized);
+    }
+
+    [Fact]
+    public void PersonSummaryDto_SerializesEnumsAsSpanishCodes_WithAspNetCoreDefaults()
+    {
+        var dto = new PersonSummaryDto(
+            Guid.NewGuid(), "Ana", "Gómez",
+            new IdentificationDocumentDto(DocumentType.Passport, "A123", "BR", "A123"),
+            null, null, null, PersonStatus.Blocked, false);
+
+        var json = JsonSerializer.Serialize(dto, _jsonOptions);
+
+        Assert.Contains("\"status\":\"BLOQUEADA\"", json);
+        Assert.Contains("\"type\":\"PASAPORTE\"", json);
+    }
+
+    [Fact]
+    public void ChangePersonStatusRequest_DeserializesSpanishCode_WithAspNetCoreDefaults()
+    {
+        var request = JsonSerializer.Deserialize<ChangePersonStatusRequest>(
+            "{\"targetStatus\":\"FALLECIDA\",\"reason\":\"Acta\"}", _jsonOptions);
+
+        Assert.NotNull(request);
+        Assert.Equal(PersonStatus.Deceased, request.TargetStatus);
+    }
+
+    [Theory]
+    [InlineData("3")]
+    [InlineData("\"3\"")]
+    [InlineData("\"Blocked\"")]
+    public void PersonStatus_RejectsNumbersAndCSharpNames(string json)
+    {
+        // Un cliente que envíe el valor numérico (o el nombre interno) debe recibir un error,
+        // no un estado distinto al que pretendía.
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<PersonStatus>(json, _jsonOptions));
     }
 }

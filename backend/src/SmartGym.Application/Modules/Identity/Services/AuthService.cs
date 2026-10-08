@@ -215,7 +215,7 @@ public class AuthService : IAuthService
 
             if (string.IsNullOrEmpty(user.Person.ExternalAvatarUrl) && !string.IsNullOrEmpty(googlePayload.PictureUrl))
             {
-                user.Person.ExternalAvatarUrl = googlePayload.PictureUrl;
+                user.Person.SetExternalAvatarUrl(googlePayload.PictureUrl);
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -239,8 +239,7 @@ public class AuthService : IAuthService
 
         if (person == null)
         {
-            var firstName = string.IsNullOrWhiteSpace(googlePayload.GivenName) ? "Usuario" : googlePayload.GivenName.Trim();
-            var lastName = string.IsNullOrWhiteSpace(googlePayload.FamilyName) ? Person.MissingLastNamePlaceholder : googlePayload.FamilyName.Trim();
+            var (firstName, lastName) = ResolveGoogleNames(googlePayload);
 
             person = Person.Create(
                 firstName,
@@ -251,7 +250,7 @@ public class AuthService : IAuthService
         }
         else if (string.IsNullOrEmpty(person.ExternalAvatarUrl) && !string.IsNullOrEmpty(googlePayload.PictureUrl))
         {
-            person.ExternalAvatarUrl = googlePayload.PictureUrl;
+            person.SetExternalAvatarUrl(googlePayload.PictureUrl);
         }
 
         user = new User
@@ -286,4 +285,40 @@ public class AuthService : IAuthService
 
         return new AuthResponse(newToken, user.Id, person.Id, person.Email, person.FullName, activeRoles);
     }
+
+    // Google no siempre informa family_name: se intenta derivarlo del nombre completo (claim "name")
+    // y, si no es posible, se usa el valor fijo editable para respetar la invariante de apellido no vacío.
+    private static (string FirstName, string LastName) ResolveGoogleNames(GoogleAuthPayload payload)
+    {
+        var givenName = CollapseWhitespace(payload.GivenName);
+        var familyName = CollapseWhitespace(payload.FamilyName);
+        var fullName = CollapseWhitespace(payload.FullName);
+
+        if (familyName.Length > 0)
+        {
+            return (givenName.Length > 0 ? givenName : "Usuario", familyName);
+        }
+
+        if (givenName.Length > 0)
+        {
+            var remainder = fullName.StartsWith(givenName + " ", StringComparison.OrdinalIgnoreCase)
+                ? fullName[(givenName.Length + 1)..]
+                : string.Empty;
+
+            return (givenName, remainder.Length > 0 ? remainder : Person.MissingLastNamePlaceholder);
+        }
+
+        var words = fullName.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        return words.Length switch
+        {
+            2 => (words[0], words[1]),
+            1 => (words[0], Person.MissingLastNamePlaceholder),
+            _ => ("Usuario", Person.MissingLastNamePlaceholder)
+        };
+    }
+
+    private static string CollapseWhitespace(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 }

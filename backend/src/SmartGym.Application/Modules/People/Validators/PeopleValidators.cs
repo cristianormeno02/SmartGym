@@ -42,7 +42,8 @@ public class CreatePersonRequestValidator : AbstractValidator<CreatePersonReques
                 .NotNull().WithMessage("Debe especificar el tipo de documento.");
 
             RuleFor(x => x.DocumentNumber)
-                .NotEmpty().WithMessage("Debe especificar el número de documento.");
+                .NotEmpty().WithMessage("Debe especificar el número de documento.")
+                .MaximumLength(50).WithMessage("El número de documento no puede superar los 50 caracteres.");
 
             RuleFor(x => x)
                 .Must(ValidateDocumentIssuingCountry)
@@ -68,6 +69,13 @@ public class CreatePersonRequestValidator : AbstractValidator<CreatePersonReques
                         (!string.IsNullOrWhiteSpace(ec.Name) && !string.IsNullOrWhiteSpace(ec.Phone) && !string.IsNullOrWhiteSpace(ec.Relationship)))
             .WithMessage("Si se informa un contacto de emergencia, deben completarse nombre, teléfono y vínculo.")
             .When(x => x.EmergencyContact != null && (!x.BirthDate.HasValue || !IsMinor(x.BirthDate.Value)));
+        RuleFor(x => x.Address!)
+            .SetValidator(new AddressDtoValidator())
+            .When(x => x.Address != null);
+
+        RuleFor(x => x.EmergencyContact!)
+            .SetValidator(new EmergencyContactLengthValidator())
+            .When(x => x.EmergencyContact != null);
     }
 
     private static bool HasAnyDocumentField(CreatePersonRequest r) =>
@@ -134,7 +142,8 @@ public class UpdatePersonRequestValidator : AbstractValidator<UpdatePersonReques
                 .NotNull().WithMessage("Debe especificar el tipo de documento.");
 
             RuleFor(x => x.DocumentNumber)
-                .NotEmpty().WithMessage("Debe especificar el número de documento.");
+                .NotEmpty().WithMessage("Debe especificar el número de documento.")
+                .MaximumLength(50).WithMessage("El número de documento no puede superar los 50 caracteres.");
 
             RuleFor(x => x)
                 .Must(ValidateDocumentIssuingCountry)
@@ -158,6 +167,13 @@ public class UpdatePersonRequestValidator : AbstractValidator<UpdatePersonReques
                         (!string.IsNullOrWhiteSpace(ec.Name) && !string.IsNullOrWhiteSpace(ec.Phone) && !string.IsNullOrWhiteSpace(ec.Relationship)))
             .WithMessage("Si se informa un contacto de emergencia, deben completarse nombre, teléfono y vínculo.")
             .When(x => x.EmergencyContact != null && (!x.BirthDate.HasValue || !IsMinor(x.BirthDate.Value)));
+        RuleFor(x => x.Address!)
+            .SetValidator(new AddressDtoValidator())
+            .When(x => x.Address != null);
+
+        RuleFor(x => x.EmergencyContact!)
+            .SetValidator(new EmergencyContactLengthValidator())
+            .When(x => x.EmergencyContact != null);
     }
 
     private static bool HasAnyDocumentField(UpdatePersonRequest r) =>
@@ -205,6 +221,13 @@ public class UpdateOwnContactRequestValidator : AbstractValidator<UpdateOwnConta
                         (!string.IsNullOrWhiteSpace(ec.Name) && !string.IsNullOrWhiteSpace(ec.Phone) && !string.IsNullOrWhiteSpace(ec.Relationship)))
             .WithMessage("Si se informa un contacto de emergencia, deben completarse nombre, teléfono y vínculo.")
             .When(x => x.EmergencyContact != null);
+        RuleFor(x => x.Address!)
+            .SetValidator(new AddressDtoValidator())
+            .When(x => x.Address != null);
+
+        RuleFor(x => x.EmergencyContact!)
+            .SetValidator(new EmergencyContactLengthValidator())
+            .When(x => x.EmergencyContact != null);
     }
 }
 
@@ -228,5 +251,33 @@ public class ChangePersonStatusRequestValidator : AbstractValidator<ChangePerson
         RuleFor(x => x.Reason)
             .MaximumLength(500).WithMessage("El motivo no puede superar los 500 caracteres.")
             .When(x => !string.IsNullOrWhiteSpace(x.Reason));
+    }
+}
+
+public class AddressDtoValidator : AbstractValidator<AddressDto>
+{
+    public AddressDtoValidator()
+    {
+        RuleFor(x => x.Street).MaximumLength(150).WithMessage("La calle no puede superar los 150 caracteres.");
+        RuleFor(x => x.Number).MaximumLength(20).WithMessage("La altura no puede superar los 20 caracteres.");
+        RuleFor(x => x.Floor).MaximumLength(10).WithMessage("El piso no puede superar los 10 caracteres.");
+        RuleFor(x => x.Apartment).MaximumLength(10).WithMessage("El departamento no puede superar los 10 caracteres.");
+        RuleFor(x => x.PostalCode).MaximumLength(20).WithMessage("El código postal no puede superar los 20 caracteres.");
+        RuleFor(x => x.City).MaximumLength(100).WithMessage("La ciudad no puede superar los 100 caracteres.");
+        RuleFor(x => x.State).MaximumLength(100).WithMessage("La provincia no puede superar los 100 caracteres.");
+
+        RuleFor(x => x.Country)
+            .Matches("^[a-zA-Z]{2}$").WithMessage("El país debe indicarse con su código ISO de 2 letras (por ejemplo AR).")
+            .When(x => !string.IsNullOrWhiteSpace(x.Country));
+    }
+}
+
+public class EmergencyContactLengthValidator : AbstractValidator<EmergencyContactDto>
+{
+    public EmergencyContactLengthValidator()
+    {
+        RuleFor(x => x.Name).MaximumLength(150).WithMessage("El nombre del contacto de emergencia no puede superar los 150 caracteres.");
+        RuleFor(x => x.Phone).MaximumLength(50).WithMessage("El teléfono del contacto de emergencia no puede superar los 50 caracteres.");
+        RuleFor(x => x.Relationship).MaximumLength(50).WithMessage("El vínculo del contacto de emergencia no puede superar los 50 caracteres.");
     }
 }

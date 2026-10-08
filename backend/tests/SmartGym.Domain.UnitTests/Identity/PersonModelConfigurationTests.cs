@@ -75,4 +75,15 @@ public class PersonModelConfigurationTests
             i.Properties[1].Name == nameof(Person.FirstName));
         Assert.False(nameIndex.IsUnique);
     }
+
+    [Fact]
+    public void DocumentNormalizedNumber_ShouldHaveNonEmptyCheckConstraint()
+    {
+        // El índice único parcial sólo excluye NULL: un "" persistido colisionaría con cualquier otro "".
+        var model = BuildModel();
+        var personType = model.FindEntityType(typeof(Person))!;
+
+        var check = Assert.Single(personType.GetCheckConstraints(), c => c.ModelName == "CK_People_DocumentNumberNormalized_NotEmpty");
+        Assert.Contains("\"DocumentNumberNormalized\" <> ''", check.Sql);
+    }
 }

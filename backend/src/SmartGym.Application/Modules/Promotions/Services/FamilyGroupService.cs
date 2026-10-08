@@ -126,7 +126,7 @@ public class FamilyGroupService : IFamilyGroupService
                 m.Relationship,
                 m.CreatedAtUtc,
                 m.Person?.Document?.Type,
-                m.Person?.Document?.Number ?? m.Person?.Dni
+                m.Person?.Document?.Number
             )).ToList(),
             g.IsActive
         );

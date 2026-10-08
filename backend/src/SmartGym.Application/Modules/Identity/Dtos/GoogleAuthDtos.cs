@@ -6,7 +6,8 @@ public record GoogleAuthPayload(
     string GivenName,
     string FamilyName,
     string? PictureUrl,
-    bool EmailVerified
+    bool EmailVerified,
+    string? FullName = null
 );
 
 public record GoogleLoginRequest(

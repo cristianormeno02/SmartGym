@@ -3,7 +3,7 @@ import { provideRouter, Router } from '@angular/router';
 import { ActivatedRoute } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { PersonFormComponent, isMinor } from './person-form';
+import { PersonFormComponent, isMinor, documentNumberError } from './person-form';
 import { PeopleService } from '../../core/services/people.service';
 import { DocumentType, Gender, PersonStatus } from '../../core/models/person.model';
 
@@ -53,42 +53,48 @@ describe('PersonFormComponent', () => {
     expect(component.form.valid).toBe(false); // firstName and lastName are required
   });
 
-  it('should validate Argentine DNI correctly', () => {
-    const docNumberCtrl = component.form.get('documentNumber');
-    component.form.patchValue({
-      documentType: DocumentType.Dni,
-      documentIssuingCountry: 'AR'
+  describe('documentNumberError (mismas reglas que DocumentNormalizer del backend)', () => {
+    it.each([
+      ['12.345.678'],
+      ['12-345-678'],
+      ['01.234.567'],
+      ['1234'],
+      ['123 456 789']
+    ])('acepta el DNI %s', (value) => {
+      expect(documentNumberError(DocumentType.Dni, value, null)).toBeNull();
     });
 
-    // Invalid: only 4 digits
-    docNumberCtrl?.setValue('1234');
-    expect(docNumberCtrl?.valid).toBe(false);
+    it.each([
+      ['12345678A'],
+      ['---'],
+      ['000'],
+      ['1234567890']
+    ])('rechaza el DNI %s', (value) => {
+      expect(documentNumberError(DocumentType.Dni, value, null)).not.toBeNull();
+    });
 
-    // Invalid: letters
-    docNumberCtrl?.setValue('ABCDEF');
-    expect(docNumberCtrl?.valid).toBe(false);
+    it('acepta el pasaporte con letras y separadores del escenario del spec', () => {
+      expect(documentNumberError(DocumentType.Passport, ' a-123.456-x ', 'BR')).toBeNull();
+    });
 
-    // Valid: 8 digits
-    docNumberCtrl?.setValue('35123456');
-    expect(docNumberCtrl?.valid).toBe(true);
+    it('rechaza un número que queda con menos de 3 caracteres tras normalizar', () => {
+      expect(documentNumberError(DocumentType.IdentityCard, 'A-1', 'UY')).not.toBeNull();
+    });
 
-    // Valid: formatted with dots
-    docNumberCtrl?.setValue('35.123.456');
-    expect(docNumberCtrl?.valid).toBe(true);
+    it.each([[null], [''], ['BRA'], ['1A']])('exige país emisor de 2 letras para documentos no DNI (%s)', (country) => {
+      expect(documentNumberError(DocumentType.Other, 'ABC123', country)).not.toBeNull();
+    });
   });
 
-  it('should validate passport correctly', () => {
+  it('marca inválido el número de pasaporte si falta el país emisor', () => {
     const docNumberCtrl = component.form.get('documentNumber');
-    component.form.patchValue({
-      documentType: DocumentType.Passport
-    });
+    component.form.patchValue({ documentType: DocumentType.Passport, documentIssuingCountry: '' });
 
-    // Too short
-    docNumberCtrl?.setValue('AB12');
+    docNumberCtrl?.setValue('A1234567');
     expect(docNumberCtrl?.valid).toBe(false);
 
-    // Valid 8 chars
-    docNumberCtrl?.setValue('A1234567');
+    component.form.patchValue({ documentIssuingCountry: 'BR' });
+    docNumberCtrl?.updateValueAndValidity();
     expect(docNumberCtrl?.valid).toBe(true);
   });
 

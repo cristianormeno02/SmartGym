@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using SmartGym.Domain.Entities.Identity;
 using SmartGym.Domain.Enums;
 using Xunit;
@@ -33,12 +34,22 @@ public class PersonDomainTests
     }
 
     [Fact]
-    public void Create_MinorWithoutCompleteEmergencyContact_ThrowsInvalidOperationException()
+    public void Create_MinorWithoutCompleteEmergencyContact_ThrowsArgumentException()
     {
+        // Es un error de validación (400), no un conflicto de estado (409).
         var minorBirthDate = DateTime.UtcNow.AddYears(-15);
 
-        Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<ArgumentException>(() =>
             Person.Create("Carlitos", "Tevez", null, minorBirthDate));
+    }
+
+    [Fact]
+    public void UpdatePersonalData_BecomingMinorWithoutEmergencyContact_ThrowsArgumentException()
+    {
+        var person = Person.Create("Carlitos", "Tevez");
+
+        Assert.Throws<ArgumentException>(() =>
+            person.UpdatePersonalData("Carlitos", "Tevez", null, DateTime.UtcNow.AddYears(-15)));
     }
 
     [Fact]
@@ -194,5 +205,71 @@ public class PersonDomainTests
 
         Assert.Throws<InvalidOperationException>(() =>
             person.ClearProfileImage());
+    }
+
+    [Theory]
+    [InlineData(PersonStatus.Inactive, null)]
+    [InlineData(PersonStatus.Blocked, "Sanción")]
+    public void IsActive_IsDerivedFromStatus(PersonStatus target, string? reason)
+    {
+        var person = Person.Create("Ana", "Gómez");
+        Assert.True(person.IsActive);
+
+        person.ChangeStatus(target, reason, Guid.NewGuid(), isAdmin: false);
+
+        Assert.False(person.IsActive);
+    }
+
+    [Fact]
+    public void IsActive_CannotBeAssignedDirectly()
+    {
+        // Asignarlo saltearía la máquina de estados y dejaría Status e IsActive desincronizados.
+        var person = Person.Create("Ana", "Gómez");
+
+        Assert.Throws<InvalidOperationException>(() => person.IsActive = false);
+    }
+
+    [Fact]
+    public async Task IsActive_AfterLoadingFromDatabase_MatchesStatus()
+    {
+        var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<SmartGym.Infrastructure.Persistence.SmartGymDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var person = Person.Create("Ana", "Gómez");
+        person.ChangeStatus(PersonStatus.Blocked, "Sanción", Guid.NewGuid(), isAdmin: false);
+
+        await using (var writeContext = new SmartGym.Infrastructure.Persistence.SmartGymDbContext(options))
+        {
+            writeContext.People.Add(person);
+            await writeContext.SaveChangesAsync();
+        }
+
+        await using var readContext = new SmartGym.Infrastructure.Persistence.SmartGymDbContext(options);
+        var loaded = await readContext.People.SingleAsync(p => p.Id == person.Id);
+        var blockedQueriedAsInactive = await readContext.People.CountAsync(p => p.Id == person.Id && !p.IsActive);
+
+        Assert.Equal(PersonStatus.Blocked, loaded.Status);
+        Assert.False(loaded.IsActive);
+        Assert.Equal(1, blockedQueriedAsInactive);
+    }
+
+    [Fact]
+    public void SetExternalAvatarUrl_TrimsAndClears()
+    {
+        var person = Person.Create("Ana", "Gómez");
+
+        person.SetExternalAvatarUrl("  https://lh3.googleusercontent.com/a.jpg ");
+        Assert.Equal("https://lh3.googleusercontent.com/a.jpg", person.ExternalAvatarUrl);
+
+        person.SetExternalAvatarUrl("   ");
+        Assert.Null(person.ExternalAvatarUrl);
+    }
+
+    [Theory]
+    [InlineData("Argentina")]
+    [InlineData("A1")]
+    public void Address_WithNonIsoCountry_ThrowsArgumentException(string country)
+    {
+        Assert.Throws<ArgumentException>(() => Address.Create("Calle", "1", null, null, null, null, null, country));
     }
 }

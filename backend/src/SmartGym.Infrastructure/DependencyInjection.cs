@@ -46,7 +46,9 @@ public static class DependencyInjection
             services.AddSingleton<IFileStorageService, S3StorageService>();
         }
 
-        services.AddSingleton<IProfileImageProcessor, ProfileImageProcessor>();
+        var imageProcessor = new ProfileImageProcessor();
+        services.AddSingleton<IProfileImageProcessor>(imageProcessor);
+        services.AddSingleton<IImageProcessor>(imageProcessor);
 
         // Authentication & JWT Services
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
