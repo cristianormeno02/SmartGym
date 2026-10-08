@@ -43,6 +43,11 @@ public class ReservationService : IReservationService
             throw new InvalidOperationException($"No se pueden realizar reservas para una clase en estado {session.Status}.");
         }
 
+        if (session.Activity.Status != ActivityStatus.Active)
+        {
+            throw new InvalidOperationException($"La actividad '{session.Activity.Name}' no está disponible para reservas.");
+        }
+
         // 2. Obtener alumno
         var student = await _dbContext.People
             .Include(p => p.PersonRoles)

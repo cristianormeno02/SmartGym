@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   Activity,
+  PublicActivity,
   Room,
   RecurringSchedule,
   ClassSession,
@@ -26,9 +27,24 @@ export class GymApiService {
   private readonly apiUrl = 'http://localhost:5000/api';
 
   // --- Actividades y Salas ---
-  getActivities(onlyEnabled = true): Observable<Activity[]> {
-    const params = new HttpParams().set('onlyEnabled', onlyEnabled);
-    return this.http.get<Activity[]>(`${this.apiUrl}/activities`, { params });
+  getPublicActivities(age?: number): Observable<PublicActivity[]> {
+    let params = new HttpParams();
+    if (age !== undefined && age !== null) {
+      params = params.set('age', age.toString());
+    }
+    return this.http.get<PublicActivity[]>(`${this.apiUrl}/public/activities`, { params });
+  }
+
+  getPublicActivity(code: string): Observable<PublicActivity> {
+    return this.http.get<PublicActivity>(`${this.apiUrl}/public/activities/${encodeURIComponent(code)}`);
+  }
+
+  getActivities(search?: string, status?: number, age?: number): Observable<any> {
+    let params = new HttpParams();
+    if (search) params = params.set('search', search);
+    if (status !== undefined) params = params.set('status', status.toString());
+    if (age !== undefined) params = params.set('age', age.toString());
+    return this.http.get<any>(`${this.apiUrl}/activities`, { params });
   }
 
   getActivity(id: string): Observable<Activity> {

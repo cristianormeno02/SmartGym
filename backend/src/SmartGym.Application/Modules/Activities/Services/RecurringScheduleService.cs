@@ -95,7 +95,7 @@ public class RecurringScheduleService : IRecurringScheduleService
             RoomId = request.RoomId,
             InstructorId = request.InstructorId,
             DayOfWeek = request.DayOfWeek,
-            MaxCapacity = request.MaxCapacity ?? activity.MaxCapacity,
+            MaxCapacity = activity.ResolveCapacity(request.MaxCapacity),
             CreatedAtUtc = DateTime.UtcNow,
             IsActive = true
         };
@@ -122,6 +122,13 @@ public class RecurringScheduleService : IRecurringScheduleService
             .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
 
         if (schedule == null) return null;
+
+        if (request.IsActive && schedule.Activity.Status != ActivityStatus.Active)
+        {
+            throw new InvalidOperationException("No se puede mantener activo un horario de una actividad que no está activa.");
+        }
+
+        var resolvedCapacity = schedule.Activity.ResolveCapacity(request.MaxCapacity);
 
         var room = await _dbContext.Rooms.FirstOrDefaultAsync(r => r.Id == request.RoomId && r.IsActive, cancellationToken);
         if (room == null)
@@ -151,7 +158,7 @@ public class RecurringScheduleService : IRecurringScheduleService
         schedule.RoomId = request.RoomId;
         schedule.InstructorId = request.InstructorId;
         schedule.DayOfWeek = request.DayOfWeek;
-        schedule.MaxCapacity = request.MaxCapacity ?? schedule.Activity.MaxCapacity;
+        schedule.MaxCapacity = resolvedCapacity;
         schedule.IsActive = request.IsActive;
         schedule.UpdatedAtUtc = DateTime.UtcNow;
 

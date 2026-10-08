@@ -10,8 +10,8 @@ public class MembershipPlanTests
     public void MembershipPlan_ShouldInitializeValid_WithCustomRules()
     {
         // Arrange
-        var activity1 = new Activity { Id = Guid.NewGuid(), Name = "Funcional" };
-        var activity2 = new Activity { Id = Guid.NewGuid(), Name = "Spinning" };
+        var activity1 = new Activity("FUNCIONAL", "Funcional");
+        var activity2 = new Activity("SPINNING", "Spinning");
 
         // Act
         var plan = new MembershipPlan

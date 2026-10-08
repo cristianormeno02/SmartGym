@@ -57,7 +57,7 @@ public class ReservationServiceLockingTests
         student.AddRole(studentRole);
         var instructor = Person.Create("Florencia", "Inst", "flor@example.com", document: IdentificationDocument.Create(DocumentType.Dni, "30000002"));
         var room = new Room { Id = Guid.NewGuid(), Name = "Indoor", Capacity = 20 };
-        var activity = new Activity { Id = Guid.NewGuid(), Name = "Funcional", MaxCapacity = 10 };
+        var activity = new Activity("FUNCIONAL", "Funcional", defaultCapacity: 10);
         var classDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(3));
 
         var session = new ClassSession

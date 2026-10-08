@@ -7,20 +7,35 @@ export interface Room {
   isActive: boolean;
 }
 
-export interface Activity {
-  id: string;
+export interface PublicActivity {
+  code: string;
   name: string;
-  summary?: string;
+  shortDescription?: string;
   description?: string;
-  minCapacity: number;
-  maxCapacity: number;
-  logoUrl?: string;
-  imageUrls: string[];
-  status: number;
+  equipmentNotes?: string;
+  colorHex?: string;
   minAge?: number;
   maxAge?: number;
-  defaultRoomId?: string;
-  defaultRoomName?: string;
+  logoUrl?: string;
+  primaryImageUrl?: string;
+  galleryImageUrls: string[];
+}
+
+export interface Activity {
+  id: string;
+  code: string;
+  name: string;
+  shortDescription?: string;
+  description?: string;
+  equipmentNotes?: string;
+  colorHex?: string;
+  defaultCapacity?: number;
+  minAge?: number;
+  maxAge?: number;
+  status: number;
+  logoUrl?: string;
+  primaryImageUrl?: string;
+  createdAtUtc?: string;
   isActive: boolean;
 }
 

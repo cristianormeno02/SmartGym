@@ -2,7 +2,7 @@ namespace SmartGym.Domain.Enums;
 
 public enum ActivityStatus
 {
-    Enabled = 1,
-    Disabled = 2,
+    Active = 1,
+    Inactive = 2,
     Archived = 3
 }

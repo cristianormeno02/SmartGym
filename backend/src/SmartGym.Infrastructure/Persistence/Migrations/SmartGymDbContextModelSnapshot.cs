@@ -28,37 +28,36 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("ColorHex")
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid?>("DefaultRoomId")
-                        .HasColumnType("uuid");
+                    b.Property<int?>("DefaultCapacity")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Description")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
-                    b.Property<string>("ImageUrls")
-                        .IsRequired()
-                        .HasColumnType("text");
+                    b.Property<string>("EquipmentNotes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
-                    b.Property<string>("LogoUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
                     b.Property<int?>("MaxAge")
                         .HasColumnType("integer");
 
-                    b.Property<int>("MaxCapacity")
-                        .HasColumnType("integer");
-
                     b.Property<int?>("MinAge")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("MinCapacity")
                         .HasColumnType("integer");
 
                     b.Property<string>("Name")
@@ -66,21 +65,124 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
-                    b.Property<string>("Summary")
+                    b.Property<string>("ShortDescription")
                         .HasMaxLength(250)
                         .HasColumnType("character varying(250)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("DefaultRoomId");
+                    b.HasIndex("Code")
+                        .IsUnique();
 
-                    b.ToTable("Activities", (string)null);
+                    b.HasIndex("Status");
+
+                    b.ToTable("Activities", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Activities_Age", "(\"MinAge\" IS NULL OR \"MinAge\" >= 0) AND (\"MaxAge\" IS NULL OR \"MaxAge\" >= 0) AND (\"MinAge\" IS NULL OR \"MaxAge\" IS NULL OR \"MinAge\" <= \"MaxAge\")");
+
+                            t.HasCheckConstraint("CK_Activities_Capacity", "\"DefaultCapacity\" IS NULL OR \"DefaultCapacity\" > 0");
+
+                            t.HasCheckConstraint("CK_Activities_Code_Format", "\"Code\" ~ '^[A-Z0-9_]{3,50}$'");
+
+                            t.HasCheckConstraint("CK_Activities_ColorHex", "\"ColorHex\" IS NULL OR \"ColorHex\" ~ '^#[0-9A-F]{6}$'");
+
+                            t.HasCheckConstraint("CK_Activities_Status_IsActive", "(\"Status\" = 1 AND \"IsActive\" = TRUE) OR (\"Status\" <> 1 AND \"IsActive\" = FALSE)");
+                        });
+                });
+
+            modelBuilder.Entity("SmartGym.Domain.Entities.Activities.ActivityMedia", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ActivityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Height")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsPrimary")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("ObjectKey")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("OriginalFileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("SortOrder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ObjectKey")
+                        .IsUnique();
+
+                    b.HasIndex("ActivityId", "SortOrder");
+
+                    b.HasIndex(new[] { "ActivityId" }, "IX_ActivityMedias_ActivityId_IsPrimary")
+                        .IsUnique()
+                        .HasFilter("\"IsPrimary\" = TRUE AND \"Type\" = 2");
+
+                    b.HasIndex(new[] { "ActivityId" }, "IX_ActivityMedias_ActivityId_Logo")
+                        .IsUnique()
+                        .HasFilter("\"Type\" = 1");
+
+                    b.ToTable("ActivityMedias", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ActivityMedias_LogoNotPrimary", "\"Type\" = 2 OR \"IsPrimary\" = FALSE");
+
+                            t.HasCheckConstraint("CK_ActivityMedias_SizeBytes", "\"SizeBytes\" > 0");
+                        });
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Activities.ClassSession", b =>
@@ -1109,14 +1211,15 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.ToTable("Reservations", (string)null);
                 });
 
-            modelBuilder.Entity("SmartGym.Domain.Entities.Activities.Activity", b =>
+            modelBuilder.Entity("SmartGym.Domain.Entities.Activities.ActivityMedia", b =>
                 {
-                    b.HasOne("SmartGym.Domain.Entities.Activities.Room", "DefaultRoom")
-                        .WithMany("Activities")
-                        .HasForeignKey("DefaultRoomId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                    b.HasOne("SmartGym.Domain.Entities.Activities.Activity", "Activity")
+                        .WithMany("Media")
+                        .HasForeignKey("ActivityId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
-                    b.Navigation("DefaultRoom");
+                    b.Navigation("Activity");
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Activities.ClassSession", b =>
@@ -1440,7 +1543,7 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.HasOne("SmartGym.Domain.Entities.Activities.Activity", "Activity")
                         .WithMany()
                         .HasForeignKey("ActivityId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("SmartGym.Domain.Entities.Memberships.MembershipPlan", "MembershipPlan")
@@ -1596,9 +1699,9 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.Navigation("Student");
                 });
 
-            modelBuilder.Entity("SmartGym.Domain.Entities.Activities.Room", b =>
+            modelBuilder.Entity("SmartGym.Domain.Entities.Activities.Activity", b =>
                 {
-                    b.Navigation("Activities");
+                    b.Navigation("Media");
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Identity.Person", b =>

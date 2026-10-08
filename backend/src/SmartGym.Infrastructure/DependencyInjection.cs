@@ -46,6 +46,19 @@ public static class DependencyInjection
             services.AddSingleton<IFileStorageService, S3StorageService>();
         }
 
+        // Public Storage Configuration
+        services.Configure<PublicS3StorageOptions>(configuration.GetSection(PublicS3StorageOptions.SectionName));
+        var publicS3Options = configuration.GetSection(PublicS3StorageOptions.SectionName).Get<PublicS3StorageOptions>() ?? new PublicS3StorageOptions();
+
+        if (publicS3Options.UseLocalStorage)
+        {
+            services.AddSingleton<IPublicFileStorageService, LocalPublicStorageService>();
+        }
+        else
+        {
+            services.AddSingleton<IPublicFileStorageService, PublicS3StorageService>();
+        }
+
         var imageProcessor = new ProfileImageProcessor();
         services.AddSingleton<IProfileImageProcessor>(imageProcessor);
         services.AddSingleton<IImageProcessor>(imageProcessor);

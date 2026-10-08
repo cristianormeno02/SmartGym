@@ -7,8 +7,17 @@ public class NotFoundException : Exception
 
 public class ConflictException : Exception
 {
-    public ConflictException(string message) : base(message) { }
-    public ConflictException(string message, Exception innerException) : base(message, innerException) { }
+    public object? Details { get; }
+
+    public ConflictException(string message, object? details = null) : base(message)
+    {
+        Details = details;
+    }
+
+    public ConflictException(string message, Exception innerException, object? details = null) : base(message, innerException)
+    {
+        Details = details;
+    }
 }
 
 public class ForbiddenException : Exception

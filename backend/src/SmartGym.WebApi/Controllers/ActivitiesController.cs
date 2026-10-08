@@ -1,32 +1,36 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using SmartGym.Application.Common.Interfaces;
+using SmartGym.Application.Common.Exceptions;
 using SmartGym.Application.Common.Security;
 using SmartGym.Application.Modules.Activities.Dtos;
 using SmartGym.Application.Modules.Activities.Services;
+using SmartGym.Domain.Enums;
 
 namespace SmartGym.WebApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Policy = Policies.RequireStaff)]
 public class ActivitiesController : ControllerBase
 {
     private readonly IActivityService _activityService;
-    private readonly IFileStorageService _fileStorageService;
 
-    public ActivitiesController(
-        IActivityService activityService,
-        IFileStorageService fileStorageService)
+    public ActivitiesController(IActivityService activityService)
     {
         _activityService = activityService;
-        _fileStorageService = fileStorageService;
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] bool onlyEnabled = false, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetPaged(
+        [FromQuery] string? search,
+        [FromQuery] ActivityStatus? status,
+        [FromQuery] int? age,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        CancellationToken cancellationToken = default)
     {
-        var activities = await _activityService.GetAllAsync(onlyEnabled, cancellationToken);
-        return Ok(activities);
+        var result = await _activityService.GetPagedAsync(search, status, age, page, pageSize, cancellationToken);
+        return Ok(result);
     }
 
     [HttpGet("{id:guid}")]
@@ -35,20 +39,39 @@ public class ActivitiesController : ControllerBase
         var activity = await _activityService.GetByIdAsync(id, cancellationToken);
         if (activity == null)
         {
-            return NotFound(new { message = "Actividad no encontrada." });
+            return NotFound(new { message = $"Actividad con ID '{id}' no encontrada." });
+        }
+
+        return Ok(activity);
+    }
+
+    [HttpGet("by-code/{code}")]
+    public async Task<IActionResult> GetByCode(string code, CancellationToken cancellationToken)
+    {
+        var activity = await _activityService.GetByCodeAsync(code, cancellationToken);
+        if (activity == null)
+        {
+            return NotFound(new { message = $"Actividad con código '{code}' no encontrada." });
         }
 
         return Ok(activity);
     }
 
     [HttpPost]
-    [Authorize(Policy = Policies.RequireStaff)]
     public async Task<IActionResult> Create([FromBody] CreateActivityRequest request, CancellationToken cancellationToken)
     {
         try
         {
             var created = await _activityService.CreateAsync(request, cancellationToken);
             return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { message = ex.Message, errors = ex.Errors });
+        }
+        catch (ConflictException ex)
+        {
+            return Conflict(new { message = ex.Message, details = ex.Details });
         }
         catch (ArgumentException ex)
         {
@@ -57,18 +80,24 @@ public class ActivitiesController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    [Authorize(Policy = Policies.RequireStaff)]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateActivityRequest request, CancellationToken cancellationToken)
     {
         try
         {
             var updated = await _activityService.UpdateAsync(id, request, cancellationToken);
-            if (updated == null)
-            {
-                return NotFound(new { message = "Actividad no encontrada." });
-            }
-
             return Ok(updated);
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { message = ex.Message, errors = ex.Errors });
+        }
+        catch (ConflictException ex)
+        {
+            return Conflict(new { message = ex.Message, details = ex.Details });
         }
         catch (ArgumentException ex)
         {
@@ -76,102 +105,151 @@ public class ActivitiesController : ControllerBase
         }
     }
 
+    [HttpPatch("{id:guid}/status")]
+    public async Task<IActionResult> ChangeStatus(Guid id, [FromBody] ChangeActivityStatusRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var changed = await _activityService.ChangeStatusAsync(id, request, cancellationToken);
+            return Ok(new { changed });
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ConflictException ex)
+        {
+            return Conflict(new { message = ex.Message, details = ex.Details });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     [HttpDelete("{id:guid}")]
-    [Authorize(Policy = Policies.RequireStaff)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var deleted = await _activityService.DeleteAsync(id, cancellationToken);
-        if (!deleted)
+        try
         {
-            return NotFound(new { message = "Actividad no encontrada." });
+            await _activityService.DeleteAsync(id, cancellationToken);
+            return NoContent();
         }
-
-        return NoContent();
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ConflictException ex)
+        {
+            return Conflict(new { message = ex.Message, details = ex.Details });
+        }
     }
 
-    [HttpPost("{id:guid}/logo")]
-    [Authorize(Policy = Policies.RequireStaff)]
-    public async Task<IActionResult> UploadLogo(Guid id, IFormFile file, CancellationToken cancellationToken)
+    [HttpGet("{id:guid}/media")]
+    public async Task<IActionResult> GetMedia(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var media = await _activityService.GetMediaAsync(id, cancellationToken);
+            return Ok(media);
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("{id:guid}/media")]
+    public async Task<IActionResult> UploadMedia(
+        Guid id,
+        IFormFile file,
+        [FromForm] ActivityMediaType type,
+        CancellationToken cancellationToken)
     {
         if (file == null || file.Length == 0)
         {
             return BadRequest(new { message = "Archivo no proporcionado o vacío." });
         }
 
-        var activity = await _activityService.GetByIdAsync(id, cancellationToken);
-        if (activity == null)
+        try
         {
-            return NotFound(new { message = "Actividad no encontrada." });
+            await using var stream = file.OpenReadStream();
+            var uploaded = await _activityService.UploadMediaAsync(
+                id,
+                stream,
+                file.FileName,
+                file.ContentType,
+                file.Length,
+                type,
+                cancellationToken);
+
+            return CreatedAtAction(nameof(GetMedia), new { id }, uploaded);
         }
-
-        await using var stream = file.OpenReadStream();
-        var logoUrl = await _fileStorageService.UploadFileAsync(
-            stream,
-            file.FileName,
-            file.ContentType,
-            "activities/logos",
-            cancellationToken);
-
-        var updateRequest = new UpdateActivityRequest(
-            activity.Name,
-            activity.Summary,
-            activity.Description,
-            activity.MinCapacity,
-            activity.MaxCapacity,
-            logoUrl,
-            activity.ImageUrls,
-            activity.Status,
-            activity.MinAge,
-            activity.MaxAge,
-            activity.DefaultRoomId,
-            activity.IsActive
-        );
-
-        var updated = await _activityService.UpdateAsync(id, updateRequest, cancellationToken);
-        return Ok(updated);
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (ConflictException ex)
+        {
+            return Conflict(new { message = ex.Message, details = ex.Details });
+        }
     }
 
-    [HttpPost("{id:guid}/images")]
-    [Authorize(Policy = Policies.RequireStaff)]
-    public async Task<IActionResult> UploadImage(Guid id, IFormFile file, CancellationToken cancellationToken)
+    [HttpDelete("{id:guid}/media/{mediaId:guid}")]
+    public async Task<IActionResult> DeleteMedia(Guid id, Guid mediaId, CancellationToken cancellationToken)
     {
-        if (file == null || file.Length == 0)
+        try
         {
-            return BadRequest(new { message = "Archivo no proporcionado o vacío." });
+            await _activityService.DeleteMediaAsync(id, mediaId, cancellationToken);
+            return NoContent();
         }
-
-        var activity = await _activityService.GetByIdAsync(id, cancellationToken);
-        if (activity == null)
+        catch (NotFoundException ex)
         {
-            return NotFound(new { message = "Actividad no encontrada." });
+            return NotFound(new { message = ex.Message });
         }
+    }
 
-        await using var stream = file.OpenReadStream();
-        var imageUrl = await _fileStorageService.UploadFileAsync(
-            stream,
-            file.FileName,
-            file.ContentType,
-            "activities/gallery",
-            cancellationToken);
+    [HttpPatch("{id:guid}/media/{mediaId:guid}/primary")]
+    public async Task<IActionResult> SetPrimaryMedia(Guid id, Guid mediaId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _activityService.SetPrimaryMediaAsync(id, mediaId, cancellationToken);
+            return Ok(new { message = "Imagen principal actualizada." });
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (ConflictException ex)
+        {
+            return Conflict(new { message = ex.Message, details = ex.Details });
+        }
+    }
 
-        var updatedImages = new List<string>(activity.ImageUrls) { imageUrl };
-
-        var updateRequest = new UpdateActivityRequest(
-            activity.Name,
-            activity.Summary,
-            activity.Description,
-            activity.MinCapacity,
-            activity.MaxCapacity,
-            activity.LogoUrl,
-            updatedImages,
-            activity.Status,
-            activity.MinAge,
-            activity.MaxAge,
-            activity.DefaultRoomId,
-            activity.IsActive
-        );
-
-        var updated = await _activityService.UpdateAsync(id, updateRequest, cancellationToken);
-        return Ok(updated);
+    [HttpPatch("{id:guid}/media/sort")]
+    public async Task<IActionResult> SortMedia(Guid id, [FromBody] SortActivityMediaRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _activityService.SortMediaAsync(id, request, cancellationToken);
+            return Ok(new { message = "Orden de medios actualizado." });
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 }

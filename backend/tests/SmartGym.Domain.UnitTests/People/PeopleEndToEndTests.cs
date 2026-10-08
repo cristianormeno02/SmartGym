@@ -199,7 +199,7 @@ public class PeopleEndToEndTests : IDisposable
 
         // Configurar clase y actividad
         var room = new Room { Id = Guid.NewGuid(), Name = "Sala A", Capacity = 20 };
-        var activity = new Activity { Id = Guid.NewGuid(), Name = "CrossFit", MaxCapacity = 15 };
+        var activity = new Activity("CROSSFIT", "CrossFit", defaultCapacity: 15);
         var instructor = Person.Create("Coach", "Fitness", "coach@gym.com");
         var classSession = new ClassSession
         {

@@ -90,4 +90,32 @@ public class FileStorageTests
             Directory.Delete(root, recursive: true);
         }
     }
+
+    [Fact]
+    public void LocalPublicStorageService_GetPublicUrl_WithPublicBaseUrl_ReturnsComposedUrl()
+    {
+        var options = Options.Create(new PublicS3StorageOptions
+        {
+            PublicBaseUrl = "https://cdn.smartgym.com"
+        });
+
+        var service = new LocalPublicStorageService(options);
+        var url = service.GetPublicUrl("activities/gallery/photo.webp");
+
+        Assert.Equal("https://cdn.smartgym.com/activities/gallery/photo.webp", url);
+    }
+
+    [Fact]
+    public void LocalPublicStorageService_GetPublicUrl_WithoutBaseUrl_ReturnsRelativePublicMedia()
+    {
+        var options = Options.Create(new PublicS3StorageOptions
+        {
+            PublicBaseUrl = ""
+        });
+
+        var service = new LocalPublicStorageService(options);
+        var url = service.GetPublicUrl("activities/gallery/photo.webp");
+
+        Assert.Equal("/public-media/activities/gallery/photo.webp", url);
+    }
 }

@@ -23,6 +23,7 @@ public class SmartGymDbContext : DbContext, ISmartGymDbContext
     public DbSet<PersonRole> PersonRoles => Set<PersonRole>();
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<Activity> Activities => Set<Activity>();
+    public DbSet<ActivityMedia> ActivityMedias => Set<ActivityMedia>();
     public DbSet<RecurringSchedule> RecurringSchedules => Set<RecurringSchedule>();
     public DbSet<ClassSession> ClassSessions => Set<ClassSession>();
     public DbSet<MembershipPlan> MembershipPlans => Set<MembershipPlan>();

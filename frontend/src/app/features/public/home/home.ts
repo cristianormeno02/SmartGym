@@ -2,7 +2,7 @@ import { Component, inject, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { GymApiService } from '../../../core/services/gym-api.service';
-import { Activity, MembershipPlan } from '../../../core/models/gym.models';
+import { PublicActivity, MembershipPlan } from '../../../core/models/gym.models';
 
 @Component({
   selector: 'app-home',
@@ -47,21 +47,35 @@ import { Activity, MembershipPlan } from '../../../core/models/gym.models';
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-            @for (act of activities(); track act.id) {
-              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 hover:border-cyan-500/40 transition shadow-sm flex flex-col justify-between">
-                <div>
-                  <div class="flex items-center justify-between mb-4">
-                    <span class="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-md bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                      {{ act.defaultRoomName || 'Sala Multiuso' }}
-                    </span>
-                    <span class="text-xs text-slate-400 font-medium">Cupo: {{ act.minCapacity }}-{{ act.maxCapacity }}</span>
+            @for (act of activities(); track act.code) {
+              <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-cyan-500/40 transition shadow-sm flex flex-col justify-between">
+                @if (act.primaryImageUrl) {
+                  <div class="h-40 w-full overflow-hidden bg-slate-950">
+                    <img [src]="act.primaryImageUrl" [alt]="act.name" class="w-full h-full object-cover" />
                   </div>
-                  <h3 class="text-xl font-bold text-white mb-2">{{ act.name }}</h3>
-                  <p class="text-sm text-slate-400 line-clamp-3 mb-4">{{ act.summary || act.description }}</p>
-                </div>
-                <div class="pt-4 border-t border-slate-800/80 flex justify-between items-center text-xs text-slate-400">
-                  <span>Edades: {{ act.minAge || 14 }} a {{ act.maxAge || 70 }} años</span>
-                  <a routerLink="/horarios" class="text-cyan-400 font-semibold hover:underline">Horarios</a>
+                }
+                <div class="p-6 flex-1 flex flex-col justify-between">
+                  <div>
+                    <div class="flex items-center justify-between mb-4">
+                      <div class="flex items-center gap-2">
+                        @if (act.colorHex) {
+                          <span class="w-2.5 h-2.5 rounded-full inline-block" [style.background-color]="act.colorHex"></span>
+                        }
+                        <span class="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-md bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                          {{ act.code }}
+                        </span>
+                      </div>
+                      @if (act.logoUrl) {
+                        <img [src]="act.logoUrl" [alt]="act.name" class="w-6 h-6 object-contain rounded" />
+                      }
+                    </div>
+                    <h3 class="text-xl font-bold text-white mb-2">{{ act.name }}</h3>
+                    <p class="text-sm text-slate-400 line-clamp-3 mb-4">{{ act.shortDescription || act.description }}</p>
+                  </div>
+                  <div class="pt-4 border-t border-slate-800/80 flex justify-between items-center text-xs text-slate-400">
+                    <span>Edades: {{ act.minAge || 14 }} a {{ act.maxAge || 70 }} años</span>
+                    <a routerLink="/horarios" class="text-cyan-400 font-semibold hover:underline">Horarios</a>
+                  </div>
                 </div>
               </div>
             }
@@ -116,11 +130,11 @@ import { Activity, MembershipPlan } from '../../../core/models/gym.models';
 export class HomeComponent implements OnInit {
   private readonly gymApi = inject(GymApiService);
 
-  readonly activities = signal<Activity[]>([]);
+  readonly activities = signal<PublicActivity[]>([]);
   readonly plans = signal<MembershipPlan[]>([]);
 
   ngOnInit(): void {
-    this.gymApi.getActivities(true).subscribe({
+    this.gymApi.getPublicActivities().subscribe({
       next: (acts) => this.activities.set(acts.slice(0, 3)),
       error: () => this.activities.set([])
     });

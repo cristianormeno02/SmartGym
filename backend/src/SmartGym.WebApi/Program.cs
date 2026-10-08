@@ -27,6 +27,12 @@ if (storageOptions.UseLocalStorage)
 {
     app.UseStaticFiles(LocalAvatarStaticFiles.CreateOptions(LocalStorageService.DefaultRootPath));
 }
+
+var publicStorageOptions = builder.Configuration.GetSection(PublicS3StorageOptions.SectionName).Get<PublicS3StorageOptions>() ?? new PublicS3StorageOptions();
+if (publicStorageOptions.UseLocalStorage)
+{
+    app.UseStaticFiles(LocalPublicStaticFiles.CreateOptions(LocalPublicStorageService.DefaultRootPath));
+}
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

@@ -15,6 +15,7 @@ public interface ISmartGymDbContext
     DbSet<PersonRole> PersonRoles { get; }
     DbSet<Room> Rooms { get; }
     DbSet<Activity> Activities { get; }
+    DbSet<ActivityMedia> ActivityMedias { get; }
     DbSet<RecurringSchedule> RecurringSchedules { get; }
     DbSet<ClassSession> ClassSessions { get; }
     DbSet<MembershipPlan> MembershipPlans { get; }

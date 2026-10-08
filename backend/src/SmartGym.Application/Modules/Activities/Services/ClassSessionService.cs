@@ -41,6 +41,14 @@ public class ClassSessionService : IClassSessionService
         }
 
         var schedules = await schedulesQuery.ToListAsync(cancellationToken);
+
+        // Solo se generan clases para actividades activas
+        if (recurringScheduleId.HasValue && schedules.Any(s => s.Activity.Status != ActivityStatus.Active))
+        {
+            throw new InvalidOperationException("No se pueden generar clases para un horario de una actividad que no está activa.");
+        }
+
+        schedules = schedules.Where(s => s.Activity.Status == ActivityStatus.Active).ToList();
         if (!schedules.Any())
         {
             return 0;
@@ -76,7 +84,7 @@ public class ClassSessionService : IClassSessionService
                             Date = date,
                             StartTime = schedule.StartTime,
                             EndTime = schedule.EndTime,
-                            MaxCapacity = schedule.MaxCapacity ?? schedule.Activity?.MaxCapacity ?? 20,
+                            MaxCapacity = schedule.MaxCapacity ?? schedule.Activity.ResolveCapacity(null),
                             ReservedCount = 0,
                             AttendedCount = 0,
                             Status = ClassSessionStatus.Scheduled,
@@ -198,7 +206,7 @@ public class ClassSessionService : IClassSessionService
             Date = request.Date,
             StartTime = request.StartTime,
             EndTime = request.EndTime,
-            MaxCapacity = request.MaxCapacity > 0 ? request.MaxCapacity : activity.MaxCapacity,
+            MaxCapacity = activity.ResolveCapacity(request.MaxCapacity > 0 ? request.MaxCapacity : null),
             ReservedCount = 0,
             AttendedCount = 0,
             Status = ClassSessionStatus.Scheduled,

@@ -20,6 +20,6 @@ public class MembershipPlanActivityConfiguration : IEntityTypeConfiguration<Memb
         builder.HasOne(pa => pa.Activity)
             .WithMany()
             .HasForeignKey(pa => pa.ActivityId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

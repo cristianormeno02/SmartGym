@@ -8,6 +8,8 @@ public record ImageProcessingProfile(
 )
 {
     public static readonly ImageProcessingProfile Profile = new(5 * 1024 * 1024, 1024);
+    public static readonly ImageProcessingProfile ActivityLogo = new(2 * 1024 * 1024, 512);
+    public static readonly ImageProcessingProfile ActivityGallery = new(5 * 1024 * 1024, 1920);
 }
 
 public interface IImageProcessor
