@@ -60,20 +60,19 @@ public class ReservationServiceLockingTests
         var activity = new Activity("FUNCIONAL", "Funcional", defaultCapacity: 10);
         var classDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(3));
 
-        var session = new ClassSession
-        {
-            Id = _sessionId,
-            ActivityId = activity.Id,
-            Activity = activity,
-            RoomId = room.Id,
-            Room = room,
-            InstructorId = instructor.Id,
-            Instructor = instructor,
-            Date = classDate,
-            StartTime = new TimeOnly(8, 30),
-            EndTime = new TimeOnly(9, 30),
-            MaxCapacity = 10
-        };
+        var starts = DateTime.UtcNow.AddDays(3).Date.AddHours(8).AddMinutes(30);
+        var ends = starts.AddHours(1);
+
+        var session = ClassSession.CreateExtraordinary(
+            activity.Id,
+            room.Id,
+            starts,
+            ends,
+            10,
+            instructor.Id,
+            secretaryId: null);
+        typeof(ClassSession).GetProperty("Id")!.SetValue(session, _sessionId);
+        session.Open(DateTime.UtcNow);
 
         var plan = new MembershipPlan { Id = Guid.NewGuid(), Name = "Mensual 8", Credits = 8, Price = 1000 };
         var membership = new Membership
@@ -83,8 +82,8 @@ public class ReservationServiceLockingTests
             Student = student,
             MembershipPlanId = plan.Id,
             MembershipPlan = plan,
-            StartDate = classDate.AddDays(-10),
-            EndDate = classDate.AddDays(10),
+            StartDate = DateOnly.FromDateTime(starts).AddDays(-10),
+            EndDate = DateOnly.FromDateTime(starts).AddDays(10),
             TotalCredits = 8,
             AvailableCredits = 8
         };
@@ -93,7 +92,10 @@ public class ReservationServiceLockingTests
         seed.SaveChanges();
 
         _dbContext = new LockSpyDbContext(options);
-        _service = new ReservationService(_dbContext);
+        var calendar = new SmartGym.Application.Common.GymCalendar(
+            Microsoft.Extensions.Options.Options.Create(new SmartGym.Application.Common.GymOptions { TimeZoneId = "UTC" }),
+            TimeProvider.System);
+        _service = new ReservationService(_dbContext, calendar);
     }
 
     [Fact]

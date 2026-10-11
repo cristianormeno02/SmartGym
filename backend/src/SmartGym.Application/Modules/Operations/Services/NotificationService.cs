@@ -9,10 +9,12 @@ namespace SmartGym.Application.Modules.Operations.Services;
 public class NotificationService : INotificationService
 {
     private readonly ISmartGymDbContext _dbContext;
+    private readonly SmartGym.Application.Common.IGymCalendar _gymCalendar;
 
-    public NotificationService(ISmartGymDbContext dbContext)
+    public NotificationService(ISmartGymDbContext dbContext, SmartGym.Application.Common.IGymCalendar gymCalendar)
     {
         _dbContext = dbContext;
+        _gymCalendar = gymCalendar;
     }
 
     public async Task<List<NotificationDto>> GetNotificationsForPersonAsync(Guid personId, bool onlyUnread = false, CancellationToken cancellationToken = default)
@@ -89,14 +91,15 @@ public class NotificationService : INotificationService
                        (r.Status == ReservationStatus.Reserved || r.Status == ReservationStatus.Confirmed || r.Status == ReservationStatus.WaitList))
             .ToListAsync(cancellationToken);
 
+        var localStart = _gymCalendar.ToLocal(session.StartsAtUtc);
         var notifications = reservations.Select(r => new NotificationMessage
         {
             Id = Guid.NewGuid(),
             RecipientPersonId = r.StudentId,
             Type = NotificationType.ClassSuspended,
             Channel = NotificationChannel.InApp,
-            Title = $"Clase Suspendida: {session.Activity?.Name ?? "Actividad"} ({session.Date:dd/MM})",
-            Body = $"Te informamos que la clase de {session.Activity?.Name ?? "actividad"} del día {session.Date:dd/MM} a las {session.StartTime:HH:mm} ha sido suspendida. Motivo: {reason}. Se ha reintegrado/compensado el crédito correspondiente.",
+            Title = $"Clase Suspendida: {session.Activity?.Name ?? "Actividad"} ({localStart:dd/MM})",
+            Body = $"Te informamos que la clase de {session.Activity?.Name ?? "actividad"} del día {localStart:dd/MM} a las {localStart:HH:mm} ha sido suspendida. Motivo: {reason}. Se ha reintegrado/compensado el crédito correspondiente.",
             IsRead = false,
             SentAtUtc = DateTime.UtcNow,
             CreatedAtUtc = DateTime.UtcNow,

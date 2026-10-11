@@ -41,6 +41,11 @@ public class RecurringScheduleTests
         Assert.True(schedule.OccursOn(new DateOnly(2026, 5, 4))); // Monday in range
         Assert.False(schedule.OccursOn(new DateOnly(2026, 5, 5))); // Tuesday in range
         Assert.False(schedule.OccursOn(new DateOnly(2026, 2, 23))); // Monday before ValidFrom
+        Assert.Null(schedule.SecretaryId);
+
+        var secretaryId = Guid.NewGuid();
+        schedule.SecretaryId = secretaryId;
+        Assert.Equal(secretaryId, schedule.SecretaryId);
     }
 
     [Fact]

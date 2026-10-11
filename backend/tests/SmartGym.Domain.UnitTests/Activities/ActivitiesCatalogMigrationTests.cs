@@ -66,4 +66,38 @@ public class ActivitiesCatalogMigrationTests
         Assert.Contains(operations.OfType<AddColumnOperation>(),
             op => op.Table == "Activities" && op.Name == "LogoUrl");
     }
+
+    private static string DataMigrationSql() =>
+        Assert.Single(UpOperations().OfType<SqlOperation>(),
+            op => op.Sql.Contains("\"Code\"") && op.Sql.Contains("\"NormalizedName\"")).Sql;
+
+    [Fact]
+    public void Up_PadsGeneratedCodeWithoutTruncatingItToThreeCharacters()
+    {
+        // En PostgreSQL RPAD(x, 3, '_') también trunca x a 3 caracteres ("Spinning" -> "SPI").
+        var sql = DataMigrationSql();
+
+        Assert.DoesNotMatch(@"RPAD\((?:(?!RPAD\().)*,\s*3,\s*'_'\s*\)", sql.ReplaceLineEndings(" "));
+        Assert.Contains("GREATEST(LENGTH(", sql);
+    }
+
+    [Fact]
+    public void Up_SuffixesDuplicateCodesWithDoubleUnderscoreSoTheyCannotCollideWithGeneratedCodes()
+    {
+        // Los códigos base colapsan '_+' a '_', así que "YOGA__2" nunca coincide con el de "Yoga 2" ("YOGA_2").
+        var sql = DataMigrationSql();
+
+        Assert.Contains("'__' || r.Seq", sql);
+        Assert.DoesNotContain("r.RawCode || '_' || r.Seq", sql);
+    }
+
+    [Fact]
+    public void Up_NormalizesNameLikeTextNormalizer()
+    {
+        // Debe coincidir con TextNormalizer.NormalizeForSearch: sin diacríticos, minúsculas y espacios colapsados.
+        var sql = DataMigrationSql();
+
+        Assert.Contains("unaccent(", sql);
+        Assert.Contains(@"'\s+', ' ', 'g'", sql);
+    }
 }

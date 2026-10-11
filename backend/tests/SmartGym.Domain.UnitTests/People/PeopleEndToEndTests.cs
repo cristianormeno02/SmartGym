@@ -93,7 +93,10 @@ public class PeopleEndToEndTests : IDisposable
             _mockGoogleTokenValidator.Object
         );
 
-        _reservationService = new ReservationService(_dbContext);
+        var calendar = new SmartGym.Application.Common.GymCalendar(
+            Microsoft.Extensions.Options.Options.Create(new SmartGym.Application.Common.GymOptions { TimeZoneId = "UTC" }),
+            TimeProvider.System);
+        _reservationService = new ReservationService(_dbContext, calendar);
     }
 
     public void Dispose()
@@ -201,20 +204,17 @@ public class PeopleEndToEndTests : IDisposable
         var room = new Room { Id = Guid.NewGuid(), Name = "Sala A", Capacity = 20 };
         var activity = new Activity("CROSSFIT", "CrossFit", defaultCapacity: 15);
         var instructor = Person.Create("Coach", "Fitness", "coach@gym.com");
-        var classSession = new ClassSession
-        {
-            Id = Guid.NewGuid(),
-            ActivityId = activity.Id,
-            Activity = activity,
-            RoomId = room.Id,
-            Room = room,
-            InstructorId = instructor.Id,
-            Instructor = instructor,
-            Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)),
-            StartTime = new TimeOnly(10, 0),
-            EndTime = new TimeOnly(11, 0),
-            MaxCapacity = 15
-        };
+        var starts = DateTime.UtcNow.Date.AddDays(1).AddHours(10);
+        var ends = starts.AddHours(1);
+        var classSession = ClassSession.CreateExtraordinary(
+            activity.Id,
+            room.Id,
+            starts,
+            ends,
+            15,
+            instructor.Id,
+            secretaryId: null);
+        classSession.Open(DateTime.UtcNow);
         _dbContext.AddRange(room, activity, instructor, classSession);
         await _dbContext.SaveChangesAsync();
 

@@ -9,10 +9,12 @@ namespace SmartGym.Application.Modules.Memberships.Services;
 public class CreditLedgerService : ICreditLedgerService
 {
     private readonly ISmartGymDbContext _dbContext;
+    private readonly SmartGym.Application.Common.IGymCalendar _gymCalendar;
 
-    public CreditLedgerService(ISmartGymDbContext dbContext)
+    public CreditLedgerService(ISmartGymDbContext dbContext, SmartGym.Application.Common.IGymCalendar gymCalendar)
     {
         _dbContext = dbContext;
+        _gymCalendar = gymCalendar;
     }
 
     public async Task<List<CreditMovementDto>> GetMovementsByStudentAsync(Guid studentId, CancellationToken cancellationToken = default)
@@ -125,7 +127,7 @@ public class CreditLedgerService : ICreditLedgerService
             Amount = 1,
             BalanceAfter = 1,
             Reason = string.IsNullOrWhiteSpace(request.Reason)
-                ? $"Pase individual para la clase de {session.Activity?.Name ?? "actividad"} ({session.Date:yyyy-MM-dd})"
+                ? $"Pase individual para la clase de {session.Activity?.Name ?? "actividad"} ({_gymCalendar.ToLocal(session.StartsAtUtc):yyyy-MM-dd})"
                 : request.Reason.Trim(),
             PerformedByUserId = performedByUserId,
             CreatedAtUtc = DateTime.UtcNow,

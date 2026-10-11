@@ -14,6 +14,9 @@ public class RecurringSchedule : BaseEntity
     public Guid InstructorId { get; set; }
     public Person Instructor { get; set; } = null!;
 
+    public Guid? SecretaryId { get; set; }
+    public Person? Secretary { get; set; }
+
     public DayOfWeek DayOfWeek { get; set; }
     public TimeOnly StartTime { get; set; }
     public TimeOnly EndTime { get; set; }

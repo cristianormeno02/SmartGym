@@ -294,12 +294,14 @@ public class ActivityService : IActivityService
         {
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
+            var utcNow = DateTime.UtcNow;
+
             var activeSchedulesCount = await _dbContext.RecurringSchedules
                 .CountAsync(s => s.ActivityId == id && s.IsActive && (!s.ValidTo.HasValue || s.ValidTo.Value >= today), cancellationToken);
 
             var futureSessionsCount = await _dbContext.ClassSessions
-                .CountAsync(cs => cs.ActivityId == id && cs.Date >= today &&
-                    (cs.Status == ClassSessionStatus.Scheduled || cs.Status == ClassSessionStatus.InProgress), cancellationToken);
+                .CountAsync(cs => cs.ActivityId == id && cs.EndsAtUtc > utcNow &&
+                    (cs.Status == ClassSessionStatus.Scheduled || cs.Status == ClassSessionStatus.Open), cancellationToken);
 
             if (activeSchedulesCount > 0 || futureSessionsCount > 0)
             {
@@ -352,6 +354,8 @@ public class ActivityService : IActivityService
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
+        var utcNow = DateTime.UtcNow;
+
         var activeSchedules = await _dbContext.RecurringSchedules
             .CountAsync(s => s.ActivityId == id && s.IsActive && (!s.ValidTo.HasValue || s.ValidTo.Value >= today), cancellationToken);
 
@@ -359,8 +363,8 @@ public class ActivityService : IActivityService
             .CountAsync(s => s.ActivityId == id, cancellationToken);
 
         var futureSessions = await _dbContext.ClassSessions
-            .CountAsync(cs => cs.ActivityId == id && cs.Date >= today &&
-                (cs.Status == ClassSessionStatus.Scheduled || cs.Status == ClassSessionStatus.InProgress), cancellationToken);
+            .CountAsync(cs => cs.ActivityId == id && cs.EndsAtUtc > utcNow &&
+                (cs.Status == ClassSessionStatus.Scheduled || cs.Status == ClassSessionStatus.Open), cancellationToken);
 
         var totalSessions = await _dbContext.ClassSessions
             .CountAsync(cs => cs.ActivityId == id, cancellationToken);

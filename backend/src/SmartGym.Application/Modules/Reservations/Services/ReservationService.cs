@@ -11,10 +11,12 @@ namespace SmartGym.Application.Modules.Reservations.Services;
 public class ReservationService : IReservationService
 {
     private readonly ISmartGymDbContext _dbContext;
+    private readonly SmartGym.Application.Common.IGymCalendar _gymCalendar;
 
-    public ReservationService(ISmartGymDbContext dbContext)
+    public ReservationService(ISmartGymDbContext dbContext, SmartGym.Application.Common.IGymCalendar gymCalendar)
     {
         _dbContext = dbContext;
+        _gymCalendar = gymCalendar;
     }
 
     public async Task<ReservationDto> CreateReservationAsync(
@@ -38,9 +40,14 @@ public class ReservationService : IReservationService
             throw new ArgumentException("La clase especificada no existe o no está activa.");
         }
 
-        if (session.Status != ClassSessionStatus.Scheduled)
+        if (session.Status != ClassSessionStatus.Open)
         {
             throw new InvalidOperationException($"No se pueden realizar reservas para una clase en estado {session.Status}.");
+        }
+
+        if (DateTime.UtcNow >= session.StartsAtUtc)
+        {
+            throw new InvalidOperationException("No se pueden realizar reservas para una clase que ya ha iniciado o pasado.");
         }
 
         if (session.Activity.Status != ActivityStatus.Active)
@@ -87,12 +94,12 @@ public class ReservationService : IReservationService
         }
 
         // 5. Verificar membresía o pase individual disponible
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var sessionLocalDate = DateOnly.FromDateTime(_gymCalendar.ToLocal(session.StartsAtUtc).DateTime);
         var activeMembership = await _dbContext.Memberships
             .Include(m => m.MembershipPlan)
                 .ThenInclude(p => p.AllowedActivities)
             .Where(m => m.StudentId == student.Id && m.IsActive && m.Status == MembershipStatus.Active)
-            .Where(m => m.StartDate <= session.Date && session.Date <= m.EndDate)
+            .Where(m => m.StartDate <= sessionLocalDate && sessionLocalDate <= m.EndDate)
             .OrderByDescending(m => m.EndDate)
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -102,7 +109,7 @@ public class ReservationService : IReservationService
         // 6. Control de cupos y resolución de estado
         Reservation reservation;
 
-        if (session.ReservedCount < session.MaxCapacity)
+        if (session.ReservedCount < session.Capacity)
         {
             // Hay cupo disponible en sala
             if (activeMembership != null)
@@ -112,7 +119,7 @@ public class ReservationService : IReservationService
                     throw new InvalidOperationException($"El plan '{activeMembership.MembershipPlan.Name}' no incluye la actividad '{session.Activity.Name}'.");
                 }
 
-                creditMovement = activeMembership.DeductCredit(session.Id, $"Reserva de clase: {session.Activity.Name}", session.Date);
+                creditMovement = activeMembership.DeductCredit(session.Id, $"Reserva de clase: {session.Activity.Name}", sessionLocalDate);
                 _dbContext.MembershipCreditMovements.Add(creditMovement);
                 membershipId = activeMembership.Id;
             }
@@ -134,7 +141,7 @@ public class ReservationService : IReservationService
                 creditMovement = ticket;
             }
 
-            session.ReservedCount++;
+            session.IncrementReservedCount();
 
             reservation = new Reservation
             {
@@ -221,8 +228,7 @@ public class ReservationService : IReservationService
         var wasInWaitList = reservation.Status == ReservationStatus.WaitList;
 
         // Evaluación de política de cancelación (ventana límite de 2 horas)
-        var sessionStartDateTime = session.Date.ToDateTime(session.StartTime);
-        var hoursRemaining = (sessionStartDateTime - DateTime.UtcNow).TotalHours;
+        var hoursRemaining = (session.StartsAtUtc - DateTime.UtcNow).TotalHours;
         var isLateCancellation = hoursRemaining < 2.0;
 
         Guid? refundMovementId = null;
@@ -237,10 +243,7 @@ public class ReservationService : IReservationService
                 refundMovementId = refundMovement.Id;
             }
 
-            if (session.ReservedCount > 0)
-            {
-                session.ReservedCount--;
-            }
+            session.DecrementReservedCount();
 
             // Promoción automática del primero en lista de espera si existiere
             var firstInWaitList = await _dbContext.Reservations
@@ -253,14 +256,15 @@ public class ReservationService : IReservationService
             {
                 if (firstInWaitList.Membership != null && firstInWaitList.Membership.HasAvailableCredit())
                 {
-                    var debitMovement = firstInWaitList.Membership.DeductCredit(session.Id, "Promoción de lista de espera a reserva confirmada", session.Date);
+                    var localDate = DateOnly.FromDateTime(_gymCalendar.ToLocal(session.StartsAtUtc).DateTime);
+                    var debitMovement = firstInWaitList.Membership.DeductCredit(session.Id, "Promoción de lista de espera a reserva confirmada", localDate);
                     _dbContext.MembershipCreditMovements.Add(debitMovement);
                     firstInWaitList.CreditMovementId = debitMovement.Id;
                 }
 
                 firstInWaitList.Status = ReservationStatus.Reserved;
                 firstInWaitList.WaitListPosition = null;
-                session.ReservedCount++;
+                session.IncrementReservedCount();
             }
         }
 
@@ -301,7 +305,7 @@ public class ReservationService : IReservationService
         }
 
         reservation.MarkAttended(request.Source, currentUserId);
-        reservation.ClassSession.AttendedCount++;
+        reservation.ClassSession.IncrementAttendedCount();
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -380,26 +384,41 @@ public class ReservationService : IReservationService
         }
 
         var attendees = await GetByClassSessionAsync(classSessionId, cancellationToken);
+        var localStart = _gymCalendar.ToLocal(session.StartsAtUtc);
 
         return new SessionAttendanceSummaryDto(
             session.Id,
             session.Activity?.Name ?? string.Empty,
-            session.Date,
-            session.MaxCapacity,
+            DateOnly.FromDateTime(localStart.DateTime),
+            session.Capacity,
             session.ReservedCount,
             session.AttendedCount,
             attendees
         );
     }
 
-    private static ReservationDto MapToDto(Reservation r) =>
-        new(
+    private ReservationDto MapToDto(Reservation r)
+    {
+        DateOnly classDate = DateOnly.MinValue;
+        TimeOnly startTime = TimeOnly.MinValue;
+        TimeOnly endTime = TimeOnly.MinValue;
+
+        if (r.ClassSession != null)
+        {
+            var localStart = _gymCalendar.ToLocal(r.ClassSession.StartsAtUtc);
+            var localEnd = _gymCalendar.ToLocal(r.ClassSession.EndsAtUtc);
+            classDate = DateOnly.FromDateTime(localStart.DateTime);
+            startTime = TimeOnly.FromDateTime(localStart.DateTime);
+            endTime = TimeOnly.FromDateTime(localEnd.DateTime);
+        }
+
+        return new(
             r.Id,
             r.ClassSessionId,
             r.ClassSession?.Activity?.Name ?? string.Empty,
-            r.ClassSession?.Date ?? DateOnly.MinValue,
-            r.ClassSession?.StartTime ?? TimeOnly.MinValue,
-            r.ClassSession?.EndTime ?? TimeOnly.MinValue,
+            classDate,
+            startTime,
+            endTime,
             r.ClassSession?.Room?.Name ?? string.Empty,
             r.StudentId,
             r.Student?.FullName ?? string.Empty,
@@ -417,4 +436,5 @@ public class ReservationService : IReservationService
             r.Student?.Document?.Type,
             r.Student?.Document?.Number
         );
+    }
 }

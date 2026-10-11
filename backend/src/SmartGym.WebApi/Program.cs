@@ -7,6 +7,29 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddOpenApi();
+
+builder.Services.AddOptions<SmartGym.Application.Common.GymOptions>()
+    .Bind(builder.Configuration.GetSection(SmartGym.Application.Common.GymOptions.SectionName))
+    .ValidateDataAnnotations()
+    .Validate(opts =>
+    {
+        try
+        {
+            TimeZoneInfo.FindSystemTimeZoneById(opts.TimeZoneId);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }, "TimeZoneId must be a valid IANA or Windows TimeZone identifier")
+    .ValidateOnStart();
+
+builder.Services.AddOptions<SmartGym.Application.Common.ClassSessionsOptions>()
+    .Bind(builder.Configuration.GetSection(SmartGym.Application.Common.ClassSessionsOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddControllers();

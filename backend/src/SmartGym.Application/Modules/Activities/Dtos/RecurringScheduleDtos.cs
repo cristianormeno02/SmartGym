@@ -8,19 +8,23 @@ public record RecurringScheduleDto(
     string RoomName,
     Guid InstructorId,
     string InstructorName,
+    Guid? SecretaryId,
+    string? SecretaryName,
     DayOfWeek DayOfWeek,
     TimeOnly StartTime,
     TimeOnly EndTime,
     DateOnly ValidFrom,
     DateOnly? ValidTo,
     int? MaxCapacity,
-    bool IsActive
+    bool IsActive,
+    IReadOnlyList<Guid>? DivergentSessionIds = null
 );
 
 public record CreateRecurringScheduleRequest(
     Guid ActivityId,
     Guid RoomId,
     Guid InstructorId,
+    Guid? SecretaryId,
     DayOfWeek DayOfWeek,
     TimeOnly StartTime,
     TimeOnly EndTime,
@@ -32,6 +36,7 @@ public record CreateRecurringScheduleRequest(
 public record UpdateRecurringScheduleRequest(
     Guid RoomId,
     Guid InstructorId,
+    Guid? SecretaryId,
     DayOfWeek DayOfWeek,
     TimeOnly StartTime,
     TimeOnly EndTime,

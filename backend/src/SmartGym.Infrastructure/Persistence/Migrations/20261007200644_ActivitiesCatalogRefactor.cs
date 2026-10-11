@@ -112,35 +112,32 @@ UPDATE ""Activities""
 SET ""DefaultCapacity"" = ""MaxCapacity""
 WHERE ""MaxCapacity"" > 0;
 
--- Normalizar NormalizedName (minúsculas, sin acentos / diacríticos)
+-- Normalizar NormalizedName igual que TextNormalizer.NormalizeForSearch (sin diacríticos, minúsculas, espacios colapsados)
 UPDATE ""Activities""
-SET ""NormalizedName"" = LOWER(
-    TRANSLATE(
-        TRIM(""Name""),
-        'ÁÉÍÓÚÜáéíóúüÑñ',
-        'aeiouuaeiouunn'
-    )
-);
+SET ""NormalizedName"" = LOWER(REGEXP_REPLACE(unaccent(TRIM(""Name"")), '\s+', ' ', 'g'));
 
--- Generar Code inicial desde Name: mayúsculas, transliteración, solo alfanuméricos y guión bajo
-WITH GeneratedCodes AS (
+-- Generar Code inicial desde Name: mayúsculas, transliteración, solo alfanuméricos y guión bajo.
+-- Se limita a 44 caracteres para dejar lugar al sufijo de duplicados ('__' + hasta 4 dígitos).
+WITH BaseCodes AS (
     SELECT
         ""Id"",
         ""CreatedAtUtc"",
-        RPAD(
-            SUBSTRING(
+        SUBSTRING(
+            REGEXP_REPLACE(
                 REGEXP_REPLACE(
-                    REGEXP_REPLACE(
-                        UPPER(TRANSLATE(TRIM(""Name""), 'ÁÉÍÓÚÜÑ', 'AEIOUUN')),
-                        '[^A-Z0-9]', '_', 'g'
-                    ),
-                    '_+', '_', 'g'
+                    UPPER(unaccent(TRIM(""Name""))),
+                    '[^A-Z0-9]', '_', 'g'
                 ),
-                1, 46
+                '_+', '_', 'g'
             ),
-            3, '_'
-        ) AS RawCode
+            1, 44
+        ) AS BaseCode
     FROM ""Activities""
+),
+GeneratedCodes AS (
+    -- RPAD trunca si el largo es menor al del texto: solo se rellenan los códigos de menos de 3 caracteres
+    SELECT ""Id"", ""CreatedAtUtc"", RPAD(BaseCode, GREATEST(LENGTH(BaseCode), 3), '_') AS RawCode
+    FROM BaseCodes
 ),
 RankedCodes AS (
     SELECT
@@ -152,7 +149,8 @@ RankedCodes AS (
 UPDATE ""Activities"" a
 SET ""Code"" = CASE
     WHEN r.Seq = 1 THEN r.RawCode
-    ELSE r.RawCode || '_' || r.Seq
+    -- '__' nunca aparece en un código generado de 4+ caracteres (se colapsó '_+'), así que el sufijo no colisiona
+    ELSE r.RawCode || '__' || r.Seq
 END
 FROM RankedCodes r
 WHERE a.""Id"" = r.""Id"";

@@ -18,6 +18,7 @@ public interface ISmartGymDbContext
     DbSet<ActivityMedia> ActivityMedias { get; }
     DbSet<RecurringSchedule> RecurringSchedules { get; }
     DbSet<ClassSession> ClassSessions { get; }
+    DbSet<ClassSessionStaffChange> ClassSessionStaffChanges { get; }
     DbSet<MembershipPlan> MembershipPlans { get; }
     DbSet<MembershipPlanActivity> MembershipPlanActivities { get; }
     DbSet<Membership> Memberships { get; }
@@ -38,6 +39,17 @@ public interface ISmartGymDbContext
     /// concurrentes que modifican su cupo. Debe invocarse dentro de una transacción y antes de leer la clase.
     /// </summary>
     Task LockClassSessionForUpdateAsync(Guid classSessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Difiere las exclusiones de solapamiento de sala e instructor hasta el fin de la transacción actual.
+    /// Necesario cuando un mismo guardado inserta una clase y libera el horario de otra (reprogramación).
+    /// </summary>
+    Task DeferClassSessionOverlapConstraintsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Verifica de inmediato las restricciones diferidas, para que una violación surja antes del COMMIT.
+    /// </summary>
+    Task EnforceDeferredConstraintsAsync(CancellationToken cancellationToken = default);
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

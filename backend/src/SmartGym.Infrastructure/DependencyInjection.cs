@@ -122,7 +122,13 @@ public static class DependencyInjection
 
             options.AddPolicy(Policies.RequireTeachingAndStaff, policy =>
                 policy.RequireRole(Roles.Administrator, Roles.Secretary, Roles.Instructor));
+
+            options.AddPolicy(Policies.RequireAllAuthenticated, policy =>
+                policy.RequireAuthenticatedUser());
         });
+
+        // Background Workers
+        services.AddHostedService<SmartGym.Infrastructure.Services.BackgroundJobs.ClassSessionGenerationWorker>();
 
         return services;
     }

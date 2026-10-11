@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SmartGym.Application.Common.Interfaces;
 using SmartGym.Application.Modules.Activities.Dtos;
 using SmartGym.Domain.Entities.Activities;
+using SmartGym.Domain.Entities.Identity;
 using SmartGym.Domain.Enums;
 
 namespace SmartGym.Application.Modules.Activities.Services;
@@ -9,10 +10,14 @@ namespace SmartGym.Application.Modules.Activities.Services;
 public class RecurringScheduleService : IRecurringScheduleService
 {
     private readonly ISmartGymDbContext _dbContext;
+    private readonly IClassSessionScheduleSync _scheduleSync;
 
-    public RecurringScheduleService(ISmartGymDbContext dbContext)
+    public RecurringScheduleService(
+        ISmartGymDbContext dbContext,
+        IClassSessionScheduleSync scheduleSync)
     {
         _dbContext = dbContext;
+        _scheduleSync = scheduleSync;
     }
 
     public async Task<List<RecurringScheduleDto>> GetAllAsync(
@@ -24,6 +29,7 @@ public class RecurringScheduleService : IRecurringScheduleService
             .Include(s => s.Activity)
             .Include(s => s.Room)
             .Include(s => s.Instructor)
+            .Include(s => s.Secretary)
             .AsNoTracking()
             .Where(s => s.IsActive);
 
@@ -42,7 +48,7 @@ public class RecurringScheduleService : IRecurringScheduleService
             .ThenBy(s => s.StartTime)
             .ToListAsync(cancellationToken);
 
-        return list.Select(MapToDto).ToList();
+        return list.Select(s => MapToDto(s)).ToList();
     }
 
     public async Task<RecurringScheduleDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
@@ -51,6 +57,7 @@ public class RecurringScheduleService : IRecurringScheduleService
             .Include(s => s.Activity)
             .Include(s => s.Room)
             .Include(s => s.Instructor)
+            .Include(s => s.Secretary)
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
 
@@ -81,6 +88,20 @@ public class RecurringScheduleService : IRecurringScheduleService
             throw new ArgumentException("El instructor especificado no existe o no posee el rol de Instructor asignado.");
         }
 
+        Person? secretary = null;
+        if (request.SecretaryId.HasValue)
+        {
+            secretary = await _dbContext.People
+                .Include(p => p.PersonRoles)
+                    .ThenInclude(pr => pr.Role)
+                .FirstOrDefaultAsync(p => p.Id == request.SecretaryId.Value && p.IsActive, cancellationToken);
+
+            if (secretary == null || !secretary.PersonRoles.Any(pr => pr.IsActive && (pr.Role.Name == RoleType.Secretary.ToString() || pr.Role.Name == RoleType.Administrator.ToString())))
+            {
+                throw new ArgumentException("El secretario especificado no existe o no posee el rol de Secretario o Administrador asignado.");
+            }
+        }
+
         // Validación de superposición de horarios en la misma sala
         var roomConflict = await HasRoomCollisionAsync(Guid.Empty, request.RoomId, request.DayOfWeek, request.StartTime, request.EndTime, request.ValidFrom, request.ValidTo, cancellationToken);
         if (roomConflict)
@@ -94,6 +115,7 @@ public class RecurringScheduleService : IRecurringScheduleService
             ActivityId = request.ActivityId,
             RoomId = request.RoomId,
             InstructorId = request.InstructorId,
+            SecretaryId = request.SecretaryId,
             DayOfWeek = request.DayOfWeek,
             MaxCapacity = activity.ResolveCapacity(request.MaxCapacity),
             CreatedAtUtc = DateTime.UtcNow,
@@ -109,8 +131,12 @@ public class RecurringScheduleService : IRecurringScheduleService
         schedule.Activity = activity;
         schedule.Room = room;
         schedule.Instructor = instructor;
+        schedule.Secretary = secretary;
 
-        return MapToDto(schedule);
+        // Synchronize and generate sessions
+        var divergent = await _scheduleSync.SyncAsync(schedule.Id, cancellationToken: cancellationToken);
+
+        return MapToDto(schedule, divergent);
     }
 
     public async Task<RecurringScheduleDto?> UpdateAsync(Guid id, UpdateRecurringScheduleRequest request, CancellationToken cancellationToken = default)
@@ -119,6 +145,7 @@ public class RecurringScheduleService : IRecurringScheduleService
             .Include(s => s.Activity)
             .Include(s => s.Room)
             .Include(s => s.Instructor)
+            .Include(s => s.Secretary)
             .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
 
         if (schedule == null) return null;
@@ -146,6 +173,20 @@ public class RecurringScheduleService : IRecurringScheduleService
             throw new ArgumentException("El instructor especificado no existe o no posee el rol de Instructor asignado.");
         }
 
+        Person? secretary = null;
+        if (request.SecretaryId.HasValue)
+        {
+            secretary = await _dbContext.People
+                .Include(p => p.PersonRoles)
+                    .ThenInclude(pr => pr.Role)
+                .FirstOrDefaultAsync(p => p.Id == request.SecretaryId.Value && p.IsActive, cancellationToken);
+
+            if (secretary == null || !secretary.PersonRoles.Any(pr => pr.IsActive && (pr.Role.Name == RoleType.Secretary.ToString() || pr.Role.Name == RoleType.Administrator.ToString())))
+            {
+                throw new ArgumentException("El secretario especificado no existe o no posee el rol de Secretario o Administrador asignado.");
+            }
+        }
+
         if (request.IsActive)
         {
             var roomConflict = await HasRoomCollisionAsync(id, request.RoomId, request.DayOfWeek, request.StartTime, request.EndTime, request.ValidFrom, request.ValidTo, cancellationToken);
@@ -157,6 +198,7 @@ public class RecurringScheduleService : IRecurringScheduleService
 
         schedule.RoomId = request.RoomId;
         schedule.InstructorId = request.InstructorId;
+        schedule.SecretaryId = request.SecretaryId;
         schedule.DayOfWeek = request.DayOfWeek;
         schedule.MaxCapacity = resolvedCapacity;
         schedule.IsActive = request.IsActive;
@@ -169,8 +211,12 @@ public class RecurringScheduleService : IRecurringScheduleService
 
         schedule.Room = room;
         schedule.Instructor = instructor;
+        schedule.Secretary = secretary;
 
-        return MapToDto(schedule);
+        // Synchronize sessions within the same transaction/operation
+        var divergent = await _scheduleSync.SyncAsync(schedule.Id, cancellationToken: cancellationToken);
+
+        return MapToDto(schedule, divergent);
     }
 
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
@@ -182,6 +228,10 @@ public class RecurringScheduleService : IRecurringScheduleService
         schedule.UpdatedAtUtc = DateTime.UtcNow;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // Sync to cancel candidates
+        await _scheduleSync.SyncAsync(schedule.Id, cancellationToken: cancellationToken);
+
         return true;
     }
 
@@ -219,7 +269,7 @@ public class RecurringScheduleService : IRecurringScheduleService
         return false;
     }
 
-    private static RecurringScheduleDto MapToDto(RecurringSchedule s) =>
+    private static RecurringScheduleDto MapToDto(RecurringSchedule s, IReadOnlyList<Guid>? divergentSessionIds = null) =>
         new(
             s.Id,
             s.ActivityId,
@@ -228,12 +278,15 @@ public class RecurringScheduleService : IRecurringScheduleService
             s.Room?.Name ?? string.Empty,
             s.InstructorId,
             s.Instructor?.FullName ?? string.Empty,
+            s.SecretaryId,
+            s.Secretary?.FullName,
             s.DayOfWeek,
             s.StartTime,
             s.EndTime,
             s.ValidFrom,
             s.ValidTo,
             s.MaxCapacity,
-            s.IsActive
+            s.IsActive,
+            divergentSessionIds
         );
 }

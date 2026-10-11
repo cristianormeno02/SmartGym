@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Moq;
 using SmartGym.Application.Modules.Activities.Dtos;
 using SmartGym.Application.Modules.Activities.Services;
 using SmartGym.Domain.Entities.Activities;
@@ -17,7 +18,6 @@ public class SchedulingCapacityAndStatusTests
 {
     private readonly SmartGymDbContext _dbContext;
     private readonly RecurringScheduleService _scheduleService;
-    private readonly ClassSessionService _sessionService;
     private readonly Room _room;
     private readonly Person _instructor;
 
@@ -39,8 +39,11 @@ public class SchedulingCapacityAndStatusTests
         _dbContext.AddRange(instructorRole, _instructor, _room);
         _dbContext.SaveChanges();
 
-        _scheduleService = new RecurringScheduleService(_dbContext);
-        _sessionService = new ClassSessionService(_dbContext);
+        var mockSync = new Mock<IClassSessionScheduleSync>();
+        mockSync.Setup(s => s.SyncAsync(It.IsAny<Guid>(), It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Guid>());
+
+        _scheduleService = new RecurringScheduleService(_dbContext, mockSync.Object);
     }
 
     private Activity AddActivity(string code, int? defaultCapacity, ActivityStatus status = ActivityStatus.Active)
@@ -78,10 +81,7 @@ public class SchedulingCapacityAndStatusTests
     }
 
     private CreateRecurringScheduleRequest CreateScheduleRequest(Guid activityId, int? maxCapacity) =>
-        new(activityId, _room.Id, _instructor.Id, DayOfWeek.Monday, new TimeOnly(8, 30), new TimeOnly(9, 30), Monday, null, maxCapacity);
-
-    private ManualCreateClassSessionRequest ManualSessionRequest(Guid activityId, int maxCapacity) =>
-        new(activityId, _room.Id, _instructor.Id, Monday, new TimeOnly(18, 0), new TimeOnly(19, 0), maxCapacity);
+        new(activityId, _room.Id, _instructor.Id, null, DayOfWeek.Monday, new TimeOnly(8, 30), new TimeOnly(9, 30), Monday, null, maxCapacity);
 
     // --- Horarios recurrentes ---
 
@@ -136,7 +136,7 @@ public class SchedulingCapacityAndStatusTests
         _dbContext.SaveChanges();
 
         var request = new UpdateRecurringScheduleRequest(
-            _room.Id, _instructor.Id, DayOfWeek.Monday, new TimeOnly(8, 30), new TimeOnly(9, 30), Monday, null, 20, IsActive: true);
+            _room.Id, _instructor.Id, null, DayOfWeek.Monday, new TimeOnly(8, 30), new TimeOnly(9, 30), Monday, null, 20, IsActive: true);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => _scheduleService.UpdateAsync(schedule.Id, request));
     }
@@ -148,103 +148,8 @@ public class SchedulingCapacityAndStatusTests
         var schedule = AddSchedule(activity, maxCapacity: 10);
 
         var request = new UpdateRecurringScheduleRequest(
-            _room.Id, _instructor.Id, DayOfWeek.Monday, new TimeOnly(8, 30), new TimeOnly(9, 30), Monday, null, null, IsActive: true);
+            _room.Id, _instructor.Id, null, DayOfWeek.Monday, new TimeOnly(8, 30), new TimeOnly(9, 30), Monday, null, null, IsActive: true);
 
         await Assert.ThrowsAsync<ArgumentException>(() => _scheduleService.UpdateAsync(schedule.Id, request));
-    }
-
-    // --- Generación de clases ---
-
-    [Fact]
-    public async Task GenerateSessions_ShouldUseScheduleCapacity()
-    {
-        var activity = AddActivity("FUNCIONAL", defaultCapacity: 20);
-        AddSchedule(activity, maxCapacity: 15);
-
-        await _sessionService.GenerateSessionsFromSchedulesAsync(Monday, Monday);
-
-        Assert.Equal(15, Assert.Single(_dbContext.ClassSessions).MaxCapacity);
-    }
-
-    [Fact]
-    public async Task GenerateSessions_ForScheduleWithoutCapacity_ShouldUseActivityDefault()
-    {
-        var activity = AddActivity("FUNCIONAL", defaultCapacity: 20);
-        AddSchedule(activity, maxCapacity: null);
-
-        await _sessionService.GenerateSessionsFromSchedulesAsync(Monday, Monday);
-
-        Assert.Equal(20, Assert.Single(_dbContext.ClassSessions).MaxCapacity);
-    }
-
-    [Fact]
-    public async Task GenerateSessions_WithoutResolvableCapacity_ShouldBeRejectedWithoutFixedFallback()
-    {
-        var activity = AddActivity("RUNNING", defaultCapacity: null);
-        AddSchedule(activity, maxCapacity: null);
-
-        await Assert.ThrowsAsync<ArgumentException>(() => _sessionService.GenerateSessionsFromSchedulesAsync(Monday, Monday));
-
-        Assert.Empty(_dbContext.ClassSessions);
-    }
-
-    [Fact]
-    public async Task GenerateSessions_ShouldSkipSchedulesOfNonActiveActivities()
-    {
-        var active = AddActivity("FUNCIONAL", defaultCapacity: 20);
-        var inactive = AddActivity("ZUMBA", defaultCapacity: 20);
-        AddSchedule(active, maxCapacity: 20);
-        AddSchedule(inactive, maxCapacity: 20);
-        inactive.ChangeStatus(ActivityStatus.Inactive);
-        _dbContext.SaveChanges();
-
-        var generated = await _sessionService.GenerateSessionsFromSchedulesAsync(Monday, Monday);
-
-        Assert.Equal(1, generated);
-        Assert.Equal(active.Id, Assert.Single(_dbContext.ClassSessions).ActivityId);
-    }
-
-    [Fact]
-    public async Task GenerateSessions_ForSpecificScheduleOfInactiveActivity_ShouldBeRejected()
-    {
-        var activity = AddActivity("ZUMBA", defaultCapacity: 20);
-        var schedule = AddSchedule(activity, maxCapacity: 20);
-        activity.ChangeStatus(ActivityStatus.Inactive);
-        _dbContext.SaveChanges();
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            _sessionService.GenerateSessionsFromSchedulesAsync(Monday, Monday, schedule.Id));
-    }
-
-    // --- Clases manuales ---
-
-    [Fact]
-    public async Task CreateManualSession_WithoutCapacity_ShouldUseActivityDefault()
-    {
-        var activity = AddActivity("FUNCIONAL", defaultCapacity: 12);
-
-        var session = await _sessionService.CreateManualAsync(ManualSessionRequest(activity.Id, maxCapacity: 0));
-
-        Assert.Equal(12, session.MaxCapacity);
-    }
-
-    [Fact]
-    public async Task CreateManualSession_WithoutResolvableCapacity_ShouldBeRejectedWithoutFixedFallback()
-    {
-        var activity = AddActivity("RUNNING", defaultCapacity: null);
-
-        await Assert.ThrowsAsync<ArgumentException>(() =>
-            _sessionService.CreateManualAsync(ManualSessionRequest(activity.Id, maxCapacity: 0)));
-
-        Assert.Empty(_dbContext.ClassSessions);
-    }
-
-    [Fact]
-    public async Task CreateManualSession_ForInactiveActivity_ShouldBeRejected()
-    {
-        var activity = AddActivity("FUNCIONAL", defaultCapacity: 12, ActivityStatus.Inactive);
-
-        await Assert.ThrowsAsync<ArgumentException>(() =>
-            _sessionService.CreateManualAsync(ManualSessionRequest(activity.Id, maxCapacity: 10)));
     }
 }

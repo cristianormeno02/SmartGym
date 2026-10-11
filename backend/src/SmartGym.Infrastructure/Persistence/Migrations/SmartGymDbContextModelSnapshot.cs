@@ -89,7 +89,8 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("IX_Activities_Code");
 
                     b.HasIndex("Status");
 
@@ -199,32 +200,54 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasDefaultValue(0);
 
+                    b.Property<string>("CancellationObservations")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
                     b.Property<string>("CancellationReason")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("CancelledAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CancelledByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Capacity")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateOnly>("Date")
-                        .HasColumnType("date");
-
-                    b.Property<TimeOnly>("EndTime")
-                        .HasColumnType("time without time zone");
-
-                    b.Property<Guid>("InstructorId")
+                    b.Property<Guid>("EffectiveInstructorId")
                         .HasColumnType("uuid");
+
+                    b.Property<Guid?>("EffectiveSecretaryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("EndsAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
-                    b.Property<int>("MaxCapacity")
-                        .HasColumnType("integer");
+                    b.Property<bool>("IsDetachedFromSchedule")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
-                    b.Property<Guid?>("OriginalInstructorId")
-                        .HasColumnType("uuid");
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<Guid?>("RecurringScheduleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("RescheduledFromSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("RescheduledToSessionId")
                         .HasColumnType("uuid");
 
                     b.Property<int>("ReservedCount")
@@ -235,40 +258,146 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("RoomId")
                         .HasColumnType("uuid");
 
-                    b.Property<TimeOnly>("StartTime")
-                        .HasColumnType("time without time zone");
+                    b.Property<Guid>("ScheduledInstructorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ScheduledSecretaryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("StartsAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
-                    b.Property<Guid?>("SubstituteInstructorId")
-                        .HasColumnType("uuid");
-
                     b.Property<DateTime?>("SuspendedAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("SuspendedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SuspensionObservations")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("SuspensionReason")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CancelledByUserId");
+
+                    b.HasIndex("EffectiveSecretaryId");
+
+                    b.HasIndex("RescheduledFromSessionId");
+
+                    b.HasIndex("RescheduledToSessionId");
+
+                    b.HasIndex("ScheduledSecretaryId");
+
+                    b.HasIndex("StartsAtUtc");
+
+                    b.HasIndex("SuspendedByUserId");
+
+                    b.HasIndex("ActivityId", "StartsAtUtc");
+
+                    b.HasIndex("EffectiveInstructorId", "StartsAtUtc");
+
+                    b.HasIndex("RecurringScheduleId", "StartsAtUtc")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ClassSessions_Schedule_StartsAt")
+                        .HasFilter("\"RecurringScheduleId\" IS NOT NULL");
+
+                    b.HasIndex("RoomId", "StartsAtUtc");
+
+                    b.HasIndex("ScheduledInstructorId", "StartsAtUtc");
+
+                    b.HasIndex("Status", "StartsAtUtc");
+
+                    b.ToTable("ClassSessions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ClassSessions_Cancellation_Other", "(\"CancellationReason\" IS NULL OR \"CancellationReason\" <> 'Other' OR (\"CancellationObservations\" IS NOT NULL AND length(trim(\"CancellationObservations\")) > 0))");
+
+                            t.HasCheckConstraint("CK_ClassSessions_Cancelled", "((\"Status\" = 5) = (\"CancelledAtUtc\" IS NOT NULL AND \"CancellationReason\" IS NOT NULL))");
+
+                            t.HasCheckConstraint("CK_ClassSessions_Capacity", "\"Capacity\" > 0 AND \"ReservedCount\" >= 0 AND \"ReservedCount\" <= \"Capacity\" AND \"AttendedCount\" >= 0 AND \"AttendedCount\" <= \"ReservedCount\"");
+
+                            t.HasCheckConstraint("CK_ClassSessions_Dates", "\"EndsAtUtc\" > \"StartsAtUtc\" AND \"EndsAtUtc\" - \"StartsAtUtc\" <= INTERVAL '24 hours'");
+
+                            t.HasCheckConstraint("CK_ClassSessions_Rescheduled", "((\"Status\" = 7) = (\"RescheduledToSessionId\" IS NOT NULL))");
+
+                            t.HasCheckConstraint("CK_ClassSessions_Status", "\"Status\" IN (1, 4, 5, 6, 7)");
+
+                            t.HasCheckConstraint("CK_ClassSessions_Suspended", "((\"Status\" = 4) = (\"SuspendedAtUtc\" IS NOT NULL AND \"SuspensionReason\" IS NOT NULL))");
+
+                            t.HasCheckConstraint("CK_ClassSessions_Suspension_Other", "(\"SuspensionReason\" IS NULL OR \"SuspensionReason\" <> 'Other' OR (\"SuspensionObservations\" IS NOT NULL AND length(trim(\"SuspensionObservations\")) > 0))");
+                        });
+                });
+
+            modelBuilder.Entity("SmartGym.Domain.Entities.Activities.ClassSessionStaffChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ChangedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ChangedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClassSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("NewPersonId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PreviousPersonId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ActivityId");
+                    b.HasIndex("ChangedByUserId");
 
-                    b.HasIndex("Date");
+                    b.HasIndex("ClassSessionId");
 
-                    b.HasIndex("InstructorId");
+                    b.HasIndex("NewPersonId");
 
-                    b.HasIndex("OriginalInstructorId");
+                    b.HasIndex("PreviousPersonId");
 
-                    b.HasIndex("RoomId");
-
-                    b.HasIndex("SubstituteInstructorId");
-
-                    b.HasIndex("Date", "Status");
-
-                    b.HasIndex("RecurringScheduleId", "Date");
-
-                    b.ToTable("ClassSessions", (string)null);
+                    b.ToTable("ClassSessionStaffChanges", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ClassSessionStaffChanges_Role", "\"Role\" IN ('Instructor', 'Secretary')");
+                        });
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Activities.RecurringSchedule", b =>
@@ -301,6 +430,9 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("RoomId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("SecretaryId")
+                        .HasColumnType("uuid");
+
                     b.Property<TimeOnly>("StartTime")
                         .HasColumnType("time without time zone");
 
@@ -320,6 +452,8 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.HasIndex("InstructorId");
 
                     b.HasIndex("RoomId");
+
+                    b.HasIndex("SecretaryId");
 
                     b.ToTable("RecurringSchedules", (string)null);
                 });
@@ -1230,21 +1364,36 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("SmartGym.Domain.Entities.Identity.Person", "Instructor")
+                    b.HasOne("SmartGym.Domain.Entities.Identity.User", "CancelledByUser")
                         .WithMany()
-                        .HasForeignKey("InstructorId")
+                        .HasForeignKey("CancelledByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartGym.Domain.Entities.Identity.Person", "EffectiveInstructor")
+                        .WithMany()
+                        .HasForeignKey("EffectiveInstructorId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("SmartGym.Domain.Entities.Identity.Person", "OriginalInstructor")
+                    b.HasOne("SmartGym.Domain.Entities.Identity.Person", "EffectiveSecretary")
                         .WithMany()
-                        .HasForeignKey("OriginalInstructorId")
+                        .HasForeignKey("EffectiveSecretaryId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("SmartGym.Domain.Entities.Activities.RecurringSchedule", "RecurringSchedule")
                         .WithMany()
                         .HasForeignKey("RecurringScheduleId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartGym.Domain.Entities.Activities.ClassSession", "RescheduledFromSession")
+                        .WithMany()
+                        .HasForeignKey("RescheduledFromSessionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartGym.Domain.Entities.Activities.ClassSession", "RescheduledToSession")
+                        .WithMany()
+                        .HasForeignKey("RescheduledToSessionId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("SmartGym.Domain.Entities.Activities.Room", "Room")
                         .WithMany()
@@ -1252,22 +1401,75 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("SmartGym.Domain.Entities.Identity.Person", "SubstituteInstructor")
+                    b.HasOne("SmartGym.Domain.Entities.Identity.Person", "ScheduledInstructor")
                         .WithMany()
-                        .HasForeignKey("SubstituteInstructorId")
+                        .HasForeignKey("ScheduledInstructorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SmartGym.Domain.Entities.Identity.Person", "ScheduledSecretary")
+                        .WithMany()
+                        .HasForeignKey("ScheduledSecretaryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartGym.Domain.Entities.Identity.User", "SuspendedByUser")
+                        .WithMany()
+                        .HasForeignKey("SuspendedByUserId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Activity");
 
-                    b.Navigation("Instructor");
+                    b.Navigation("CancelledByUser");
 
-                    b.Navigation("OriginalInstructor");
+                    b.Navigation("EffectiveInstructor");
+
+                    b.Navigation("EffectiveSecretary");
 
                     b.Navigation("RecurringSchedule");
 
+                    b.Navigation("RescheduledFromSession");
+
+                    b.Navigation("RescheduledToSession");
+
                     b.Navigation("Room");
 
-                    b.Navigation("SubstituteInstructor");
+                    b.Navigation("ScheduledInstructor");
+
+                    b.Navigation("ScheduledSecretary");
+
+                    b.Navigation("SuspendedByUser");
+                });
+
+            modelBuilder.Entity("SmartGym.Domain.Entities.Activities.ClassSessionStaffChange", b =>
+                {
+                    b.HasOne("SmartGym.Domain.Entities.Identity.User", "ChangedByUser")
+                        .WithMany()
+                        .HasForeignKey("ChangedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartGym.Domain.Entities.Activities.ClassSession", "ClassSession")
+                        .WithMany("StaffChanges")
+                        .HasForeignKey("ClassSessionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SmartGym.Domain.Entities.Identity.Person", "NewPerson")
+                        .WithMany()
+                        .HasForeignKey("NewPersonId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartGym.Domain.Entities.Identity.Person", "PreviousPerson")
+                        .WithMany()
+                        .HasForeignKey("PreviousPersonId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ChangedByUser");
+
+                    b.Navigation("ClassSession");
+
+                    b.Navigation("NewPerson");
+
+                    b.Navigation("PreviousPerson");
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Activities.RecurringSchedule", b =>
@@ -1290,11 +1492,18 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("SmartGym.Domain.Entities.Identity.Person", "Secretary")
+                        .WithMany()
+                        .HasForeignKey("SecretaryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Activity");
 
                     b.Navigation("Instructor");
 
                     b.Navigation("Room");
+
+                    b.Navigation("Secretary");
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Identity.Person", b =>
@@ -1702,6 +1911,11 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("SmartGym.Domain.Entities.Activities.Activity", b =>
                 {
                     b.Navigation("Media");
+                });
+
+            modelBuilder.Entity("SmartGym.Domain.Entities.Activities.ClassSession", b =>
+                {
+                    b.Navigation("StaffChanges");
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Identity.Person", b =>

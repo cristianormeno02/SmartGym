@@ -21,4 +21,5 @@ public static class Policies
     public const string RequireStudent = "RequireStudent";
     public const string RequireStaff = "RequireStaff";
     public const string RequireTeachingAndStaff = "RequireTeachingAndStaff";
+    public const string RequireAllAuthenticated = "RequireAllAuthenticated";
 }
