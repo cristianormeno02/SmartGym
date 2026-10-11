@@ -45,7 +45,7 @@ public class DashboardService : IDashboardService
         // Reservas de hoy
         var totalReservationsToday = await _dbContext.Reservations
             .CountAsync(r => r.ClassSession.StartsAtUtc >= todayStartUtc && r.ClassSession.StartsAtUtc < todayEndUtc &&
-                            (r.Status == ReservationStatus.Reserved || r.Status == ReservationStatus.Confirmed || r.Status == ReservationStatus.Attended),
+                            (r.Status == ReservationStatus.Confirmed || r.Status == ReservationStatus.Attended),
                         cancellationToken);
 
         // Asistencias registradas hoy

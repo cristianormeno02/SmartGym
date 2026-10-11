@@ -17,4 +17,8 @@ public class MembershipsOptions
 
     [Range(1, 365)]
     public int MaxSuspensionDays { get; set; } = 90;
+
+    [Range(1, 365)]
+    public int CompensatoryCreditValidityDays { get; set; } = 15;
 }
+

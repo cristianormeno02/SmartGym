@@ -112,7 +112,7 @@ public class NotifyStudentsOnSessionChangeTests
                 Id = Guid.NewGuid(),
                 ClassSessionId = session.Id,
                 StudentId = _student1Id,
-                Status = ReservationStatus.Reserved,
+                Status = ReservationStatus.Confirmed,
                 ReservedAtUtc = DateTime.UtcNow,
                 IsActive = true
             });
@@ -171,7 +171,7 @@ public class NotifyStudentsOnSessionChangeTests
                 Id = Guid.NewGuid(),
                 ClassSessionId = session.Id,
                 StudentId = _student1Id,
-                Status = ReservationStatus.Reserved,
+                Status = ReservationStatus.Confirmed,
                 ReservedAtUtc = DateTime.UtcNow,
                 IsActive = true
             });
@@ -216,7 +216,7 @@ public class NotifyStudentsOnSessionChangeTests
                 Id = Guid.NewGuid(),
                 ClassSessionId = session.Id,
                 StudentId = _student1Id,
-                Status = ReservationStatus.Reserved,
+                Status = ReservationStatus.Confirmed,
                 ReservedAtUtc = DateTime.UtcNow,
                 IsActive = true
             });
@@ -271,7 +271,7 @@ public class NotifyStudentsOnSessionChangeTests
                 Id = Guid.NewGuid(),
                 ClassSessionId = session.Id,
                 StudentId = _student1Id,
-                Status = ReservationStatus.Reserved,
+                Status = ReservationStatus.Confirmed,
                 ReservedAtUtc = DateTime.UtcNow,
                 IsActive = true
             });

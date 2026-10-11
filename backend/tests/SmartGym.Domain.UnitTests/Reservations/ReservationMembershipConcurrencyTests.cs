@@ -160,8 +160,8 @@ public class ReservationMembershipConcurrencyTests
         var reserved = await service.CreateReservationAsync(new CreateReservationRequest(s.Session.Id, s.Students[0].Id), Guid.NewGuid());
         var firstInLine = await service.CreateReservationAsync(new CreateReservationRequest(s.Session.Id, s.Students[1].Id), Guid.NewGuid());
         var secondInLine = await service.CreateReservationAsync(new CreateReservationRequest(s.Session.Id, s.Students[2].Id), Guid.NewGuid());
-        Assert.Equal(ReservationStatus.WaitList, firstInLine.Status);
-        Assert.Equal(ReservationStatus.WaitList, secondInLine.Status);
+        Assert.Equal(ReservationStatus.Waitlisted, firstInLine.Status);
+        Assert.Equal(ReservationStatus.Waitlisted, secondInLine.Status);
 
         // La membresía del primero en la lista queda suspendida después de anotarse.
         var suspendedMembership = await db.Memberships
@@ -178,11 +178,11 @@ public class ReservationMembershipConcurrencyTests
         Assert.Equal(ReservationStatus.Cancelled, cancelled.Status);
 
         var skipped = await db.Reservations.SingleAsync(r => r.Id == firstInLine.Id);
-        Assert.Equal(ReservationStatus.WaitList, skipped.Status);
+        Assert.Equal(ReservationStatus.Waitlisted, skipped.Status);
         Assert.Null(skipped.CreditMovementId);
 
         var promoted = await db.Reservations.SingleAsync(r => r.Id == secondInLine.Id);
-        Assert.Equal(ReservationStatus.Reserved, promoted.Status);
+        Assert.Equal(ReservationStatus.Confirmed, promoted.Status);
         Assert.NotNull(promoted.CreditMovementId);
         Assert.Equal(7, (await db.Memberships.SingleAsync(m => m.Id == s.Memberships[2].Id)).AvailableCredits);
         Assert.Equal(8, (await db.Memberships.SingleAsync(m => m.Id == s.Memberships[1].Id)).AvailableCredits);

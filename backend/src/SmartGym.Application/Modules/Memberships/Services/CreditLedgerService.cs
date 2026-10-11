@@ -11,14 +11,17 @@ public class CreditLedgerService : ICreditLedgerService
 {
     private readonly ISmartGymDbContext _dbContext;
     private readonly SmartGym.Application.Common.IGymCalendar _gymCalendar;
+    private readonly SmartGym.Application.Common.MembershipsOptions _options;
 
     public CreditLedgerService(
         ISmartGymDbContext dbContext,
-        SmartGym.Application.Common.IGymCalendar? gymCalendar = null)
+        SmartGym.Application.Common.IGymCalendar? gymCalendar = null,
+        Microsoft.Extensions.Options.IOptions<SmartGym.Application.Common.MembershipsOptions>? options = null)
     {
         _dbContext = dbContext;
         _gymCalendar = gymCalendar ?? new SmartGym.Application.Common.GymCalendar(
             Microsoft.Extensions.Options.Options.Create(new SmartGym.Application.Common.GymOptions()));
+        _options = options?.Value ?? new SmartGym.Application.Common.MembershipsOptions();
     }
 
     public async Task<List<CreditMovementDto>> GetMovementsByStudentAsync(Guid studentId, CancellationToken cancellationToken = default)
@@ -212,6 +215,7 @@ public class CreditLedgerService : ICreditLedgerService
         DateOnly sessionLocalDate,
         string reason,
         Guid? performedByUserId = null,
+        Guid? reservationId = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(membership);
@@ -224,6 +228,20 @@ public class CreditLedgerService : ICreditLedgerService
         if (!membership.HasAvailableCredit())
         {
             throw new InvalidOperationException("No posee créditos disponibles en su membresía.");
+        }
+
+        if (reservationId.HasValue)
+        {
+            var alreadyDebitedForReservation = membership.CreditMovements.Any(
+                    cm => cm.ReservationId == reservationId.Value && cm.Type == CreditMovementType.ClassReservationDebit && cm.IsActive)
+                || await _dbContext.MembershipCreditMovements.AnyAsync(
+                    cm => cm.ReservationId == reservationId.Value && cm.Type == CreditMovementType.ClassReservationDebit && cm.IsActive,
+                    cancellationToken);
+
+            if (alreadyDebitedForReservation)
+            {
+                throw new ConflictException("Ya existe un débito de crédito registrado para esta reserva.");
+            }
         }
 
         // Prevent double consumption for the same (MembershipId, ClassSessionId) when net debits > refunds
@@ -253,6 +271,7 @@ public class CreditLedgerService : ICreditLedgerService
             MembershipId = membership.Id,
             StudentId = membership.StudentId,
             ClassSessionId = classSessionId,
+            ReservationId = reservationId,
             Type = CreditMovementType.ClassReservationDebit,
             Amount = isUnlimited ? 0 : -1,
             BalanceAfter = membership.AvailableCredits,
@@ -267,14 +286,29 @@ public class CreditLedgerService : ICreditLedgerService
         return movement;
     }
 
-    public Task<MembershipCreditMovement> RefundCreditForReservationAsync(
+    public async Task<MembershipCreditMovement> RefundCreditForReservationAsync(
         Membership membership,
         Guid classSessionId,
         string reason,
         Guid? performedByUserId = null,
+        Guid? reservationId = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(membership);
+
+        if (reservationId.HasValue)
+        {
+            var existingRefund = membership.CreditMovements.FirstOrDefault(
+                    cm => cm.ReservationId == reservationId.Value && cm.Type == CreditMovementType.ClassCancellationRefund && cm.IsActive)
+                ?? await _dbContext.MembershipCreditMovements.FirstOrDefaultAsync(
+                    cm => cm.ReservationId == reservationId.Value && cm.Type == CreditMovementType.ClassCancellationRefund && cm.IsActive,
+                    cancellationToken);
+
+            if (existingRefund != null)
+            {
+                return existingRefund;
+            }
+        }
 
         var isUnlimited = membership.IsUnlimited;
         if (!isUnlimited)
@@ -291,6 +325,7 @@ public class CreditLedgerService : ICreditLedgerService
             MembershipId = membership.Id,
             StudentId = membership.StudentId,
             ClassSessionId = classSessionId,
+            ReservationId = reservationId,
             Type = CreditMovementType.ClassCancellationRefund,
             Amount = isUnlimited ? 0 : 1,
             BalanceAfter = membership.AvailableCredits,
@@ -302,7 +337,7 @@ public class CreditLedgerService : ICreditLedgerService
 
         membership.CreditMovements.Add(movement);
         _dbContext.MembershipCreditMovements.Add(movement);
-        return Task.FromResult(movement);
+        return movement;
     }
 
     public Task<MembershipCreditMovement?> ForfeitRemainingCreditsOnCancelAsync(
@@ -437,11 +472,14 @@ public class CreditLedgerService : ICreditLedgerService
         }
         else
         {
+            var validityDays = Math.Max(1, _options.CompensatoryCreditValidityDays);
             movement = new MembershipCreditMovement
             {
                 Id = Guid.NewGuid(),
                 StudentId = request.StudentId,
                 ClassSessionId = request.ClassSessionId,
+                ActivityId = request.ActivityId,
+                ExpiresOn = today.AddDays(validityDays),
                 Type = CreditMovementType.ClassSuspensionCompensation,
                 Amount = 1,
                 BalanceAfter = 1,
@@ -518,6 +556,9 @@ public class CreditLedgerService : ICreditLedgerService
             cm.BalanceAfter,
             cm.Reason,
             cm.PerformedByUserId,
-            cm.CreatedAtUtc
+            cm.CreatedAtUtc,
+            cm.ReservationId,
+            cm.ExpiresOn,
+            cm.ActivityId
         );
 }

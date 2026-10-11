@@ -20,6 +20,7 @@ public interface ICreditLedgerService
         DateOnly sessionLocalDate,
         string reason,
         Guid? performedByUserId = null,
+        Guid? reservationId = null,
         CancellationToken cancellationToken = default);
 
     Task<MembershipCreditMovement> RefundCreditForReservationAsync(
@@ -27,6 +28,7 @@ public interface ICreditLedgerService
         Guid classSessionId,
         string reason,
         Guid? performedByUserId = null,
+        Guid? reservationId = null,
         CancellationToken cancellationToken = default);
 
     Task<MembershipCreditMovement?> ForfeitRemainingCreditsOnCancelAsync(

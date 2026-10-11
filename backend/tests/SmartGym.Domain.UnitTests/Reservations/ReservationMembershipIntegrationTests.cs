@@ -198,7 +198,7 @@ public class ReservationMembershipIntegrationTests
         db.Memberships.Add(m);
         await db.SaveChangesAsync();
 
-        var exPending = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exPending = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() =>
             service.CreateReservationAsync(new CreateReservationRequest(sessionFunc.Id, student.Id, m.Id), Guid.NewGuid()));
         Assert.Contains(EligibilityIssueCodes.MembershipPending, exPending.Message);
 
@@ -207,7 +207,7 @@ public class ReservationMembershipIntegrationTests
         await ledger.RecordInitialCreditsAsync(m);
         await db.SaveChangesAsync();
 
-        var exActivity = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exActivity = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() =>
             service.CreateReservationAsync(new CreateReservationRequest(sessionFunc.Id, student.Id, m.Id), Guid.NewGuid()));
         Assert.Contains(EligibilityIssueCodes.ActivityNotAllowed, exActivity.Message);
 
@@ -216,7 +216,7 @@ public class ReservationMembershipIntegrationTests
         m.Suspend(today, today.AddDays(5), false, "Viaje", null, Guid.NewGuid(), calendar.UtcNow);
         await db.SaveChangesAsync();
 
-        var exSuspended = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exSuspended = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() =>
             service.CreateReservationAsync(new CreateReservationRequest(sessionFunc.Id, student.Id, m.Id), Guid.NewGuid()));
         Assert.Contains(EligibilityIssueCodes.MembershipSuspended, exSuspended.Message);
 
@@ -225,7 +225,7 @@ public class ReservationMembershipIntegrationTests
         await ledger.ConsumeCreditForReservationAsync(m, Guid.NewGuid(), today, "Otra clase");
         await db.SaveChangesAsync();
 
-        var exNoCredits = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exNoCredits = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() =>
             service.CreateReservationAsync(new CreateReservationRequest(sessionFunc.Id, student.Id, m.Id), Guid.NewGuid()));
         Assert.Contains(EligibilityIssueCodes.NoAvailableCredits, exNoCredits.Message);
     }

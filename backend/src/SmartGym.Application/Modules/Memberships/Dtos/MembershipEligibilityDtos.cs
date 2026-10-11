@@ -45,3 +45,21 @@ public record MembershipSelectionResultDto(
     MembershipEligibilityDto? SelectedEligibility,
     IReadOnlyList<EligibilityIssueDto> Issues
 );
+
+public record SessionEligibilityContextDto(
+    Guid ClassSessionId,
+    Guid ActivityId,
+    DateOnly SessionLocalDate,
+    SmartGym.Domain.Entities.Activities.Activity? Activity = null
+);
+
+public record SessionEligibilityEvaluationDto(
+    Guid ClassSessionId,
+    bool IsEligible,
+    ReservationAccessType? SuggestedAccessType,
+    Guid? SelectedMembershipId,
+    Guid? SingleClassTicketMovementId,
+    int UsableCredits,
+    IReadOnlyList<EligibilityIssueDto> Issues
+);
+

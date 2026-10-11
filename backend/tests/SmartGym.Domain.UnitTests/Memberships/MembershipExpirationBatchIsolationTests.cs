@@ -36,6 +36,8 @@ public class MembershipExpirationBatchIsolationTests
         public Task<PromotionDto> CreateAsync(CreatePromotionRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PromotionApplicationResultDto> EvaluatePromotionAsync(ApplyPromotionRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PromotionRedemptionDto> RedeemPromotionAsync(ApplyPromotionRequest request, Guid? membershipId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PromotionApplicationResultDto> EvaluatePromotionForReservationAsync(Guid studentId, Guid classSessionId, Guid activityId, string code, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PromotionRedemptionDto> RedeemPromotionForReservationAsync(Guid studentId, Guid classSessionId, Guid activityId, string code, Guid reservationId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task AttachRedemptionToMembershipAsync(Guid redemptionId, Guid membershipId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<List<PromotionRedemptionDto>> GetRedemptionsByPersonAsync(Guid personId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }

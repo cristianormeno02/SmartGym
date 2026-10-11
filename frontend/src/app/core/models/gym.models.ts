@@ -234,13 +234,73 @@ export interface MembershipCreditsSummary {
   movements: CreditMovement[];
 }
 
+export enum ReservationStatus {
+  Confirmed = 1,
+  Cancelled = 3,
+  Attended = 4,
+  NoShow = 5,
+  Waitlisted = 6,
+  Pending = 7
+}
+
+export enum ReservationOrigin {
+  StudentSelfService = 1,
+  StaffDesk = 2,
+  Legacy = 3
+}
+
+export enum ReservationAccessType {
+  MembershipCredit = 1,
+  UnlimitedMembership = 2,
+  CompensatoryCredit = 3,
+  SingleClassTicket = 4,
+  PromotionalBenefit = 5
+}
+
+export enum ReservationCancellationSource {
+  Student = 1,
+  Staff = 2,
+  ClassSessionChange = 3,
+  MembershipChange = 4,
+  WaitlistOfferExpired = 5,
+  WaitlistDeclined = 6,
+  WaitlistExpired = 7
+}
+
+export enum AttendanceSource {
+  SecretaryDesk = 1,
+  InstructorInRoom = 2,
+  SelfCheckIn = 3
+}
+
+/** Estados que cuentan como reserva activa: ocupan cupo o esperan uno. */
+export const ACTIVE_RESERVATION_STATUSES: readonly ReservationStatus[] = [
+  ReservationStatus.Confirmed,
+  ReservationStatus.Waitlisted,
+  ReservationStatus.Pending
+];
+
+export interface ReservationStatusChange {
+  id: string;
+  reservationId: string;
+  previousStatus?: ReservationStatus;
+  newStatus: ReservationStatus;
+  reason: string;
+  changedByUserId?: string;
+  trigger: number;
+  changedAtUtc: string;
+}
+
 export interface Reservation {
   id: string;
   classSessionId: string;
+  activityId?: string;
   activityName: string;
   classDate: string;
   startTime: string;
   endTime: string;
+  startsAtUtc?: string;
+  endsAtUtc?: string;
   roomName: string;
   studentId: string;
   studentName: string;
@@ -248,15 +308,135 @@ export interface Reservation {
   documentType?: DocumentType;
   documentNumber?: string;
   membershipId?: string;
-  status: number; // 0=Reserved, 1=Confirmed, 2=Cancelled, 3=Attended, 4=NoShow, 5=WaitList
+  status: ReservationStatus;
+  origin: ReservationOrigin;
+  accessType: ReservationAccessType;
   reservedAtUtc: string;
   confirmedAtUtc?: string;
   cancelledAtUtc?: string;
   cancellationReason?: string;
+  cancellationSource?: ReservationCancellationSource;
   isLateCancellation: boolean;
+  isPolicyOverride: boolean;
+  policyOverrideReason?: string;
+  affectedBySessionChange: boolean;
+  rescheduledToSessionId?: string;
   attendedAtUtc?: string;
-  attendanceSource?: number;
+  attendanceSource?: AttendanceSource;
   waitListPosition?: number;
+  waitlistEnteredAtUtc?: string;
+  waitlistOfferExpiresAtUtc?: string;
+  creditMovementId?: string;
+  refundCreditMovementId?: string;
+  singleClassTicketMovementId?: string;
+  paymentId?: string;
+  promotionRedemptionId?: string;
+  notes?: string;
+  wasIdempotentReplay?: boolean;
+}
+
+export interface ReservationDetail extends Reservation {
+  activityId: string;
+  startsAtUtc: string;
+  endsAtUtc: string;
+  createdByUserId?: string;
+  cancelledByUserId?: string;
+  checkedInByUserId?: string;
+  statusHistory: ReservationStatusChange[];
+}
+
+export interface ReservableClassSession {
+  classSessionId: string;
+  activityId: string;
+  activityName: string;
+  roomId: string;
+  roomName: string;
+  effectiveInstructorId: string;
+  instructorName: string;
+  classDate: string;
+  startTime: string;
+  endTime: string;
+  startsAtUtc: string;
+  endsAtUtc: string;
+  capacity: number;
+  reservedCount: number;
+  availableSpots: number;
+  waitlistCount: number;
+  isWithinBookingWindow: boolean;
+  hasActiveReservation: boolean;
+  activeReservationId?: string;
+  activeReservationStatus?: ReservationStatus;
+  activeWaitlistPosition?: number;
+  canReserve: boolean;
+  canJoinWaitlist: boolean;
+  suggestedAccessType?: ReservationAccessType;
+  selectedMembershipId?: string;
+  usableCredits?: number;
+  ineligibilityReasons: MembershipIneligibilityReason[];
+}
+
+export interface WaitlistEntry {
+  reservationId: string;
+  classSessionId: string;
+  studentId: string;
+  studentName: string;
+  studentDni: string;
+  status: ReservationStatus;
+  waitListPosition?: number;
+  waitlistEnteredAtUtc?: string;
+  waitlistOfferExpiresAtUtc?: string;
+  accessType: ReservationAccessType;
+  membershipId?: string;
+}
+
+export interface CreateReservationRequest {
+  classSessionId: string;
+  studentId?: string;
+  membershipId?: string;
+  singleClassTicketMovementId?: string;
+  promotionCode?: string;
+  allowWaitlist?: boolean;
+  notes?: string;
+  overrideBookingWindow?: boolean;
+  policyOverrideReason?: string;
+}
+
+export interface CancelReservationRequest {
+  reason?: string;
+  overridePolicy?: boolean;
+  policyOverrideReason?: string;
+}
+
+export interface ReservationFilter {
+  studentId?: string;
+  classSessionId?: string;
+  activityId?: string;
+  status?: ReservationStatus;
+  accessType?: ReservationAccessType;
+  origin?: ReservationOrigin;
+  from?: string;
+  to?: string;
+  isLateCancellation?: boolean;
+  affectedBySessionChange?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface PagedResult<T> {
+  items: T[];
+  pageNumber: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  hasPreviousPage: boolean;
+  hasNextPage: boolean;
+}
+
+/** Cuerpo de error de /api/reservations. */
+export interface ReservationApiError {
+  code: string;
+  message: string;
+  reasons?: MembershipIneligibilityReason[] | Record<string, string[]>;
 }
 
 export interface DashboardMetrics {

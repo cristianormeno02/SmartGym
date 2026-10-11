@@ -120,7 +120,7 @@ public class ReservationActivityRulesTests
     {
         AddStudent(BirthDateForAge(15));
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(Reserve);
+        var ex = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(Reserve);
         Assert.Contains("no admite", ex.Message);
     }
 
@@ -142,7 +142,7 @@ public class ReservationActivityRulesTests
         AddStudent(BirthDateForAge(8));
         SetActivityStatus(status);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(Reserve);
+        var ex = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(Reserve);
         Assert.Contains("no está disponible", ex.Message);
     }
 }

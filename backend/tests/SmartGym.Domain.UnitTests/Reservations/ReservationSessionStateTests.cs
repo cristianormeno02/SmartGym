@@ -102,7 +102,7 @@ public class ReservationSessionStateTests
         var service = CreateService(db);
         var req = new CreateReservationRequest(session.Id, _studentId);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.CreateReservationAsync(req, Guid.NewGuid()));
+        var ex = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() => service.CreateReservationAsync(req, Guid.NewGuid()));
         Assert.Contains("Scheduled", ex.Message);
     }
 
@@ -123,7 +123,7 @@ public class ReservationSessionStateTests
         var service = CreateService(db);
         var req = new CreateReservationRequest(session.Id, _studentId);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.CreateReservationAsync(req, Guid.NewGuid()));
+        var ex = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() => service.CreateReservationAsync(req, Guid.NewGuid()));
         Assert.Contains("Cancelled", ex.Message);
     }
 
@@ -146,7 +146,7 @@ public class ReservationSessionStateTests
 
         var result = await service.CreateReservationAsync(req, Guid.NewGuid());
         Assert.NotNull(result);
-        Assert.Equal(ReservationStatus.Reserved, result.Status);
+        Assert.Equal(ReservationStatus.Confirmed, result.Status);
     }
 
     [Fact]
@@ -174,7 +174,7 @@ public class ReservationSessionStateTests
 
         var result = await service.CreateReservationAsync(req, Guid.NewGuid());
         Assert.NotNull(result);
-        Assert.Equal(ReservationStatus.Reserved, result.Status);
+        Assert.Equal(ReservationStatus.Confirmed, result.Status);
     }
 
     [Fact]

@@ -4,9 +4,16 @@ import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../../core/services/auth.service';
 import { GymApiService } from '../../../core/services/gym-api.service';
 import {
+  ACTIVE_RESERVATION_STATUSES,
+  AttendanceSource,
   ClassSession,
   Membership,
-  Reservation
+  PagedResult,
+  Reservation,
+  ReservationAccessType,
+  ReservationApiError,
+  ReservationStatus,
+  WaitlistEntry
 } from '../../../core/models/gym.models';
 
 @Component({
@@ -163,17 +170,22 @@ import {
                                 </span>
                               </td>
                               <td class="py-3 px-4 text-right space-x-2">
-                                @if (item.status === 0 || item.status === 1) {
+                                @if (item.status === ReservationStatus.Confirmed) {
                                   <button (click)="checkIn(item.id)" class="text-xs bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-2.5 py-1 rounded transition">
                                     ✓ Presente
                                   </button>
                                   <button (click)="markNoShow(item.id)" class="text-xs bg-slate-800 hover:bg-rose-950 text-slate-300 hover:text-rose-300 border border-slate-700 px-2.5 py-1 rounded transition">
                                     ✗ Ausente
                                   </button>
-                                } @else if (item.status === 3) {
+                                } @else if (item.status === ReservationStatus.Attended) {
                                   <span class="text-xs text-emerald-400 font-semibold">Asistencia Registrada</span>
-                                } @else if (item.status === 4) {
+                                } @else if (item.status === ReservationStatus.NoShow) {
                                   <span class="text-xs text-rose-400 font-semibold">No Show Registrado</span>
+                                }
+                                @if (authService.isStaff() && isActiveReservation(item)) {
+                                  <button (click)="openCancelModal(item)" class="text-xs bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800/60 px-2.5 py-1 rounded transition">
+                                    Cancelar
+                                  </button>
                                 }
                               </td>
                             </tr>
@@ -183,6 +195,53 @@ import {
                     </div>
                   }
                 </div>
+
+                <!-- Lista de espera de la clase -->
+                <div>
+                  <h3 class="text-lg font-bold text-white mb-3">Lista de Espera ({{ waitlist().length }})</h3>
+                  @if (waitlist().length === 0) {
+                    <p class="text-xs text-slate-500">No hay alumnos en lista de espera.</p>
+                  } @else {
+                    <ol class="space-y-1.5 text-sm">
+                      @for (w of waitlist(); track w.reservationId) {
+                        <li class="flex items-center justify-between bg-slate-950/60 border border-slate-800/80 rounded-lg px-3 py-2">
+                          <span class="text-slate-100">
+                            @if (w.status === ReservationStatus.Pending) {
+                              <span class="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-bold mr-2">Cupo ofrecido</span>
+                            } @else {
+                              <span class="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-bold mr-2">#{{ w.waitListPosition }}</span>
+                            }
+                            {{ w.studentName }}
+                          </span>
+                          <span class="text-xs text-slate-500">
+                            {{ w.status === ReservationStatus.Pending
+                                ? 'vence ' + (w.waitlistOfferExpiresAtUtc | date:'short')
+                                : 'desde ' + (w.waitlistEnteredAtUtc | date:'short') }}
+                          </span>
+                        </li>
+                      }
+                    </ol>
+                  }
+                </div>
+
+                <!-- Reserva en nombre de un alumno -->
+                @if (authService.isStaff()) {
+                <div class="pt-4 border-t border-slate-800">
+                  <h3 class="text-lg font-bold text-white mb-1">Reservar para un Alumno</h3>
+                  <p class="text-xs text-slate-400 mb-3">Se aplican las mismas reglas de cupo y de derecho de acceso que al alumno.</p>
+                  <div class="flex flex-col sm:flex-row gap-2">
+                    <input [(ngModel)]="deskStudentId" type="text" placeholder="ID del alumno (Guid)"
+                           class="flex-1 bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-cyan-500" />
+                    <label class="flex items-center gap-2 text-xs text-slate-300">
+                      <input type="checkbox" [(ngModel)]="deskAllowWaitlist" /> Lista de espera si está completa
+                    </label>
+                    <button (click)="reserveForStudent()" [disabled]="!deskStudentId.trim() || isSubmitting()"
+                            class="text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-4 py-2 rounded-lg transition disabled:opacity-40">
+                      Reservar
+                    </button>
+                  </div>
+                </div>
+                }
 
               </div>
             } @else {
@@ -194,6 +253,153 @@ import {
           </div>
 
         </div>
+
+        <!-- Gestión general de reservas (sólo secretaría y administración) -->
+        @if (authService.isStaff()) {
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+            <div>
+              <h2 class="text-xl font-bold text-white">🗂️ Gestión de Reservas</h2>
+              <p class="text-xs text-slate-400">{{ reservationsPage()?.totalCount ?? 0 }} reservas encontradas</p>
+            </div>
+            <div class="flex flex-wrap items-end gap-3 text-xs">
+              <label class="flex flex-col gap-1 text-slate-400">Estado
+                <select [(ngModel)]="filterStatus" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200">
+                  <option [ngValue]="undefined">Todos</option>
+                  @for (option of statusOptions; track option.value) {
+                    <option [ngValue]="option.value">{{ option.label }}</option>
+                  }
+                </select>
+              </label>
+              <label class="flex flex-col gap-1 text-slate-400">Acceso
+                <select [(ngModel)]="filterAccessType" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200">
+                  <option [ngValue]="undefined">Todos</option>
+                  @for (option of accessTypeOptions; track option.value) {
+                    <option [ngValue]="option.value">{{ option.label }}</option>
+                  }
+                </select>
+              </label>
+              <label class="flex flex-col gap-1 text-slate-400">Desde
+                <input type="date" [(ngModel)]="filterFrom" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200" />
+              </label>
+              <label class="flex flex-col gap-1 text-slate-400">Hasta
+                <input type="date" [(ngModel)]="filterTo" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200" />
+              </label>
+              <label class="flex items-center gap-2 text-slate-300 pb-2">
+                <input type="checkbox" [(ngModel)]="filterAffectedBySessionChange" /> Afectadas por cambio de clase
+              </label>
+              <label class="flex items-center gap-2 text-slate-300 pb-2">
+                <input type="checkbox" [(ngModel)]="filterLateCancellation" /> Cancelaciones tardías
+              </label>
+              <button (click)="loadReservations(1)" class="bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold px-4 py-2 rounded-lg transition">
+                Buscar
+              </button>
+            </div>
+          </div>
+
+          @if (filterAffectedBySessionChange && filterAccessType === ReservationAccessType.SingleClassTicket) {
+            <p class="text-xs text-amber-300">
+              Estas reservas usaban un pase individual de una clase anulada: requieren compensación manual (crédito compensatorio o reintegro).
+            </p>
+          }
+
+          @if ((reservationsPage()?.items ?? []).length === 0) {
+            <div class="text-center py-8 text-slate-500 text-sm">No hay reservas para los filtros indicados.</div>
+          } @else {
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-sm">
+                <thead class="text-xs text-slate-400 bg-slate-950/70 border-b border-slate-800 uppercase">
+                  <tr>
+                    <th class="py-3 px-4">Alumno</th>
+                    <th class="py-3 px-4">Clase</th>
+                    <th class="py-3 px-4">Acceso</th>
+                    <th class="py-3 px-4">Estado</th>
+                    <th class="py-3 px-4 text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800/80">
+                  @for (r of reservationsPage()!.items; track r.id) {
+                    <tr class="hover:bg-slate-800/30 transition">
+                      <td class="py-3 px-4">
+                        <div class="font-semibold text-slate-100">{{ r.studentName }}</div>
+                        <div class="text-xs text-slate-500">{{ r.documentNumber ?? r.studentDni }}</div>
+                      </td>
+                      <td class="py-3 px-4 text-xs text-slate-300">
+                        {{ r.activityName }}<br />
+                        <span class="text-slate-500">{{ r.classDate | date:'shortDate' }} {{ r.startTime }} · {{ r.roomName }}</span>
+                      </td>
+                      <td class="py-3 px-4 text-xs text-slate-300">{{ getAccessTypeText(r.accessType) }}</td>
+                      <td class="py-3 px-4">
+                        <span class="text-xs px-2 py-0.5 rounded font-bold" [ngClass]="getReservationBadgeClass(r.status)">
+                          {{ getReservationStatusText(r.status) }}
+                        </span>
+                        @if (r.isLateCancellation) {
+                          <span class="ml-1 text-[10px] text-amber-400 font-semibold">TARDÍA</span>
+                        }
+                        @if (r.isPolicyOverride) {
+                          <span class="ml-1 text-[10px] text-fuchsia-400 font-semibold" [title]="r.policyOverrideReason ?? ''">EXCEPCIÓN</span>
+                        }
+                        @if (r.affectedBySessionChange) {
+                          <span class="ml-1 text-[10px] text-rose-400 font-semibold">CLASE ANULADA</span>
+                        }
+                      </td>
+                      <td class="py-3 px-4 text-right">
+                        @if (isActiveReservation(r)) {
+                          <button (click)="openCancelModal(r)" class="text-xs bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800/60 px-2.5 py-1 rounded transition">
+                            Cancelar
+                          </button>
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+
+            <div class="flex items-center justify-end gap-3 text-xs text-slate-400">
+              <button (click)="loadReservations(reservationsPage()!.pageNumber - 1)" [disabled]="!reservationsPage()!.hasPreviousPage"
+                      class="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 disabled:opacity-40">Anterior</button>
+              <span>Página {{ reservationsPage()!.pageNumber }} de {{ reservationsPage()!.totalPages }}</span>
+              <button (click)="loadReservations(reservationsPage()!.pageNumber + 1)" [disabled]="!reservationsPage()!.hasNextPage"
+                      class="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 disabled:opacity-40">Siguiente</button>
+            </div>
+          }
+        </div>
+        }
+
+        <!-- Modal: Cancel Reservation -->
+        @if (reservationToCancel(); as target) {
+          <div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+              <h3 class="text-xl font-bold text-white">Cancelar Reserva</h3>
+              <p class="text-xs text-slate-400">
+                {{ target.studentName }} · {{ target.activityName }} · {{ target.classDate | date:'shortDate' }} {{ target.startTime }}
+              </p>
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Motivo</label>
+                <input [(ngModel)]="cancelReason" type="text" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:border-cyan-500" placeholder="Ej: Pedido del alumno por teléfono" />
+              </div>
+              <label class="flex items-start gap-2 text-xs text-slate-300">
+                <input type="checkbox" [(ngModel)]="cancelOverridePolicy" class="mt-0.5" />
+                <span>Excepción administrativa: devolver el crédito aunque la cancelación sea fuera de término. Queda auditada.</span>
+              </label>
+              @if (cancelOverridePolicy) {
+                <div>
+                  <label class="block text-xs font-semibold text-slate-300 mb-1">Justificación de la excepción (obligatoria)</label>
+                  <input [(ngModel)]="cancelOverrideReason" type="text" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:border-cyan-500" placeholder="Ej: Emergencia médica acreditada" />
+                </div>
+              }
+              <div class="flex justify-end gap-3 pt-2">
+                <button (click)="reservationToCancel.set(null)" class="text-xs bg-slate-800 text-slate-300 px-4 py-2 rounded-lg">Volver</button>
+                <button (click)="confirmCancelReservation()"
+                        [disabled]="isSubmitting() || (cancelOverridePolicy && !cancelOverrideReason.trim())"
+                        class="text-xs bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-2 rounded-lg transition disabled:opacity-40">
+                  Confirmar Cancelación
+                </button>
+              </div>
+            </div>
+          </div>
+        }
 
         <!-- Modal: Suspend Class -->
         @if (showSuspendModal()) {
@@ -264,8 +470,162 @@ export class StaffPortalComponent implements OnInit {
   feedbackMessage = signal<string | null>(null);
   feedbackSuccess = signal(true);
 
+  readonly ReservationStatus = ReservationStatus;
+  readonly ReservationAccessType = ReservationAccessType;
+
+  readonly statusOptions = [
+    { value: ReservationStatus.Confirmed, label: 'Confirmada' },
+    { value: ReservationStatus.Waitlisted, label: 'En espera' },
+    { value: ReservationStatus.Pending, label: 'Cupo ofrecido' },
+    { value: ReservationStatus.Cancelled, label: 'Cancelada' },
+    { value: ReservationStatus.Attended, label: 'Presente' },
+    { value: ReservationStatus.NoShow, label: 'Ausente' }
+  ];
+
+  readonly accessTypeOptions = [
+    { value: ReservationAccessType.MembershipCredit, label: 'Membresía (crédito)' },
+    { value: ReservationAccessType.UnlimitedMembership, label: 'Membresía ilimitada' },
+    { value: ReservationAccessType.CompensatoryCredit, label: 'Crédito compensatorio' },
+    { value: ReservationAccessType.SingleClassTicket, label: 'Pase individual' },
+    { value: ReservationAccessType.PromotionalBenefit, label: 'Promoción' }
+  ];
+
+  waitlist = signal<WaitlistEntry[]>([]);
+  isSubmitting = signal(false);
+
+  // Reserva en mostrador
+  deskStudentId = '';
+  deskAllowWaitlist = true;
+
+  // Listado general
+  reservationsPage = signal<PagedResult<Reservation> | null>(null);
+  filterStatus?: ReservationStatus;
+  filterAccessType?: ReservationAccessType;
+  filterFrom = '';
+  filterTo = '';
+  filterAffectedBySessionChange = false;
+  filterLateCancellation = false;
+
+  // Cancelación
+  reservationToCancel = signal<Reservation | null>(null);
+  cancelReason = '';
+  cancelOverridePolicy = false;
+  cancelOverrideReason = '';
+
   ngOnInit(): void {
     this.loadSessions();
+    if (this.authService.isStaff()) {
+      this.loadReservations(1);
+    }
+  }
+
+  loadReservations(page: number): void {
+    this.gymApi.getReservations({
+      status: this.filterStatus,
+      accessType: this.filterAccessType,
+      from: this.filterFrom || undefined,
+      to: this.filterTo || undefined,
+      // Sin tildar no se filtra; tildado trae sólo las que cumplen.
+      affectedBySessionChange: this.filterAffectedBySessionChange || undefined,
+      isLateCancellation: this.filterLateCancellation || undefined,
+      page,
+      pageSize: 15
+    }).subscribe({
+      next: (result) => this.reservationsPage.set(result),
+      error: (err) => {
+        this.reservationsPage.set(null);
+        this.showFeedback(err.error?.message || 'Error al consultar las reservas.', false);
+      }
+    });
+  }
+
+  reserveForStudent(): void {
+    const session = this.selectedSession();
+    const studentId = this.deskStudentId.trim();
+    if (!session || !studentId) return;
+
+    this.isSubmitting.set(true);
+    this.gymApi.createReservation({
+      classSessionId: session.id,
+      studentId,
+      allowWaitlist: this.deskAllowWaitlist
+    }).subscribe({
+      next: (res) => {
+        this.isSubmitting.set(false);
+        this.deskStudentId = '';
+        this.showFeedback(
+          res.status === ReservationStatus.Waitlisted
+            ? `Clase completa: ${res.studentName} quedó en lista de espera, posición ${res.waitListPosition}.`
+            : `Reserva confirmada para ${res.studentName}.`,
+          true);
+        this.refreshAfterReservationChange();
+      },
+      error: (err) => {
+        this.isSubmitting.set(false);
+        this.showFeedback(this.describeError(err, 'Error al crear la reserva.'), false);
+      }
+    });
+  }
+
+  openCancelModal(reservation: Reservation): void {
+    this.cancelReason = '';
+    this.cancelOverridePolicy = false;
+    this.cancelOverrideReason = '';
+    this.reservationToCancel.set(reservation);
+  }
+
+  confirmCancelReservation(): void {
+    const target = this.reservationToCancel();
+    if (!target) return;
+
+    this.isSubmitting.set(true);
+    this.gymApi.cancelReservation(target.id, {
+      reason: this.cancelReason.trim() || undefined,
+      overridePolicy: this.cancelOverridePolicy,
+      policyOverrideReason: this.cancelOverridePolicy ? this.cancelOverrideReason.trim() : undefined
+    }).subscribe({
+      next: (res) => {
+        this.isSubmitting.set(false);
+        this.reservationToCancel.set(null);
+        this.showFeedback(
+          res.isLateCancellation
+            ? 'Reserva cancelada fuera de término: el crédito no se devolvió.'
+            : 'Reserva cancelada.',
+          true);
+        this.refreshAfterReservationChange();
+      },
+      error: (err) => {
+        this.isSubmitting.set(false);
+        this.showFeedback(this.describeError(err, 'Error al cancelar la reserva.'), false);
+      }
+    });
+  }
+
+  isActiveReservation(reservation: Reservation): boolean {
+    return ACTIVE_RESERVATION_STATUSES.includes(reservation.status);
+  }
+
+  getAccessTypeText(accessType: ReservationAccessType): string {
+    return this.accessTypeOptions.find(o => o.value === accessType)?.label ?? 'Desconocido';
+  }
+
+  /** Mensaje del error de la API más los motivos de inelegibilidad, cuando los informa. */
+  private describeError(err: any, fallback: string): string {
+    const body = err.error as Partial<ReservationApiError> | undefined;
+    const reasons = Array.isArray(body?.reasons) ? body!.reasons.map(r => r.message).join(' · ') : '';
+    const message = body?.message || fallback;
+    return reasons && !message.includes(reasons) ? `${message} (${reasons})` : message;
+  }
+
+  private refreshAfterReservationChange(): void {
+    const session = this.selectedSession();
+    if (session) {
+      this.loadRoster(session.id);
+    }
+    this.loadSessions();
+    if (this.authService.isStaff()) {
+      this.loadReservations(this.reservationsPage()?.pageNumber ?? 1);
+    }
   }
 
   loadSessions(): void {
@@ -288,13 +648,19 @@ export class StaffPortalComponent implements OnInit {
 
   loadRoster(sessionId: string): void {
     this.gymApi.getSessionReservations(sessionId).subscribe({
-      next: (list) => this.roster.set(list),
+      next: (list) => this.roster.set(list.filter(r =>
+        r.status !== ReservationStatus.Waitlisted && r.status !== ReservationStatus.Pending)),
       error: () => this.roster.set([])
+    });
+    this.gymApi.getSessionWaitlist(sessionId).subscribe({
+      next: (list) => this.waitlist.set(list),
+      error: () => this.waitlist.set([])
     });
   }
 
   checkIn(reservationId: string): void {
-    this.gymApi.recordAttendance(reservationId, 0).subscribe({
+    const source = this.authService.isStaff() ? AttendanceSource.SecretaryDesk : AttendanceSource.InstructorInRoom;
+    this.gymApi.recordAttendance(reservationId, source).subscribe({
       next: () => {
         this.showFeedback('Asistencia registrada correctamente.', true);
         if (this.selectedSession()) {
@@ -409,26 +775,26 @@ export class StaffPortalComponent implements OnInit {
     }
   }
 
-  getReservationBadgeClass(status: number): string {
+  getReservationBadgeClass(status: ReservationStatus): string {
     switch (status) {
-      case 0: return 'bg-cyan-500/20 text-cyan-300';
-      case 1: return 'bg-blue-500/20 text-blue-300';
-      case 2: return 'bg-slate-800 text-slate-400';
-      case 3: return 'bg-emerald-500/20 text-emerald-300';
-      case 4: return 'bg-rose-500/20 text-rose-300';
-      case 5: return 'bg-amber-500/20 text-amber-300';
+      case ReservationStatus.Confirmed: return 'bg-cyan-500/20 text-cyan-300';
+      case ReservationStatus.Cancelled: return 'bg-slate-800 text-slate-400';
+      case ReservationStatus.Attended: return 'bg-emerald-500/20 text-emerald-300';
+      case ReservationStatus.NoShow: return 'bg-rose-500/20 text-rose-300';
+      case ReservationStatus.Waitlisted: return 'bg-amber-500/20 text-amber-300';
+      case ReservationStatus.Pending: return 'bg-emerald-500/20 text-emerald-300';
       default: return 'bg-slate-800 text-slate-300';
     }
   }
 
-  getReservationStatusText(status: number): string {
+  getReservationStatusText(status: ReservationStatus): string {
     switch (status) {
-      case 0: return 'Reservada';
-      case 1: return 'Confirmada';
-      case 2: return 'Cancelada';
-      case 3: return 'Presente';
-      case 4: return 'Ausente / No-Show';
-      case 5: return 'En Espera';
+      case ReservationStatus.Confirmed: return 'Confirmada';
+      case ReservationStatus.Cancelled: return 'Cancelada';
+      case ReservationStatus.Attended: return 'Presente';
+      case ReservationStatus.NoShow: return 'Ausente / No-Show';
+      case ReservationStatus.Waitlisted: return 'En Espera';
+      case ReservationStatus.Pending: return 'Cupo Ofrecido';
       default: return 'Desconocido';
     }
   }

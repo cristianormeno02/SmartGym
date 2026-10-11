@@ -230,7 +230,7 @@ public class PeopleEndToEndTests : IDisposable
         Assert.NotNull(blockedPerson.StatusChangedAtUtc);
 
         // Verificar que la persona BLOQUEADA NO PUEDE reservar
-        var reservationException = await Assert.ThrowsAsync<ArgumentException>(() =>
+        var reservationException = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() =>
             _reservationService.CreateReservationAsync(
                 new CreateReservationRequest(classSession.Id, createdPerson.Id),
                 Guid.NewGuid()

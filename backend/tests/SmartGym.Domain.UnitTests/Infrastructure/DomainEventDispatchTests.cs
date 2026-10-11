@@ -212,6 +212,169 @@ public class DomainEventDispatchTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
     }
 
+    private record DummyPostCommitEvent(string Message) : IPostCommitDomainEvent;
+
+    private class ScopedMarker
+    {
+        public Guid InstanceId { get; } = Guid.NewGuid();
+    }
+
+    private class TransactionalTestDbContext : TestDbContext
+    {
+        public bool SimulateActiveTransaction { get; set; }
+
+        public TransactionalTestDbContext(DbContextOptions<SmartGymDbContext> options, IServiceProvider? serviceProvider = null)
+            : base(options, serviceProvider)
+        {
+        }
+
+        protected override bool HasActiveExplicitTransaction => SimulateActiveTransaction || base.HasActiveExplicitTransaction;
+    }
+
+    [Fact]
+    public async Task PostCommitEvent_IsNotDispatchedBeforePersisting_AndDispatchedAfterSaveWhenNoTransaction()
+    {
+        var serviceCollection = new ServiceCollection();
+        var preCommitRan = false;
+        var postCommitRanDuringPreCommit = false;
+        var postCommitRan = false;
+        var countInNewScopeDuringPostCommit = -1;
+
+        var dbName = Guid.NewGuid().ToString();
+        var options = new DbContextOptionsBuilder<SmartGymDbContext>()
+            .UseInMemoryDatabase(dbName)
+            .Options;
+
+        serviceCollection.AddScoped(_ => new TestDbContext(options));
+
+        serviceCollection.AddScoped<IDomainEventHandler<DummyEvent>>(_ => new ActionHandler<DummyEvent>(_ =>
+        {
+            preCommitRan = true;
+            postCommitRanDuringPreCommit = postCommitRan;
+            return Task.CompletedTask;
+        }));
+
+        serviceCollection.AddScoped<IDomainEventHandler<DummyPostCommitEvent>>(sp => new ActionHandler<DummyPostCommitEvent>(async _ =>
+        {
+            postCommitRan = true;
+            var freshDb = sp.GetRequiredService<TestDbContext>();
+            countInNewScopeDuringPostCommit = await freshDb.Dummies.CountAsync();
+        }));
+
+        var sp = serviceCollection.BuildServiceProvider();
+        using var context = new TestDbContext(options, sp);
+
+        var dummy = new DummyEntity { Name = "PersistedFirst" };
+        dummy.AddEvent(new DummyEvent("Pre"));
+        dummy.AddEvent(new DummyPostCommitEvent("Post"));
+        context.Dummies.Add(dummy);
+
+        await context.SaveChangesAsync();
+
+        Assert.True(preCommitRan);
+        Assert.False(postCommitRanDuringPreCommit);
+        Assert.True(postCommitRan);
+        Assert.Equal(1, countInNewScopeDuringPostCommit);
+    }
+
+    [Fact]
+    public async Task PostCommitEvent_WithActiveTransaction_IsDeferredUntilCommit_AndDiscardedOnRollback()
+    {
+        var dispatchedMessages = new List<string>();
+        var serviceCollection = new ServiceCollection();
+        serviceCollection.AddScoped<IDomainEventHandler<DummyPostCommitEvent>>(_ => new ActionHandler<DummyPostCommitEvent>(evt =>
+        {
+            dispatchedMessages.Add(evt.Message);
+            return Task.CompletedTask;
+        }));
+
+        var sp = serviceCollection.BuildServiceProvider();
+        var options = new DbContextOptionsBuilder<SmartGymDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        using var context = new TransactionalTestDbContext(options, sp)
+        {
+            SimulateActiveTransaction = true
+        };
+
+        var dummy1 = new DummyEntity { Name = "TxCommit" };
+        dummy1.AddEvent(new DummyPostCommitEvent("CommittedMsg"));
+        context.Dummies.Add(dummy1);
+
+        await context.SaveChangesAsync();
+
+        // Still inside uncommitted transaction: must not have dispatched yet
+        Assert.Empty(dispatchedMessages);
+        Assert.Single(context.PendingPostCommitEvents);
+
+        // Commit dispatches the queued event
+        await context.DispatchPostCommitEventsAsync();
+        Assert.Single(dispatchedMessages);
+        Assert.Equal("CommittedMsg", dispatchedMessages[0]);
+        Assert.Empty(context.PendingPostCommitEvents);
+
+        // Now queue another event and simulate rollback
+        var dummy2 = new DummyEntity { Name = "TxRollback" };
+        dummy2.AddEvent(new DummyPostCommitEvent("RolledBackMsg"));
+        context.Dummies.Add(dummy2);
+
+        await context.SaveChangesAsync();
+        Assert.Single(context.PendingPostCommitEvents);
+
+        context.ClearPostCommitEvents();
+        await context.DispatchPostCommitEventsAsync();
+
+        Assert.Single(dispatchedMessages);
+        Assert.Empty(context.PendingPostCommitEvents);
+    }
+
+    [Fact]
+    public async Task PostCommitEvent_HandlerException_IsSwallowedAndLogged_DoesNotStopOtherHandlers_AndRunsInIsolatedScopes()
+    {
+        var serviceCollection = new ServiceCollection();
+        serviceCollection.AddLogging();
+        serviceCollection.AddScoped<ScopedMarker>();
+
+        var scopeIds = new List<Guid>();
+        var secondHandlerRan = false;
+
+        serviceCollection.AddScoped<IDomainEventHandler<DummyPostCommitEvent>>(sp => new ActionHandler<DummyPostCommitEvent>(_ =>
+        {
+            scopeIds.Add(sp.GetRequiredService<ScopedMarker>().InstanceId);
+            throw new InvalidOperationException("First post-commit handler failed");
+        }));
+
+        serviceCollection.AddScoped<IDomainEventHandler<DummyPostCommitEvent>>(sp => new ActionHandler<DummyPostCommitEvent>(_ =>
+        {
+            scopeIds.Add(sp.GetRequiredService<ScopedMarker>().InstanceId);
+            secondHandlerRan = true;
+            return Task.CompletedTask;
+        }));
+
+        var sp = serviceCollection.BuildServiceProvider();
+        var callerScopeId = sp.GetRequiredService<ScopedMarker>().InstanceId;
+
+        var options = new DbContextOptionsBuilder<SmartGymDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        using var context = new TestDbContext(options, sp);
+        var dummy = new DummyEntity { Name = "Resilient" };
+        dummy.AddEvent(new DummyPostCommitEvent("Notify"));
+        context.Dummies.Add(dummy);
+
+        // Must not throw despite first handler throwing
+        var saved = await context.SaveChangesAsync();
+
+        Assert.Equal(1, saved);
+        Assert.True(secondHandlerRan);
+        Assert.Equal(2, scopeIds.Count);
+        Assert.NotEqual(callerScopeId, scopeIds[0]);
+        Assert.NotEqual(callerScopeId, scopeIds[1]);
+        Assert.NotEqual(scopeIds[0], scopeIds[1]);
+    }
+
     private class ActionHandler<T> : IDomainEventHandler<T> where T : IDomainEvent
     {
         private readonly Func<T, Task> _action;
@@ -219,3 +382,4 @@ public class DomainEventDispatchTests
         public Task HandleAsync(T domainEvent, CancellationToken cancellationToken = default) => _action(domainEvent);
     }
 }
+

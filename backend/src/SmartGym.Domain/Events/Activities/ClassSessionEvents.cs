@@ -34,3 +34,12 @@ public record ClassSessionRoomChanged(
     Guid NewRoomId,
     Guid? ByUserId
 ) : IDomainEvent;
+
+public record ClassSessionCapacityIncreased(
+    Guid SessionId,
+    int PreviousCapacity,
+    int NewCapacity,
+    Guid? ByUserId,
+    DateTime AtUtc
+) : IDomainEvent;
+

@@ -528,6 +528,27 @@ public class MembershipService : IMembershipService
         return await GetByIdAsync(membershipId, cancellationToken);
     }
 
+    private async Task LockAffectedReservationSessionsAsync(Guid membershipId, CancellationToken cancellationToken)
+    {
+        var nowUtc = _gymCalendar.UtcNow;
+        var sessionIds = await _dbContext.Reservations
+            .Where(r => r.MembershipId == membershipId &&
+                        r.IsActive &&
+                        (r.Status == ReservationStatus.Confirmed ||
+                         r.Status == ReservationStatus.Waitlisted ||
+                         r.Status == ReservationStatus.Pending) &&
+                        r.ClassSession.StartsAtUtc > nowUtc)
+            .Select(r => r.ClassSessionId)
+            .Distinct()
+            .OrderBy(id => id)
+            .ToListAsync(cancellationToken);
+
+        foreach (var sessionId in sessionIds)
+        {
+            await _dbContext.LockClassSessionForUpdateAsync(sessionId, cancellationToken);
+        }
+    }
+
     public async Task<MembershipDetailDto> SuspendAsync(
         Guid membershipId,
         SuspendMembershipRequest request,
@@ -535,6 +556,7 @@ public class MembershipService : IMembershipService
         CancellationToken cancellationToken = default)
     {
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await LockAffectedReservationSessionsAsync(membershipId, cancellationToken);
         await _dbContext.LockMembershipForUpdateAsync(membershipId, cancellationToken);
 
         var membership = await _dbContext.Memberships
@@ -712,6 +734,7 @@ public class MembershipService : IMembershipService
         }
 
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await LockAffectedReservationSessionsAsync(membershipId, cancellationToken);
         await _dbContext.LockMembershipForUpdateAsync(membershipId, cancellationToken);
 
         var membership = await _dbContext.Memberships

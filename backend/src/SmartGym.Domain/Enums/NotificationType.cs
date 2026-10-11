@@ -9,5 +9,11 @@ public enum NotificationType
     PaymentConfirmed = 5,
     MembershipActivated = 6,
     MembershipSuspended = 7,
-    MembershipExpired = 8
+    MembershipExpired = 8,
+    ReservationConfirmed = 9,
+    ReservationCancelled = 10,
+    ReservationWaitlisted = 11,
+    ReservationPromotedFromWaitlist = 12,
+    WaitlistSpotOffered = 13,
+    WaitlistOfferExpired = 14
 }

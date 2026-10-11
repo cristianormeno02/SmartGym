@@ -940,6 +940,9 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("ActivityId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("Amount")
                         .HasColumnType("integer");
 
@@ -951,6 +954,9 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly?>("ExpiresOn")
+                        .HasColumnType("date");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
@@ -966,6 +972,9 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .HasMaxLength(250)
                         .HasColumnType("character varying(250)");
 
+                    b.Property<Guid?>("ReservationId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("StudentId")
                         .HasColumnType("uuid");
 
@@ -977,11 +986,18 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ActivityId");
+
                     b.HasIndex("ClassSessionId");
 
                     b.HasIndex("MembershipId");
 
                     b.HasIndex("StudentId");
+
+                    b.HasIndex("ReservationId", "Type")
+                        .IsUnique()
+                        .HasDatabaseName("UX_CreditMovements_Reservation_Type")
+                        .HasFilter("\"ReservationId\" IS NOT NULL AND \"Type\" IN (2, 3)");
 
                     b.ToTable("MembershipCreditMovements", (string)null);
                 });
@@ -1049,7 +1065,6 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("SmartGym.Domain.Entities.Memberships.MembershipStatusChange", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("ChangedAtUtc")
@@ -1088,7 +1103,6 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("SmartGym.Domain.Entities.Memberships.MembershipSuspension", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<DateOnly?>("EndDate")
@@ -1497,6 +1511,9 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("RedeemedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("ReservationId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -1507,6 +1524,11 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.HasIndex("PersonId");
 
                     b.HasIndex("PromotionId");
+
+                    b.HasIndex("ReservationId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PromotionRedemptions_Reservation")
+                        .HasFilter("\"ReservationId\" IS NOT NULL");
 
                     b.HasIndex("PromotionId", "PersonId");
 
@@ -1519,6 +1541,14 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<int>("AccessType")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("AffectedBySessionChange")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<int?>("AttendanceSource")
                         .HasColumnType("integer");
 
@@ -1529,8 +1559,14 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<int?>("CancellationSource")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime?>("CancelledAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CancelledByUserId")
+                        .HasColumnType("uuid");
 
                     b.Property<Guid?>("CheckedInByUserId")
                         .HasColumnType("uuid");
@@ -1544,23 +1580,64 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid?>("CreditMovementId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsLateCancellation")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("IsPolicyOverride")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<Guid?>("MembershipId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("Origin")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("PaymentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PolicyOverrideReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid?>("PromotionRedemptionId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid?>("RefundCreditMovementId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("RequestedPromotionCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<Guid?>("RescheduledToSessionId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("ReservedAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("SingleClassTicketMovementId")
+                        .HasColumnType("uuid");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
@@ -1571,26 +1648,130 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.Property<int?>("WaitListPosition")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("WaitlistEnteredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("WaitlistOfferExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("WaitlistPromotedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("ClassSessionId");
+                    b.HasIndex("CancelledByUserId");
+
+                    b.HasIndex("CheckedInByUserId");
+
+                    b.HasIndex("CreatedByUserId");
 
                     b.HasIndex("CreditMovementId");
 
                     b.HasIndex("MembershipId");
 
+                    b.HasIndex("PaymentId");
+
+                    b.HasIndex("PromotionRedemptionId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Reservations_PromotionRedemption")
+                        .HasFilter("\"PromotionRedemptionId\" IS NOT NULL");
+
                     b.HasIndex("RefundCreditMovementId");
 
-                    b.HasIndex("StudentId");
+                    b.HasIndex("RescheduledToSessionId");
 
-                    b.HasIndex("ClassSessionId", "Status");
+                    b.HasIndex("SingleClassTicketMovementId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Reservations_Held_AccessMovement")
+                        .HasFilter("\"SingleClassTicketMovementId\" IS NOT NULL AND \"IsActive\" AND (\"Status\" IN (1, 4, 5, 7) OR (\"Status\" = 3 AND \"IsLateCancellation\"))");
 
-                    b.HasIndex("ClassSessionId", "StudentId");
+                    b.HasIndex("WaitlistOfferExpiresAtUtc")
+                        .HasDatabaseName("IX_Reservations_PendingOffers")
+                        .HasFilter("\"Status\" = 7 AND \"IsActive\"");
 
-                    b.ToTable("Reservations", (string)null);
+                    b.HasIndex("ClassSessionId", "Status")
+                        .HasDatabaseName("IX_Reservations_Session_Status");
+
+                    b.HasIndex("ClassSessionId", "StudentId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Reservations_Active_Session_Student")
+                        .HasFilter("\"Status\" IN (1, 6, 7) AND \"IsActive\"");
+
+                    b.HasIndex("ClassSessionId", "WaitListPosition")
+                        .HasDatabaseName("IX_Reservations_Session_Waitlist")
+                        .HasFilter("\"Status\" = 6 AND \"IsActive\"");
+
+                    b.HasIndex("StudentId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Reservations_Student_IdempotencyKey")
+                        .HasFilter("\"IdempotencyKey\" IS NOT NULL");
+
+                    b.HasIndex("StudentId", "Status", "ReservedAtUtc")
+                        .IsDescending(false, false, true)
+                        .HasDatabaseName("IX_Reservations_Student_Status_ReservedAt");
+
+                    b.ToTable("Reservations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Reservations_AccessType", "\"AccessType\" IN (1, 2, 3, 4, 5)");
+
+                            t.HasCheckConstraint("CK_Reservations_Cancellation", "((\"Status\" = 3) = (\"CancelledAtUtc\" IS NOT NULL AND \"CancellationReason\" IS NOT NULL))");
+
+                            t.HasCheckConstraint("CK_Reservations_Origin", "\"Origin\" IN (1, 2, 3)");
+
+                            t.HasCheckConstraint("CK_Reservations_PendingOffer", "((\"Status\" = 7) = (\"WaitlistOfferExpiresAtUtc\" IS NOT NULL))");
+
+                            t.HasCheckConstraint("CK_Reservations_PolicyOverride", "(NOT \"IsPolicyOverride\" OR \"PolicyOverrideReason\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_Reservations_Status", "\"Status\" IN (1, 3, 4, 5, 6, 7)");
+
+                            t.HasCheckConstraint("CK_Reservations_WaitlistPosition", "((\"Status\" = 6) = (\"WaitListPosition\" IS NOT NULL AND \"WaitListPosition\" >= 1))");
+                        });
+                });
+
+            modelBuilder.Entity("SmartGym.Domain.Entities.Reservations.ReservationStatusChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ChangedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ChangedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("NewStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("PreviousStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid>("ReservationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Trigger")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChangedByUserId");
+
+                    b.HasIndex("ReservationId", "ChangedAtUtc");
+
+                    b.ToTable("ReservationStatusChanges", (string)null);
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Activities.ActivityMedia", b =>
@@ -2026,6 +2207,11 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Memberships.MembershipCreditMovement", b =>
                 {
+                    b.HasOne("SmartGym.Domain.Entities.Activities.Activity", "Activity")
+                        .WithMany()
+                        .HasForeignKey("ActivityId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SmartGym.Domain.Entities.Activities.ClassSession", "ClassSession")
                         .WithMany()
                         .HasForeignKey("ClassSessionId")
@@ -2036,15 +2222,24 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .HasForeignKey("MembershipId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("SmartGym.Domain.Entities.Reservations.Reservation", "Reservation")
+                        .WithMany()
+                        .HasForeignKey("ReservationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SmartGym.Domain.Entities.Identity.Person", "Student")
                         .WithMany()
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.Navigation("Activity");
+
                     b.Navigation("ClassSession");
 
                     b.Navigation("Membership");
+
+                    b.Navigation("Reservation");
 
                     b.Navigation("Student");
                 });
@@ -2207,35 +2402,77 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("SmartGym.Domain.Entities.Reservations.Reservation", "Reservation")
+                        .WithMany()
+                        .HasForeignKey("ReservationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Membership");
 
                     b.Navigation("Person");
 
                     b.Navigation("Promotion");
+
+                    b.Navigation("Reservation");
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Reservations.Reservation", b =>
                 {
+                    b.HasOne("SmartGym.Domain.Entities.Identity.User", "CancelledByUser")
+                        .WithMany()
+                        .HasForeignKey("CancelledByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartGym.Domain.Entities.Identity.User", "CheckedInByUser")
+                        .WithMany()
+                        .HasForeignKey("CheckedInByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SmartGym.Domain.Entities.Activities.ClassSession", "ClassSession")
                         .WithMany()
                         .HasForeignKey("ClassSessionId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("SmartGym.Domain.Entities.Identity.User", "CreatedByUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SmartGym.Domain.Entities.Memberships.MembershipCreditMovement", "CreditMovement")
                         .WithMany()
                         .HasForeignKey("CreditMovementId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("SmartGym.Domain.Entities.Memberships.Membership", "Membership")
                         .WithMany()
                         .HasForeignKey("MembershipId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartGym.Domain.Entities.Operations.Payment", "Payment")
+                        .WithMany()
+                        .HasForeignKey("PaymentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartGym.Domain.Entities.Promotions.PromotionRedemption", "PromotionRedemption")
+                        .WithMany()
+                        .HasForeignKey("PromotionRedemptionId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("SmartGym.Domain.Entities.Memberships.MembershipCreditMovement", "RefundCreditMovement")
                         .WithMany()
                         .HasForeignKey("RefundCreditMovementId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartGym.Domain.Entities.Activities.ClassSession", "RescheduledToSession")
+                        .WithMany()
+                        .HasForeignKey("RescheduledToSessionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartGym.Domain.Entities.Memberships.MembershipCreditMovement", "SingleClassTicketMovement")
+                        .WithMany()
+                        .HasForeignKey("SingleClassTicketMovementId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("SmartGym.Domain.Entities.Identity.Person", "Student")
                         .WithMany()
@@ -2243,15 +2480,47 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.Navigation("CancelledByUser");
+
+                    b.Navigation("CheckedInByUser");
+
                     b.Navigation("ClassSession");
+
+                    b.Navigation("CreatedByUser");
 
                     b.Navigation("CreditMovement");
 
                     b.Navigation("Membership");
 
+                    b.Navigation("Payment");
+
+                    b.Navigation("PromotionRedemption");
+
                     b.Navigation("RefundCreditMovement");
 
+                    b.Navigation("RescheduledToSession");
+
+                    b.Navigation("SingleClassTicketMovement");
+
                     b.Navigation("Student");
+                });
+
+            modelBuilder.Entity("SmartGym.Domain.Entities.Reservations.ReservationStatusChange", b =>
+                {
+                    b.HasOne("SmartGym.Domain.Entities.Identity.User", "ChangedByUser")
+                        .WithMany()
+                        .HasForeignKey("ChangedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartGym.Domain.Entities.Reservations.Reservation", "Reservation")
+                        .WithMany("StatusChanges")
+                        .HasForeignKey("ReservationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ChangedByUser");
+
+                    b.Navigation("Reservation");
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Activities.Activity", b =>
@@ -2300,6 +2569,11 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("SmartGym.Domain.Entities.Promotions.Promotion", b =>
                 {
                     b.Navigation("Redemptions");
+                });
+
+            modelBuilder.Entity("SmartGym.Domain.Entities.Reservations.Reservation", b =>
+                {
+                    b.Navigation("StatusChanges");
                 });
 #pragma warning restore 612, 618
         }

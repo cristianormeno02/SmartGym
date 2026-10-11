@@ -210,4 +210,153 @@ public class PromotionRedemptionLifecycleTests
         Assert.NotEqual(firstRedemption.Id, secondRedemption.Id);
         Assert.Equal(1, (await db.Promotions.SingleAsync(p => p.Id == promo.Id)).CurrentUsesTotal);
     }
+
+    [Fact]
+    public async Task EvaluateAndRedeemPromotionForReservation_FullAccessBenefitsSucceed_AndLinkToReservationId()
+    {
+        await using var db = CreateDbContext();
+        var calendar = new StubGymCalendar { Today = new DateOnly(2026, 6, 15) };
+        IPromotionService service = new PromotionService(db, calendar);
+
+        var student = Person.Create("Valentina", "Ríos", "37888999");
+        db.People.Add(student);
+
+        var freeClassPromo = new Promotion
+        {
+            Id = Guid.NewGuid(),
+            Code = "CLASEGRATIS100",
+            Name = "Clase 100% Bonificada",
+            ConditionType = PromotionConditionType.CouponCode,
+            BenefitType = PromotionBenefitType.PercentageDiscount,
+            BenefitValue = 100m,
+            ValidFrom = new DateOnly(2026, 6, 1),
+            ValidTo = new DateOnly(2026, 6, 30),
+            MaxUsesTotal = 10,
+            MaxUsesPerPerson = 1,
+            IsActive = true
+        };
+
+        var extraCreditPromo = new Promotion
+        {
+            Id = Guid.NewGuid(),
+            Code = "PRIMERACLASE",
+            Name = "Primera Clase Gratis",
+            ConditionType = PromotionConditionType.NewStudent,
+            BenefitType = PromotionBenefitType.ExtraCredits,
+            BenefitValue = 1m,
+            ValidFrom = new DateOnly(2026, 6, 1),
+            ValidTo = new DateOnly(2026, 6, 30),
+            MaxUsesTotal = 10,
+            MaxUsesPerPerson = 1,
+            IsActive = true
+        };
+
+        db.Promotions.AddRange(freeClassPromo, extraCreditPromo);
+        await db.SaveChangesAsync();
+
+        var sessionId = Guid.NewGuid();
+        var activityId = Guid.NewGuid();
+        var reservation1Id = Guid.NewGuid();
+        var reservation2Id = Guid.NewGuid();
+
+        var eval1 = await service.EvaluatePromotionForReservationAsync(student.Id, sessionId, activityId, "CLASEGRATIS100");
+        Assert.Equal(freeClassPromo.Id, eval1.PromotionId);
+
+        var redemption1 = await service.RedeemPromotionForReservationAsync(
+            student.Id,
+            sessionId,
+            activityId,
+            "CLASEGRATIS100",
+            reservation1Id);
+
+        Assert.Equal(reservation1Id, redemption1.ReservationId);
+        var persisted1 = await db.PromotionRedemptions.SingleAsync(r => r.Id == redemption1.Id);
+        Assert.Equal(reservation1Id, persisted1.ReservationId);
+        Assert.Equal(1, (await db.Promotions.SingleAsync(p => p.Id == freeClassPromo.Id)).CurrentUsesTotal);
+
+        var eval2 = await service.EvaluatePromotionForReservationAsync(student.Id, sessionId, activityId, "PRIMERACLASE");
+        Assert.Equal(extraCreditPromo.Id, eval2.PromotionId);
+        Assert.Equal(1, eval2.ExtraCreditsGranted);
+
+        var redemption2 = await service.RedeemPromotionForReservationAsync(
+            student.Id,
+            sessionId,
+            activityId,
+            "PRIMERACLASE",
+            reservation2Id);
+        Assert.Equal(reservation2Id, redemption2.ReservationId);
+    }
+
+    [Fact]
+    public async Task EvaluatePromotionForReservation_PartialDiscountOrPlanSpecific_ThrowsConflictWithPromotionNotApplicable()
+    {
+        await using var db = CreateDbContext();
+        var calendar = new StubGymCalendar { Today = new DateOnly(2026, 6, 15) };
+        IPromotionService service = new PromotionService(db, calendar);
+
+        var student = Person.Create("Mateo", "Silva", "38999000");
+        db.People.Add(student);
+
+        var partialPromo = new Promotion
+        {
+            Id = Guid.NewGuid(),
+            Code = "DESC50",
+            Name = "50% de descuento",
+            ConditionType = PromotionConditionType.CouponCode,
+            BenefitType = PromotionBenefitType.PercentageDiscount,
+            BenefitValue = 50m,
+            ValidFrom = new DateOnly(2026, 6, 1),
+            ValidTo = new DateOnly(2026, 6, 30),
+            MaxUsesPerPerson = 1,
+            IsActive = true
+        };
+
+        var fixedPromo = new Promotion
+        {
+            Id = Guid.NewGuid(),
+            Code = "FIJO2000",
+            Name = "$2000 de descuento",
+            ConditionType = PromotionConditionType.CouponCode,
+            BenefitType = PromotionBenefitType.FixedAmountDiscount,
+            BenefitValue = 2000m,
+            ValidFrom = new DateOnly(2026, 6, 1),
+            ValidTo = new DateOnly(2026, 6, 30),
+            MaxUsesPerPerson = 1,
+            IsActive = true
+        };
+
+        var planPromo = new Promotion
+        {
+            Id = Guid.NewGuid(),
+            Code = "SOLOPLAN",
+            Name = "100% en plan específico",
+            ConditionType = PromotionConditionType.CouponCode,
+            BenefitType = PromotionBenefitType.PercentageDiscount,
+            BenefitValue = 100m,
+            ValidFrom = new DateOnly(2026, 6, 1),
+            ValidTo = new DateOnly(2026, 6, 30),
+            ApplicablePlanId = Guid.NewGuid(),
+            MaxUsesPerPerson = 1,
+            IsActive = true
+        };
+
+        db.Promotions.AddRange(partialPromo, fixedPromo, planPromo);
+        await db.SaveChangesAsync();
+
+        var sessionId = Guid.NewGuid();
+        var activityId = Guid.NewGuid();
+
+        var ex1 = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() =>
+            service.EvaluatePromotionForReservationAsync(student.Id, sessionId, activityId, "DESC50"));
+        Assert.Equal("PROMOTION_NOT_APPLICABLE", ex1.Code);
+
+        var ex2 = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() =>
+            service.EvaluatePromotionForReservationAsync(student.Id, sessionId, activityId, "FIJO2000"));
+        Assert.Equal("PROMOTION_NOT_APPLICABLE", ex2.Code);
+
+        var ex3 = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() =>
+            service.EvaluatePromotionForReservationAsync(student.Id, sessionId, activityId, "SOLOPLAN"));
+        Assert.Equal("PROMOTION_NOT_APPLICABLE", ex3.Code);
+    }
 }
+

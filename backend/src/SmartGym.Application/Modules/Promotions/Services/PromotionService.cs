@@ -203,7 +203,184 @@ public class PromotionService : IPromotionService
             redemption.DiscountAmount,
             redemption.FinalAmount,
             redemption.ExtraCreditsGranted,
-            redemption.RedeemedAtUtc
+            redemption.RedeemedAtUtc,
+            redemption.ReservationId
+        );
+    }
+
+    public async Task<PromotionApplicationResultDto> EvaluatePromotionForReservationAsync(
+        Guid studentId,
+        Guid classSessionId,
+        Guid activityId,
+        string code,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            throw ConflictException.WithCode("PROMOTION_NOT_APPLICABLE", "El código promocional es obligatorio.");
+        }
+
+        var normalizedCode = code.Trim().ToUpper();
+        var promo = await _dbContext.Promotions
+            .FirstOrDefaultAsync(p => p.Code.ToUpper() == normalizedCode && p.IsActive, cancellationToken);
+
+        if (promo == null)
+        {
+            throw ConflictException.WithCode("PROMOTION_NOT_APPLICABLE", "El código promocional especificado no existe o no se encuentra activo.");
+        }
+
+        var today = _gymCalendar.Today;
+        var evalDate = today;
+
+        if (classSessionId != Guid.Empty)
+        {
+            var session = await _dbContext.ClassSessions
+                .AsNoTracking()
+                .FirstOrDefaultAsync(cs => cs.Id == classSessionId && cs.IsActive, cancellationToken);
+            if (session != null)
+            {
+                evalDate = DateOnly.FromDateTime(_gymCalendar.ToLocal(session.StartsAtUtc).DateTime);
+            }
+        }
+
+        if (!promo.IsValidOn(today) || !promo.IsValidOn(evalDate))
+        {
+            throw ConflictException.WithCode("PROMOTION_NOT_APPLICABLE", "La promoción está vencida, fuera de vigencia o ha superado el tope total de canjes permitidos.");
+        }
+
+        if (promo.ApplicablePlanId.HasValue)
+        {
+            throw ConflictException.WithCode("PROMOTION_NOT_APPLICABLE", "La promoción es exclusiva para la contratación de un plan de membresía.");
+        }
+
+        var coversFullAccess =
+            (promo.BenefitType == PromotionBenefitType.PercentageDiscount && promo.BenefitValue >= 100m) ||
+            (promo.BenefitType == PromotionBenefitType.ExtraCredits && promo.BenefitValue >= 1m);
+
+        if (!coversFullAccess)
+        {
+            throw ConflictException.WithCode("PROMOTION_NOT_APPLICABLE", "La promoción no cubre el acceso completo a la clase.");
+        }
+
+        var person = await _dbContext.People
+            .FirstOrDefaultAsync(p => p.Id == studentId && p.IsActive, cancellationToken);
+        if (person == null)
+        {
+            throw ConflictException.WithCode("PROMOTION_NOT_APPLICABLE", "El alumno especificado no existe o no se encuentra activo.");
+        }
+
+        if (promo.ConditionType == PromotionConditionType.NewStudent)
+        {
+            var hasMemberships = await _dbContext.Memberships
+                .AnyAsync(m => m.StudentId == person.Id && m.IsActive && m.Status != MembershipStatus.Cancelled, cancellationToken);
+            if (hasMemberships)
+            {
+                throw ConflictException.WithCode("PROMOTION_NOT_APPLICABLE", "Esta promoción es de bienvenida y aplica exclusivamente a nuevos alumnos.");
+            }
+        }
+        else if (promo.ConditionType == PromotionConditionType.FamilyGroup)
+        {
+            var isFamilyMember = await _dbContext.FamilyGroupMembers
+                .AnyAsync(m => m.PersonId == person.Id && m.IsActive, cancellationToken);
+            if (!isFamilyMember)
+            {
+                throw ConflictException.WithCode("PROMOTION_NOT_APPLICABLE", "Esta promoción requiere pertenecer a un grupo familiar activo.");
+            }
+        }
+
+        var previousUses = await _dbContext.PromotionRedemptions
+            .CountAsync(r => r.PromotionId == promo.Id && r.PersonId == person.Id && r.IsActive, cancellationToken);
+
+        if (!promo.CanBeUsedBy(person.Id, previousUses))
+        {
+            throw ConflictException.WithCode("PROMOTION_NOT_APPLICABLE", $"Has alcanzado el límite de usos permitidos ({promo.MaxUsesPerPerson}) para esta promoción.");
+        }
+
+        var extraCredits = promo.GetExtraCredits();
+
+        return new PromotionApplicationResultDto(
+            promo.Id,
+            promo.Code,
+            promo.Name,
+            0m,
+            0m,
+            0m,
+            extraCredits
+        );
+    }
+
+    public async Task<PromotionRedemptionDto> RedeemPromotionForReservationAsync(
+        Guid studentId,
+        Guid classSessionId,
+        Guid activityId,
+        string code,
+        Guid reservationId,
+        CancellationToken cancellationToken = default)
+    {
+        var existing = await _dbContext.PromotionRedemptions
+            .Include(r => r.Promotion)
+            .Include(r => r.Person)
+            .FirstOrDefaultAsync(r => r.ReservationId == reservationId && r.IsActive, cancellationToken);
+
+        if (existing != null)
+        {
+            return new PromotionRedemptionDto(
+                existing.Id,
+                existing.PromotionId,
+                existing.Promotion?.Code ?? code.Trim().ToUpper(),
+                existing.PersonId,
+                existing.Person?.FullName ?? string.Empty,
+                existing.OriginalAmount,
+                existing.DiscountAmount,
+                existing.FinalAmount,
+                existing.ExtraCreditsGranted,
+                existing.RedeemedAtUtc,
+                existing.ReservationId
+            );
+        }
+
+        var eval = await EvaluatePromotionForReservationAsync(studentId, classSessionId, activityId, code, cancellationToken);
+
+        var promo = await _dbContext.Promotions.FirstAsync(p => p.Id == eval.PromotionId, cancellationToken);
+        var person = await _dbContext.People.FirstAsync(p => p.Id == studentId, cancellationToken);
+
+        var nowUtc = _gymCalendar.UtcNow;
+        var redemption = new PromotionRedemption
+        {
+            Id = Guid.NewGuid(),
+            PromotionId = promo.Id,
+            PersonId = person.Id,
+            MembershipId = null,
+            ReservationId = reservationId,
+            OriginalAmount = eval.OriginalAmount,
+            DiscountAmount = eval.DiscountAmount,
+            FinalAmount = eval.FinalAmount,
+            ExtraCreditsGranted = eval.ExtraCreditsGranted,
+            RedeemedAtUtc = nowUtc,
+            CreatedAtUtc = nowUtc,
+            IsActive = true
+        };
+
+        promo.IncrementUse();
+        _dbContext.PromotionRedemptions.Add(redemption);
+
+        if (_dbContext.Database.CurrentTransaction == null)
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return new PromotionRedemptionDto(
+            redemption.Id,
+            promo.Id,
+            promo.Code,
+            person.Id,
+            person.FullName,
+            redemption.OriginalAmount,
+            redemption.DiscountAmount,
+            redemption.FinalAmount,
+            redemption.ExtraCreditsGranted,
+            redemption.RedeemedAtUtc,
+            redemption.ReservationId
         );
     }
 
@@ -262,7 +439,8 @@ public class PromotionService : IPromotionService
             r.DiscountAmount,
             r.FinalAmount,
             r.ExtraCreditsGranted,
-            r.RedeemedAtUtc
+            r.RedeemedAtUtc,
+            r.ReservationId
         )).ToList();
     }
 

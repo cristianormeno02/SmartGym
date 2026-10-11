@@ -31,6 +31,11 @@ public class PromotionRedemptionConfiguration : IEntityTypeConfiguration<Promoti
         builder.HasIndex(r => r.PersonId);
         builder.HasIndex(r => new { r.PromotionId, r.PersonId });
 
+        builder.HasIndex(r => r.ReservationId)
+            .HasDatabaseName("UX_PromotionRedemptions_Reservation")
+            .IsUnique()
+            .HasFilter("\"ReservationId\" IS NOT NULL");
+
         builder.HasOne(r => r.Person)
             .WithMany()
             .HasForeignKey(r => r.PersonId)
@@ -40,5 +45,10 @@ public class PromotionRedemptionConfiguration : IEntityTypeConfiguration<Promoti
             .WithMany()
             .HasForeignKey(r => r.MembershipId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(r => r.Reservation)
+            .WithMany()
+            .HasForeignKey(r => r.ReservationId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

@@ -171,6 +171,312 @@ public class MembershipEligibilityService : IMembershipEligibilityService
             bestIneligible.Eligibility.Issues);
     }
 
+    public Task<IReadOnlyDictionary<Guid, SessionEligibilityEvaluationDto>> EvaluateForSessionsAsync(
+        Guid studentId,
+        IReadOnlyList<ClassSession> sessions,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(sessions);
+
+        var contexts = sessions
+            .Select(cs => new SessionEligibilityContextDto(
+                cs.Id,
+                cs.ActivityId,
+                DateOnly.FromDateTime(_gymCalendar.ToLocal(cs.StartsAtUtc).DateTime),
+                cs.Activity))
+            .ToList();
+
+        return EvaluateForSessionsAsync(studentId, contexts, cancellationToken);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, SessionEligibilityEvaluationDto>> EvaluateForSessionsAsync(
+        Guid studentId,
+        IReadOnlyList<SessionEligibilityContextDto> sessions,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(sessions);
+
+        if (sessions.Count == 0)
+        {
+            return new Dictionary<Guid, SessionEligibilityEvaluationDto>();
+        }
+
+        // 1. Single load of student with roles
+        var student = await _dbContext.People
+            .AsNoTracking()
+            .Include(p => p.PersonRoles)
+                .ThenInclude(pr => pr.Role)
+            .FirstOrDefaultAsync(p => p.Id == studentId, cancellationToken);
+
+        // 2. Single load of any missing activities
+        var missingActivityIds = sessions
+            .Where(s => s.Activity == null)
+            .Select(s => s.ActivityId)
+            .Distinct()
+            .ToList();
+
+        var loadedActivities = missingActivityIds.Count > 0
+            ? await _dbContext.Activities
+                .AsNoTracking()
+                .Where(a => missingActivityIds.Contains(a.Id))
+                .ToDictionaryAsync(a => a.Id, cancellationToken)
+            : new Dictionary<Guid, Activity>();
+
+        // 3. Single load of student memberships with allowed activities & suspensions
+        var memberships = await _dbContext.Memberships
+            .AsNoTracking()
+            .Include(m => m.MembershipPlan)
+                .ThenInclude(p => p.AllowedActivities)
+            .Include(m => m.AllowedActivities)
+            .Include(m => m.Suspensions)
+            .Where(m => m.StudentId == studentId && m.IsActive)
+            .ToListAsync(cancellationToken);
+
+        // 4. Single load of held movement IDs and autonomous tickets / compensatory credits
+        var heldMovementIds = (await _dbContext.Reservations
+            .AsNoTracking()
+            .Where(r => r.StudentId == studentId &&
+                        r.IsActive &&
+                        r.SingleClassTicketMovementId != null &&
+                        (r.Status == ReservationStatus.Confirmed ||
+                         r.Status == ReservationStatus.Attended ||
+                         r.Status == ReservationStatus.NoShow ||
+                         r.Status == ReservationStatus.Pending ||
+                         (r.Status == ReservationStatus.Cancelled && r.IsLateCancellation)))
+            .Select(r => r.SingleClassTicketMovementId!.Value)
+            .ToListAsync(cancellationToken))
+            .ToHashSet();
+
+        var accessMovements = await _dbContext.MembershipCreditMovements
+            .AsNoTracking()
+            .Where(cm => cm.StudentId == studentId &&
+                         cm.IsActive &&
+                         cm.MembershipId == null &&
+                         (cm.Type == CreditMovementType.SingleClassTicket ||
+                          cm.Type == CreditMovementType.ClassSuspensionCompensation))
+            .ToListAsync(cancellationToken);
+
+        var sessionIds = sessions.Select(s => s.ClassSessionId).Distinct().ToList();
+        var sessionPayments = await _dbContext.Payments
+            .AsNoTracking()
+            .Where(p => p.PayerPersonId == studentId &&
+                        p.IsActive &&
+                        p.ClassSessionId != null &&
+                        sessionIds.Contains(p.ClassSessionId.Value))
+            .ToListAsync(cancellationToken);
+
+        var results = new Dictionary<Guid, SessionEligibilityEvaluationDto>(sessions.Count);
+
+        foreach (var session in sessions)
+        {
+            var activity = session.Activity ?? loadedActivities.GetValueOrDefault(session.ActivityId);
+            results[session.ClassSessionId] = EvaluateSingleSessionInMemory(
+                student,
+                session,
+                activity,
+                memberships,
+                accessMovements,
+                heldMovementIds,
+                sessionPayments);
+        }
+
+        return results;
+    }
+
+    private SessionEligibilityEvaluationDto EvaluateSingleSessionInMemory(
+        Person? student,
+        SessionEligibilityContextDto session,
+        Activity? activity,
+        IReadOnlyList<Membership> memberships,
+        IReadOnlyList<MembershipCreditMovement> accessMovements,
+        HashSet<Guid> heldMovementIds,
+        IReadOnlyList<SmartGym.Domain.Entities.Operations.Payment> sessionPayments)
+    {
+        var evalDate = session.SessionLocalDate;
+        var blockingIssues = new List<EligibilityIssueDto>();
+
+        if (!IsStudentActive(student))
+        {
+            blockingIssues.Add(new EligibilityIssueDto(
+                EligibilityIssueCodes.StudentNotActive,
+                "El alumno no se encuentra en estado activo o no tiene el rol de Alumno activo."));
+        }
+
+        if (activity == null || !activity.IsActive || activity.Status != ActivityStatus.Active)
+        {
+            blockingIssues.Add(new EligibilityIssueDto(
+                EligibilityIssueCodes.ActivityNotActive,
+                "La actividad consultada no existe o no se encuentra activa."));
+        }
+        else if (student?.BirthDate != null)
+        {
+            var birthDateOnly = DateOnly.FromDateTime(student.BirthDate.Value);
+            var age = CalculateAge(birthDateOnly, evalDate);
+            if (!activity.IsAgeAllowed(age))
+            {
+                blockingIssues.Add(new EligibilityIssueDto(
+                    EligibilityIssueCodes.AgeNotAllowed,
+                    $"La actividad '{activity.Name}' no admite alumnos de {age} años."));
+            }
+        }
+
+        if (student != null)
+        {
+            if (student.BirthDate.HasValue)
+            {
+                var birthDateOnly = DateOnly.FromDateTime(student.BirthDate.Value);
+                var age = CalculateAge(birthDateOnly, evalDate);
+                if (age < 18 && !student.HasValidEmergencyContact())
+                {
+                    blockingIssues.Add(new EligibilityIssueDto(
+                        EligibilityIssueCodes.UnderageEmergencyContactRequired,
+                        "El alumno menor de edad requiere un contacto de emergencia válido para acceder."));
+                }
+            }
+
+            if (_gymOptions.RequireValidMedicalCertificateForAccess)
+            {
+                var hasValidCert = student.MedicalCertificateExpiration.HasValue &&
+                                   DateOnly.FromDateTime(student.MedicalCertificateExpiration.Value) >= evalDate;
+                if (!hasValidCert)
+                {
+                    blockingIssues.Add(new EligibilityIssueDto(
+                        EligibilityIssueCodes.MedicalCertificateRequired,
+                        "El gimnasio exige un certificado de aptitud médica vigente."));
+                }
+            }
+        }
+
+        if (blockingIssues.Count > 0)
+        {
+            return new SessionEligibilityEvaluationDto(
+                session.ClassSessionId,
+                false,
+                null,
+                null,
+                null,
+                0,
+                blockingIssues);
+        }
+
+        // 1. Evaluate memberships in deterministic order
+        var evaluatedMemberships = memberships
+            .Select(m => (
+                Membership: m,
+                Eligibility: EvaluateMembership(m, student, evalDate, session.ActivityId, session.ClassSessionId, activity)))
+            .ToList();
+
+        var eligibleMembership = evaluatedMemberships
+            .Where(x => x.Eligibility.IsEligible)
+            .OrderBy(x => x.Membership.IsUnlimited ? 0 : 1)
+            .ThenBy(x => x.Membership.EndDate)
+            .ThenBy(x => x.Membership.PurchasedAtUtc)
+            .ThenBy(x => x.Membership.Id)
+            .FirstOrDefault();
+
+        if (eligibleMembership.Membership != null)
+        {
+            var accessType = eligibleMembership.Membership.IsUnlimited
+                ? ReservationAccessType.UnlimitedMembership
+                : ReservationAccessType.MembershipCredit;
+
+            return new SessionEligibilityEvaluationDto(
+                session.ClassSessionId,
+                true,
+                accessType,
+                eligibleMembership.Membership.Id,
+                null,
+                eligibleMembership.Membership.AvailableCredits,
+                Array.Empty<EligibilityIssueDto>());
+        }
+
+        // 2. Single class ticket for this session
+        var ticket = accessMovements
+            .FirstOrDefault(cm => cm.Type == CreditMovementType.SingleClassTicket &&
+                                  cm.ClassSessionId == session.ClassSessionId &&
+                                  !heldMovementIds.Contains(cm.Id));
+
+        if (ticket != null)
+        {
+            var paymentsForSession = sessionPayments
+                .Where(p => p.ClassSessionId == session.ClassSessionId)
+                .ToList();
+
+            var paymentConfirmed = paymentsForSession.Count == 0 ||
+                                   paymentsForSession.Any(p => p.Status == PaymentStatus.Completed);
+
+            if (paymentConfirmed)
+            {
+                return new SessionEligibilityEvaluationDto(
+                    session.ClassSessionId,
+                    true,
+                    ReservationAccessType.SingleClassTicket,
+                    null,
+                    ticket.Id,
+                    1,
+                    Array.Empty<EligibilityIssueDto>());
+            }
+        }
+
+        // 3. Autonomous compensatory credit valid on session date & activity scope (earliest ExpiresOn first)
+        var compensatory = accessMovements
+            .Where(cm => cm.Type == CreditMovementType.ClassSuspensionCompensation &&
+                         !heldMovementIds.Contains(cm.Id) &&
+                         (!cm.ExpiresOn.HasValue || cm.ExpiresOn.Value >= evalDate) &&
+                         (!cm.ActivityId.HasValue || cm.ActivityId.Value == session.ActivityId))
+            .OrderBy(cm => cm.ExpiresOn ?? DateOnly.MaxValue)
+            .ThenBy(cm => cm.CreatedAtUtc)
+            .ThenBy(cm => cm.Id)
+            .FirstOrDefault();
+
+        if (compensatory != null)
+        {
+            return new SessionEligibilityEvaluationDto(
+                session.ClassSessionId,
+                true,
+                ReservationAccessType.CompensatoryCredit,
+                null,
+                compensatory.Id,
+                1,
+                Array.Empty<EligibilityIssueDto>());
+        }
+
+        // 4. Not eligible: report best membership ineligibility reasons or NO_AVAILABLE_CREDITS
+        if (evaluatedMemberships.Count > 0)
+        {
+            var bestIneligible = evaluatedMemberships
+                .OrderBy(x => GetCandidateStatusPriority(x.Eligibility.EffectiveStatus))
+                .ThenBy(x => x.Membership.IsUnlimited ? 0 : 1)
+                .ThenBy(x => x.Membership.EndDate)
+                .ThenBy(x => x.Membership.PurchasedAtUtc)
+                .ThenBy(x => x.Membership.Id)
+                .First();
+
+            return new SessionEligibilityEvaluationDto(
+                session.ClassSessionId,
+                false,
+                null,
+                null,
+                null,
+                0,
+                bestIneligible.Eligibility.Issues);
+        }
+
+        return new SessionEligibilityEvaluationDto(
+            session.ClassSessionId,
+            false,
+            null,
+            null,
+            null,
+            0,
+            new[]
+            {
+                new EligibilityIssueDto(
+                    EligibilityIssueCodes.NoAvailableCredits,
+                    "El alumno no posee ninguna membresía registrada, pase individual ni crédito compensatorio vigente.")
+            });
+    }
+
     private async Task<(DateOnly ResolvedDate, Guid? ResolvedActivityId, Activity? Activity)> ResolveContextAsync(
         DateOnly? targetDate,
         Guid? activityId,

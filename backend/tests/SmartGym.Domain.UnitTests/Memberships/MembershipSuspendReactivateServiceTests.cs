@@ -161,7 +161,7 @@ public class MembershipSuspendReactivateServiceTests
             StudentId = student.Id,
             MembershipId = membership.Id,
             CreditMovementId = mov1.Id,
-            Status = ReservationStatus.Reserved,
+            Status = ReservationStatus.Confirmed,
             ReservedAtUtc = calendar.UtcNow,
             IsActive = true
         };
@@ -173,7 +173,7 @@ public class MembershipSuspendReactivateServiceTests
             StudentId = student.Id,
             MembershipId = membership.Id,
             CreditMovementId = mov2.Id,
-            Status = ReservationStatus.Reserved,
+            Status = ReservationStatus.Confirmed,
             ReservedAtUtc = calendar.UtcNow,
             IsActive = true
         };
@@ -207,7 +207,7 @@ public class MembershipSuspendReactivateServiceTests
         Assert.NotNull(updatedResIn.RefundCreditMovementId);
         Assert.Equal(0, (await db.ClassSessions.SingleAsync(cs => cs.Id == sessionInWindow.Id)).ReservedCount);
 
-        Assert.Equal(ReservationStatus.Reserved, updatedResAfter.Status);
+        Assert.Equal(ReservationStatus.Confirmed, updatedResAfter.Status);
         Assert.Equal(1, (await db.ClassSessions.SingleAsync(cs => cs.Id == sessionAfterWindow.Id)).ReservedCount);
 
         // Reactivar el 15/11 -> extiende EndDate en 5 días (del 30/11 al 05/12) y registra en AuditLogs

@@ -378,7 +378,7 @@ public class ClassSession : BaseEntity, IHasDomainEvents
         UpdatedAtUtc = nowUtc;
     }
 
-    public void UpdateCapacity(int capacity, DateTime nowUtc)
+    public void UpdateCapacity(int capacity, DateTime nowUtc, Guid? byUserId = null)
     {
         if (IsClosed(nowUtc) || nowUtc >= StartsAtUtc)
         {
@@ -395,9 +395,15 @@ public class ClassSession : BaseEntity, IHasDomainEvents
             throw new InvalidOperationException($"El cupo no puede ser menor a la cantidad de reservas existentes ({ReservedCount}).");
         }
 
+        var previousCapacity = Capacity;
         Capacity = capacity;
         IsDetachedFromSchedule = true;
         UpdatedAtUtc = nowUtc;
+
+        if (capacity > previousCapacity)
+        {
+            AddDomainEvent(new ClassSessionCapacityIncreased(Id, previousCapacity, capacity, byUserId, nowUtc));
+        }
     }
 
     public void SyncFromSchedule(

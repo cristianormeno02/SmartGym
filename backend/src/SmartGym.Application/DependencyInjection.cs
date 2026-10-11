@@ -36,6 +36,7 @@ public static class DependencyInjection
         services.AddScoped<IMembershipActivationService, MembershipActivationService>();
         services.AddScoped<IMembershipService, MembershipService>();
 
+        services.AddScoped<IReservationAccessResolver, ReservationAccessResolver>();
         services.AddScoped<IReservationService, ReservationService>();
 
         services.AddScoped<IFamilyGroupService, FamilyGroupService>();
@@ -77,6 +78,24 @@ public static class DependencyInjection
         services.AddScoped<SmartGym.Application.Modules.Reservations.Handlers.CancelFutureReservationsOnMembershipCancelledHandler>();
         services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Memberships.MembershipCancelledEvent>>(sp =>
             sp.GetRequiredService<SmartGym.Application.Modules.Reservations.Handlers.CancelFutureReservationsOnMembershipCancelledHandler>());
+
+        services.AddScoped<SmartGym.Application.Modules.Reservations.Handlers.PromoteWaitlistOnCapacityIncreasedHandler>();
+        services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Activities.ClassSessionCapacityIncreased>>(sp =>
+            sp.GetRequiredService<SmartGym.Application.Modules.Reservations.Handlers.PromoteWaitlistOnCapacityIncreasedHandler>());
+
+        services.AddScoped<SmartGym.Application.Modules.Operations.Handlers.NotifyStudentOnReservationLifecycleHandler>();
+        services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Reservations.ReservationConfirmedEvent>>(sp =>
+            sp.GetRequiredService<SmartGym.Application.Modules.Operations.Handlers.NotifyStudentOnReservationLifecycleHandler>());
+        services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Reservations.ReservationWaitlistedEvent>>(sp =>
+            sp.GetRequiredService<SmartGym.Application.Modules.Operations.Handlers.NotifyStudentOnReservationLifecycleHandler>());
+        services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Reservations.ReservationCancelledEvent>>(sp =>
+            sp.GetRequiredService<SmartGym.Application.Modules.Operations.Handlers.NotifyStudentOnReservationLifecycleHandler>());
+        services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Reservations.ReservationPromotedFromWaitlistEvent>>(sp =>
+            sp.GetRequiredService<SmartGym.Application.Modules.Operations.Handlers.NotifyStudentOnReservationLifecycleHandler>());
+        services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Reservations.WaitlistOfferCreatedEvent>>(sp =>
+            sp.GetRequiredService<SmartGym.Application.Modules.Operations.Handlers.NotifyStudentOnReservationLifecycleHandler>());
+        services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Reservations.WaitlistOfferExpiredEvent>>(sp =>
+            sp.GetRequiredService<SmartGym.Application.Modules.Operations.Handlers.NotifyStudentOnReservationLifecycleHandler>());
 
         return services;
     }

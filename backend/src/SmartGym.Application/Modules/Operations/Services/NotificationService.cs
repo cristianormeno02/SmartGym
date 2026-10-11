@@ -88,7 +88,7 @@ public class NotificationService : INotificationService
         var reservations = await _dbContext.Reservations
             .Include(r => r.Student)
             .Where(r => r.ClassSessionId == classSessionId &&
-                       (r.Status == ReservationStatus.Reserved || r.Status == ReservationStatus.Confirmed || r.Status == ReservationStatus.WaitList))
+                       (r.Status == ReservationStatus.Confirmed || r.Status == ReservationStatus.Waitlisted || r.Status == ReservationStatus.Pending))
             .ToListAsync(cancellationToken);
 
         var localStart = _gymCalendar.ToLocal(session.StartsAtUtc);

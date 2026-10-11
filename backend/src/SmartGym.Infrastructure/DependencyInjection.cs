@@ -142,11 +142,25 @@ public static class DependencyInjection
                 policy.RequireRole(Roles.Administrator, Roles.Secretary));
             options.AddPolicy(Policies.MembershipsManage, policy =>
                 policy.RequireRole(Roles.Administrator, Roles.Secretary));
+
+            options.AddPolicy(Policies.ReservationsRead, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.ReservationsCreate, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary, Roles.Student));
+            options.AddPolicy(Policies.ReservationsCancel, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary, Roles.Student));
+            options.AddPolicy(Policies.ReservationsManage, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.ReservationsWaitlistRead, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary, Roles.Instructor));
+            options.AddPolicy(Policies.ReservationsOverridePolicy, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
         });
 
         // Background Workers
         services.AddHostedService<SmartGym.Infrastructure.Services.BackgroundJobs.ClassSessionGenerationWorker>();
         services.AddHostedService<SmartGym.Infrastructure.Services.BackgroundJobs.MembershipExpirationWorker>();
+        services.AddHostedService<SmartGym.Infrastructure.Services.BackgroundJobs.ReservationWaitlistWorker>();
 
         return services;
     }

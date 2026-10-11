@@ -29,6 +29,11 @@ public class MembershipCreditMovementConfiguration : IEntityTypeConfiguration<Me
         builder.HasIndex(cm => cm.MembershipId);
         builder.HasIndex(cm => cm.ClassSessionId);
 
+        builder.HasIndex(cm => new { cm.ReservationId, cm.Type })
+            .HasDatabaseName("UX_CreditMovements_Reservation_Type")
+            .IsUnique()
+            .HasFilter("\"ReservationId\" IS NOT NULL AND \"Type\" IN (2, 3)");
+
         builder.HasOne(cm => cm.Membership)
             .WithMany(m => m.CreditMovements)
             .HasForeignKey(cm => cm.MembershipId)
@@ -43,5 +48,15 @@ public class MembershipCreditMovementConfiguration : IEntityTypeConfiguration<Me
             .WithMany()
             .HasForeignKey(cm => cm.ClassSessionId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(cm => cm.Reservation)
+            .WithMany()
+            .HasForeignKey(cm => cm.ReservationId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(cm => cm.Activity)
+            .WithMany()
+            .HasForeignKey(cm => cm.ActivityId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

@@ -129,14 +129,14 @@ public class ReservationServiceLockingTests
         student!.ChangeStatus(PersonStatus.Blocked, "Sanción disciplinaria", Guid.NewGuid(), isAdmin: true);
         await _dbContext.SaveChangesAsync();
 
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+        var ex = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() =>
             _service.CreateReservationAsync(new CreateReservationRequest(_sessionId, _studentId), Guid.NewGuid()));
 
-        Assert.Equal("El alumno especificado no existe o no tiene el rol de Alumno activo.", ex.Message);
+        Assert.Contains("El alumno especificado no existe o no tiene el rol de Alumno activo.", ex.Message);
     }
 
     [Fact]
-    public async Task RecordAttendanceAsync_WhenStudentIsBlocked_ShouldThrowInvalidOperationException()
+    public async Task RecordAttendanceAsync_WhenStudentIsBlocked_ShouldThrowConflictException()
     {
         var reservation = await _service.CreateReservationAsync(new CreateReservationRequest(_sessionId, _studentId), Guid.NewGuid());
 
@@ -144,9 +144,56 @@ public class ReservationServiceLockingTests
         student!.ChangeStatus(PersonStatus.Blocked, "Sanción disciplinaria", Guid.NewGuid(), isAdmin: true);
         await _dbContext.SaveChangesAsync();
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() =>
             _service.RecordAttendanceAsync(new RecordAttendanceRequest(reservation.Id, AttendanceSource.InstructorInRoom), Guid.NewGuid()));
 
         Assert.Contains("no se encuentra activo", ex.Message);
     }
+
+    private sealed class FakePostgresDeadlockException : Exception
+    {
+        public string SqlState { get; } = "40P01";
+        public FakePostgresDeadlockException() : base("deadlock detected") { }
+    }
+
+    private sealed class DeadlockSimulatingDbContext : SmartGymDbContext
+    {
+        public Exception? ExceptionToThrowOnLock { get; set; }
+        public DeadlockSimulatingDbContext(DbContextOptions<SmartGymDbContext> options) : base(options) { }
+
+        public override Task LockClassSessionForUpdateAsync(Guid classSessionId, CancellationToken cancellationToken = default)
+        {
+            if (ExceptionToThrowOnLock != null)
+            {
+                throw ExceptionToThrowOnLock;
+            }
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task CreateReservationAsync_TranslatesPostgres40P01AndDbUpdateConcurrencyException_ToConcurrencyConflict()
+    {
+        var options = new DbContextOptionsBuilder<SmartGymDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options;
+
+        await using var db = new DeadlockSimulatingDbContext(options);
+        var calendar = new SmartGym.Application.Common.GymCalendar(
+            Microsoft.Extensions.Options.Options.Create(new SmartGym.Application.Common.GymOptions { TimeZoneId = "UTC" }),
+            TimeProvider.System);
+        var service = new ReservationService(db, calendar);
+
+        db.ExceptionToThrowOnLock = new DbUpdateException("Error", new FakePostgresDeadlockException());
+        var exDeadlock = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() =>
+            service.CreateReservationAsync(new CreateReservationRequest(_sessionId, _studentId), Guid.NewGuid()));
+        Assert.Equal(ReservationErrorCodes.ConcurrencyConflict, exDeadlock.Code);
+
+        db.ExceptionToThrowOnLock = new DbUpdateConcurrencyException("Concurrency error");
+        var exConcurrency = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() =>
+            service.CreateReservationAsync(new CreateReservationRequest(_sessionId, _studentId), Guid.NewGuid()));
+        Assert.Equal(ReservationErrorCodes.ConcurrencyConflict, exConcurrency.Code);
+    }
 }
+

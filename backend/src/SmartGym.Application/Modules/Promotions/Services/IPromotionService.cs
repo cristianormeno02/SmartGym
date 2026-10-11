@@ -10,8 +10,22 @@ public interface IPromotionService
     Task<PromotionDto> CreateAsync(CreatePromotionRequest request, CancellationToken cancellationToken = default);
     Task<PromotionApplicationResultDto> EvaluatePromotionAsync(ApplyPromotionRequest request, CancellationToken cancellationToken = default);
     Task<PromotionRedemptionDto> RedeemPromotionAsync(ApplyPromotionRequest request, Guid? membershipId, CancellationToken cancellationToken = default);
+    Task<PromotionApplicationResultDto> EvaluatePromotionForReservationAsync(
+        Guid studentId,
+        Guid classSessionId,
+        Guid activityId,
+        string code,
+        CancellationToken cancellationToken = default);
+    Task<PromotionRedemptionDto> RedeemPromotionForReservationAsync(
+        Guid studentId,
+        Guid classSessionId,
+        Guid activityId,
+        string code,
+        Guid reservationId,
+        CancellationToken cancellationToken = default);
     Task AttachRedemptionToMembershipAsync(Guid redemptionId, Guid membershipId, CancellationToken cancellationToken = default);
     Task VoidRedemptionAsync(Guid redemptionId, CancellationToken cancellationToken = default);
     Task<List<PromotionRedemptionDto>> GetRedemptionsByPersonAsync(Guid personId, CancellationToken cancellationToken = default);
 }
+
 

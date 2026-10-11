@@ -61,5 +61,7 @@ public record PromotionRedemptionDto(
     decimal DiscountAmount,
     decimal FinalAmount,
     int ExtraCreditsGranted,
-    DateTime RedeemedAtUtc
+    DateTime RedeemedAtUtc,
+    Guid? ReservationId = null
 );
+

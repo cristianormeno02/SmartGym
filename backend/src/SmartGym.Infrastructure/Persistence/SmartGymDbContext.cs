@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SmartGym.Application.Common.Interfaces;
+using SmartGym.Domain.Common;
 using SmartGym.Domain.Entities.Activities;
 using SmartGym.Domain.Entities.Identity;
 
@@ -8,17 +10,30 @@ using SmartGym.Domain.Entities.Memberships;
 using SmartGym.Domain.Entities.Operations;
 using SmartGym.Domain.Entities.Promotions;
 using SmartGym.Domain.Entities.Reservations;
+using SmartGym.Infrastructure.Persistence.Interceptors;
 
 namespace SmartGym.Infrastructure.Persistence;
 
 public class SmartGymDbContext : DbContext, ISmartGymDbContext
 {
     private readonly IServiceProvider? _serviceProvider;
+    private readonly Queue<IPostCommitDomainEvent> _postCommitEvents = new();
 
     public SmartGymDbContext(DbContextOptions<SmartGymDbContext> options, IServiceProvider? serviceProvider = null)
         : base(options)
     {
         _serviceProvider = serviceProvider;
+    }
+
+    public IReadOnlyCollection<IPostCommitDomainEvent> PendingPostCommitEvents => _postCommitEvents;
+
+    protected virtual bool HasActiveExplicitTransaction =>
+        Database.IsRelational() && Database.CurrentTransaction != null;
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        base.OnConfiguring(optionsBuilder);
+        optionsBuilder.AddInterceptors(PostCommitDomainEventInterceptor.Instance);
     }
 
     public DbSet<Person> People => Set<Person>();
@@ -39,6 +54,7 @@ public class SmartGymDbContext : DbContext, ISmartGymDbContext
     public DbSet<MembershipSuspension> MembershipSuspensions => Set<MembershipSuspension>();
     public DbSet<MembershipCreditMovement> MembershipCreditMovements => Set<MembershipCreditMovement>();
     public DbSet<Reservation> Reservations => Set<Reservation>();
+    public DbSet<ReservationStatusChange> ReservationStatusChanges => Set<ReservationStatusChange>();
     public DbSet<FamilyGroup> FamilyGroups => Set<FamilyGroup>();
     public DbSet<FamilyGroupMember> FamilyGroupMembers => Set<FamilyGroupMember>();
     public DbSet<Promotion> Promotions => Set<Promotion>();
@@ -151,7 +167,178 @@ public class SmartGymDbContext : DbContext, ISmartGymDbContext
             await DispatchDomainEventsAsync(cancellationToken);
         }
 
-        return await base.SaveChangesAsync(cancellationToken);
+        int result;
+        try
+        {
+            result = await SaveChangesBreakingReservationCyclesAsync(cancellationToken);
+        }
+        catch
+        {
+            if (!HasActiveExplicitTransaction)
+            {
+                ClearPostCommitEvents();
+            }
+
+            throw;
+        }
+
+        if (_serviceProvider != null && !HasActiveExplicitTransaction)
+        {
+            await DispatchPostCommitEventsAsync(cancellationToken);
+        }
+
+        return result;
+    }
+
+    private async Task<int> SaveChangesBreakingReservationCyclesAsync(CancellationToken cancellationToken)
+    {
+        if (!Database.IsRelational())
+        {
+            return await base.SaveChangesAsync(cancellationToken);
+        }
+
+        var trackedReservationIds = ChangeTracker.Entries<Reservation>()
+            .Where(e => e.State == EntityState.Added || e.State == EntityState.Modified)
+            .Select(e => e.Entity.Id)
+            .ToHashSet();
+
+        if (trackedReservationIds.Count == 0)
+        {
+            return await base.SaveChangesAsync(cancellationToken);
+        }
+
+        var deferredMovements = new List<(MembershipCreditMovement Movement, Guid ReservationId)>();
+        foreach (var entry in ChangeTracker.Entries<MembershipCreditMovement>())
+        {
+            if (entry.State == EntityState.Added &&
+                entry.Entity.ReservationId.HasValue &&
+                trackedReservationIds.Contains(entry.Entity.ReservationId.Value))
+            {
+                deferredMovements.Add((entry.Entity, entry.Entity.ReservationId.Value));
+                entry.Entity.ReservationId = null;
+                entry.Entity.Reservation = null;
+            }
+        }
+
+        var deferredRedemptions = new List<(PromotionRedemption Redemption, Guid ReservationId)>();
+        foreach (var entry in ChangeTracker.Entries<PromotionRedemption>())
+        {
+            if (entry.State == EntityState.Added &&
+                entry.Entity.ReservationId.HasValue &&
+                trackedReservationIds.Contains(entry.Entity.ReservationId.Value))
+            {
+                deferredRedemptions.Add((entry.Entity, entry.Entity.ReservationId.Value));
+                entry.Entity.ReservationId = null;
+                entry.Entity.Reservation = null;
+            }
+        }
+
+        var firstPass = await base.SaveChangesAsync(cancellationToken);
+
+        if (deferredMovements.Count == 0 && deferredRedemptions.Count == 0)
+        {
+            return firstPass;
+        }
+
+        foreach (var (movement, reservationId) in deferredMovements)
+        {
+            movement.ReservationId = reservationId;
+        }
+
+        foreach (var (redemption, reservationId) in deferredRedemptions)
+        {
+            redemption.ReservationId = reservationId;
+        }
+
+        var secondPass = await base.SaveChangesAsync(cancellationToken);
+        return firstPass + secondPass;
+    }
+
+    public void ClearPostCommitEvents()
+    {
+        _postCommitEvents.Clear();
+    }
+
+    public async Task DispatchPostCommitEventsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_serviceProvider == null || _postCommitEvents.Count == 0)
+        {
+            _postCommitEvents.Clear();
+            return;
+        }
+
+        var events = _postCommitEvents.ToArray();
+        _postCommitEvents.Clear();
+
+        var logger = _serviceProvider.GetService<ILogger<SmartGymDbContext>>();
+        var scopeFactory = _serviceProvider.GetService<IServiceScopeFactory>();
+
+        foreach (var domainEvent in events)
+        {
+            var eventType = domainEvent.GetType();
+            var handlerType = typeof(IDomainEventHandler<>).MakeGenericType(eventType);
+            var method = handlerType.GetMethod(nameof(IDomainEventHandler<IDomainEvent>.HandleAsync));
+            if (method == null)
+            {
+                continue;
+            }
+
+            List<object?> handlersSnapshot;
+            if (scopeFactory != null)
+            {
+                await using var discoveryScope = scopeFactory.CreateAsyncScope();
+                handlersSnapshot = discoveryScope.ServiceProvider.GetServices(handlerType).ToList();
+            }
+            else
+            {
+                handlersSnapshot = _serviceProvider.GetServices(handlerType).ToList();
+            }
+
+            var handlerCount = handlersSnapshot.Count;
+            for (var i = 0; i < handlerCount; i++)
+            {
+                try
+                {
+                    if (scopeFactory != null)
+                    {
+                        await using var scope = scopeFactory.CreateAsyncScope();
+                        var scopedHandlers = scope.ServiceProvider.GetServices(handlerType).ToList();
+                        if (i >= scopedHandlers.Count || scopedHandlers[i] == null)
+                        {
+                            continue;
+                        }
+
+                        var task = (Task)method.Invoke(scopedHandlers[i], new object[] { domainEvent, cancellationToken })!;
+                        await task;
+                    }
+                    else
+                    {
+                        var handler = handlersSnapshot[i];
+                        if (handler == null)
+                        {
+                            continue;
+                        }
+
+                        var task = (Task)method.Invoke(handler, new object[] { domainEvent, cancellationToken })!;
+                        await task;
+                    }
+                }
+                catch (System.Reflection.TargetInvocationException ex) when (ex.InnerException != null)
+                {
+                    logger?.LogError(
+                        ex.InnerException,
+                        "Error al ejecutar handler post-commit para el evento {EventType}.",
+                        eventType.Name);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(
+                        ex,
+                        "Error al ejecutar handler post-commit para el evento {EventType}.",
+                        eventType.Name);
+                }
+            }
+        }
     }
 
     private async Task DispatchDomainEventsAsync(CancellationToken cancellationToken)
@@ -161,7 +348,7 @@ public class SmartGymDbContext : DbContext, ISmartGymDbContext
 
         while (true)
         {
-            var entitiesWithEvents = ChangeTracker.Entries<SmartGym.Domain.Common.IHasDomainEvents>()
+            var entitiesWithEvents = ChangeTracker.Entries<IHasDomainEvents>()
                 .Select(e => e.Entity)
                 .Where(e => e.DomainEvents.Any())
                 .ToList();
@@ -177,7 +364,7 @@ public class SmartGymDbContext : DbContext, ISmartGymDbContext
                 throw new InvalidOperationException($"Exceeded maximum domain event dispatch rounds ({maxRounds}). Possible circular event trigger.");
             }
 
-            var eventsToDispatch = new List<SmartGym.Domain.Common.IDomainEvent>();
+            var eventsToDispatch = new List<IDomainEvent>();
             foreach (var entity in entitiesWithEvents)
             {
                 eventsToDispatch.AddRange(entity.DomainEvents);
@@ -186,6 +373,12 @@ public class SmartGymDbContext : DbContext, ISmartGymDbContext
 
             foreach (var domainEvent in eventsToDispatch)
             {
+                if (domainEvent is IPostCommitDomainEvent postCommitEvent)
+                {
+                    _postCommitEvents.Enqueue(postCommitEvent);
+                    continue;
+                }
+
                 var eventType = domainEvent.GetType();
                 var handlerType = typeof(IDomainEventHandler<>).MakeGenericType(eventType);
                 var handlers = _serviceProvider!.GetServices(handlerType);
@@ -194,7 +387,7 @@ public class SmartGymDbContext : DbContext, ISmartGymDbContext
                 {
                     if (handler != null)
                     {
-                        var method = handlerType.GetMethod(nameof(IDomainEventHandler<SmartGym.Domain.Common.IDomainEvent>.HandleAsync));
+                        var method = handlerType.GetMethod(nameof(IDomainEventHandler<IDomainEvent>.HandleAsync));
                         if (method != null)
                         {
                             try
@@ -219,3 +412,4 @@ public class SmartGymDbContext : DbContext, ISmartGymDbContext
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(SmartGymDbContext).Assembly);
     }
 }
+

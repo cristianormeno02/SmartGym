@@ -246,4 +246,118 @@ public class CreditLedgerConsumptionTests
         Assert.Equal(1, membership.AvailableCredits);
         Assert.Equal(5, membership.TotalCredits);
     }
+
+    [Fact]
+    public async Task ConsumeAndRefund_WithReservationId_LinksMovementsAndRefundIsIdempotent()
+    {
+        await using var dbContext = CreateDbContext();
+        var calendar = new StubGymCalendar();
+        var service = new CreditLedgerService(dbContext, calendar);
+
+        var student = Person.Create("Ana", "Gómez", "30111222");
+        dbContext.People.Add(student);
+
+        var plan = new MembershipPlan
+        {
+            Id = Guid.NewGuid(),
+            Name = "Pack 4 Clases",
+            DurationDays = 30,
+            Price = 15000m,
+            Credits = 4,
+            IsUnlimited = false
+        };
+        dbContext.MembershipPlans.Add(plan);
+
+        var membership = Membership.Create(
+            studentId: student.Id,
+            plan: plan,
+            startDate: new DateOnly(2026, 4, 1),
+            purchasedAtUtc: calendar.UtcNow,
+            originalPrice: 15000m,
+            discountAmount: 0m,
+            purchasePrice: 15000m,
+            currency: "ARS");
+        membership.Activate(new DateOnly(2026, 4, 1), calendar.UtcNow, Guid.NewGuid());
+        await service.RecordInitialCreditsAsync(membership);
+        dbContext.Memberships.Add(membership);
+        await dbContext.SaveChangesAsync();
+
+        var sessionId = Guid.NewGuid();
+        var reservationId = Guid.NewGuid();
+        var operatorId = Guid.NewGuid();
+
+        var debit = await service.ConsumeCreditForReservationAsync(
+            membership,
+            sessionId,
+            new DateOnly(2026, 4, 15),
+            "Reserva confirmada",
+            performedByUserId: operatorId,
+            reservationId: reservationId);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(reservationId, debit.ReservationId);
+        Assert.Equal(3, membership.AvailableCredits);
+
+        var firstRefund = await service.RefundCreditForReservationAsync(
+            membership,
+            sessionId,
+            "Cancelación anticipada",
+            performedByUserId: operatorId,
+            reservationId: reservationId);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(reservationId, firstRefund.ReservationId);
+        Assert.Equal(4, membership.AvailableCredits);
+
+        // Second refund for the same ReservationId must return the existing movement and not increment balance again
+        var secondRefund = await service.RefundCreditForReservationAsync(
+            membership,
+            sessionId,
+            "Reintento de cancelación",
+            performedByUserId: operatorId,
+            reservationId: reservationId);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(firstRefund.Id, secondRefund.Id);
+        Assert.Equal(4, membership.AvailableCredits);
+
+        var refundCount = await dbContext.MembershipCreditMovements
+            .CountAsync(cm => cm.ReservationId == reservationId && cm.Type == CreditMovementType.ClassCancellationRefund);
+        Assert.Equal(1, refundCount);
+    }
+
+    [Fact]
+    public async Task AddCompensatoryCreditAsync_WithoutActiveMembership_CreatesAutonomousCreditWithExpiresOnAndActivityScope()
+    {
+        await using var dbContext = CreateDbContext();
+        var calendar = new StubGymCalendar { Today = new DateOnly(2026, 4, 10) };
+        var options = Microsoft.Extensions.Options.Options.Create(new MembershipsOptions
+        {
+            CompensatoryCreditValidityDays = 15
+        });
+        var service = new CreditLedgerService(dbContext, calendar, options);
+
+        var student = Person.Create("Martín", "Pérez", "35888999");
+        dbContext.People.Add(student);
+        await dbContext.SaveChangesAsync();
+
+        var activityId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var staffUserId = Guid.NewGuid();
+
+        var dto = await service.AddCompensatoryCreditAsync(
+            new AddCompensatoryCreditRequest(student.Id, sessionId, "Compensación por clase suspendida", activityId),
+            staffUserId);
+
+        Assert.Null(dto.MembershipId);
+        Assert.Equal(CreditMovementType.ClassSuspensionCompensation, dto.Type);
+        Assert.Equal(1, dto.Amount);
+        Assert.Equal(new DateOnly(2026, 4, 25), dto.ExpiresOn);
+        Assert.Equal(activityId, dto.ActivityId);
+
+        var persisted = await dbContext.MembershipCreditMovements.SingleAsync(cm => cm.Id == dto.Id);
+        Assert.Equal(new DateOnly(2026, 4, 25), persisted.ExpiresOn);
+        Assert.Equal(activityId, persisted.ActivityId);
+    }
 }
+

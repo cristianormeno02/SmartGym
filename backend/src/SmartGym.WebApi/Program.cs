@@ -35,6 +35,11 @@ builder.Services.AddOptions<SmartGym.Application.Common.MembershipsOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+builder.Services.AddOptions<SmartGym.Application.Common.ReservationsOptions>()
+    .Bind(builder.Configuration.GetSection(SmartGym.Application.Common.ReservationsOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddControllers();

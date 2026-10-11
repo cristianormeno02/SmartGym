@@ -92,7 +92,7 @@ public class MembershipDomainEventDispatchTests
             StudentId = student.Id,
             MembershipId = membership.Id,
             CreditMovementId = debit.Id,
-            Status = ReservationStatus.Reserved,
+            Status = ReservationStatus.Confirmed,
             ReservedAtUtc = calendar.UtcNow,
             IsActive = true
         };

@@ -409,4 +409,110 @@ public class MembershipEligibilityServiceTests
         Assert.Contains(result.Issues, i => i.Code == EligibilityIssueCodes.AgeNotAllowed);
         Assert.Contains(result.Issues, i => i.Code == EligibilityIssueCodes.MedicalCertificateRequired);
     }
+
+    [Fact]
+    public async Task EvaluateForSessionsAsync_EvaluatesMultipleSessionsInMemory_WithoutMutatingCredits()
+    {
+        await using var db = CreateDbContext();
+        var calendar = new StubGymCalendar { Today = new DateOnly(2026, 6, 15) };
+        var (student, plan, allowedActivity, membership) = await SeedActiveMembershipAsync(
+            db,
+            calendar,
+            isUnlimited: false,
+            credits: 2);
+
+        // Restrict plan & membership to allowedActivity only
+        plan.AppliesToAllActivities = false;
+        membership.AppliesToAllActivities = false;
+        db.MembershipPlanActivities.Add(new MembershipPlanActivity
+        {
+            MembershipPlanId = plan.Id,
+            ActivityId = allowedActivity.Id
+        });
+        db.MembershipAllowedActivities.Add(new MembershipAllowedActivity
+        {
+            MembershipId = membership.Id,
+            ActivityId = allowedActivity.Id
+        });
+
+        var otherActivity = new Activity("YOGA", "Yoga", defaultCapacity: 15);
+        var thirdActivity = new Activity("BOX", "Boxeo", defaultCapacity: 15);
+        db.Activities.AddRange(otherActivity, thirdActivity);
+
+        var session1Id = Guid.NewGuid(); // covered by membership
+        var session2Id = Guid.NewGuid(); // otherActivity, covered by SingleClassTicket
+        var session3Id = Guid.NewGuid(); // thirdActivity, covered by autonomous CompensatoryCredit
+        var session4Id = Guid.NewGuid(); // otherActivity, no ticket and out of membership activity -> ineligible
+
+        var ticketMovement = new MembershipCreditMovement
+        {
+            Id = Guid.NewGuid(),
+            StudentId = student.Id,
+            ClassSessionId = session2Id,
+            Type = CreditMovementType.SingleClassTicket,
+            Amount = 1,
+            BalanceAfter = 1,
+            Reason = "Pase individual Yoga",
+            CreatedAtUtc = calendar.UtcNow,
+            IsActive = true
+        };
+
+        var compMovement = new MembershipCreditMovement
+        {
+            Id = Guid.NewGuid(),
+            StudentId = student.Id,
+            ActivityId = thirdActivity.Id,
+            ExpiresOn = new DateOnly(2026, 6, 25),
+            Type = CreditMovementType.ClassSuspensionCompensation,
+            Amount = 1,
+            BalanceAfter = 1,
+            Reason = "Compensación Boxeo",
+            CreatedAtUtc = calendar.UtcNow,
+            IsActive = true
+        };
+
+        db.MembershipCreditMovements.AddRange(ticketMovement, compMovement);
+        await db.SaveChangesAsync();
+
+        var service = new MembershipEligibilityService(db, calendar, Options.Create(new GymOptions()));
+
+        var sessions = new[]
+        {
+            new SessionEligibilityContextDto(session1Id, allowedActivity.Id, new DateOnly(2026, 6, 16), allowedActivity),
+            new SessionEligibilityContextDto(session2Id, otherActivity.Id, new DateOnly(2026, 6, 16), otherActivity),
+            new SessionEligibilityContextDto(session3Id, thirdActivity.Id, new DateOnly(2026, 6, 18), thirdActivity),
+            new SessionEligibilityContextDto(session4Id, otherActivity.Id, new DateOnly(2026, 6, 19), otherActivity)
+        };
+
+        var evaluations = await service.EvaluateForSessionsAsync(student.Id, sessions);
+
+        Assert.Equal(4, evaluations.Count);
+
+        var ev1 = evaluations[session1Id];
+        Assert.True(ev1.IsEligible);
+        Assert.Equal(ReservationAccessType.MembershipCredit, ev1.SuggestedAccessType);
+        Assert.Equal(membership.Id, ev1.SelectedMembershipId);
+        Assert.Equal(2, ev1.UsableCredits);
+
+        var ev2 = evaluations[session2Id];
+        Assert.True(ev2.IsEligible);
+        Assert.Equal(ReservationAccessType.SingleClassTicket, ev2.SuggestedAccessType);
+        Assert.Equal(ticketMovement.Id, ev2.SingleClassTicketMovementId);
+        Assert.Equal(1, ev2.UsableCredits);
+
+        var ev3 = evaluations[session3Id];
+        Assert.True(ev3.IsEligible);
+        Assert.Equal(ReservationAccessType.CompensatoryCredit, ev3.SuggestedAccessType);
+        Assert.Equal(compMovement.Id, ev3.SingleClassTicketMovementId);
+        Assert.Equal(1, ev3.UsableCredits);
+
+        var ev4 = evaluations[session4Id];
+        Assert.False(ev4.IsEligible);
+        Assert.Null(ev4.SuggestedAccessType);
+        Assert.Contains(ev4.Issues, i => i.Code == EligibilityIssueCodes.ActivityNotAllowed);
+
+        // Ensure no credits or movements were mutated
+        Assert.Equal(2, (await db.Memberships.SingleAsync(m => m.Id == membership.Id)).AvailableCredits);
+    }
 }
+

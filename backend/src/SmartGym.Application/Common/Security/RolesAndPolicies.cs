@@ -23,6 +23,13 @@ public static class Permissions
     public const string MembershipsCancel = "MEMBERSHIPS_CANCEL";
     public const string MembershipsRenew = "MEMBERSHIPS_RENEW";
     public const string MembershipsManage = "MEMBERSHIPS_MANAGE";
+
+    public const string ReservationsRead = "RESERVATIONS_READ";
+    public const string ReservationsCreate = "RESERVATIONS_CREATE";
+    public const string ReservationsCancel = "RESERVATIONS_CANCEL";
+    public const string ReservationsManage = "RESERVATIONS_MANAGE";
+    public const string ReservationsWaitlistRead = "RESERVATIONS_WAITLIST_READ";
+    public const string ReservationsOverridePolicy = "RESERVATIONS_OVERRIDE_POLICY";
 }
 
 public static class Policies
@@ -43,4 +50,11 @@ public static class Policies
     public const string MembershipsCancel = Permissions.MembershipsCancel;
     public const string MembershipsRenew = Permissions.MembershipsRenew;
     public const string MembershipsManage = Permissions.MembershipsManage;
+
+    public const string ReservationsRead = Permissions.ReservationsRead;
+    public const string ReservationsCreate = Permissions.ReservationsCreate;
+    public const string ReservationsCancel = Permissions.ReservationsCancel;
+    public const string ReservationsManage = Permissions.ReservationsManage;
+    public const string ReservationsWaitlistRead = Permissions.ReservationsWaitlistRead;
+    public const string ReservationsOverridePolicy = Permissions.ReservationsOverridePolicy;
 }

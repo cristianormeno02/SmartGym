@@ -13,7 +13,10 @@ public record CreditMovementDto(
     int BalanceAfter,
     string Reason,
     Guid? PerformedByUserId,
-    DateTime CreatedAtUtc
+    DateTime CreatedAtUtc,
+    Guid? ReservationId = null,
+    DateOnly? ExpiresOn = null,
+    Guid? ActivityId = null
 );
 
 public record MembershipCreditsSummaryDto(
@@ -35,7 +38,8 @@ public record MembershipCreditsSummaryDto(
 public record AddCompensatoryCreditRequest(
     Guid StudentId,
     Guid? ClassSessionId,
-    string Reason
+    string Reason,
+    Guid? ActivityId = null
 );
 
 public record PurchaseSingleClassTicketRequest(
@@ -44,3 +48,4 @@ public record PurchaseSingleClassTicketRequest(
     decimal Price,
     string Reason
 );
+

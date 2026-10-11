@@ -27,6 +27,7 @@ public interface ISmartGymDbContext
     DbSet<MembershipSuspension> MembershipSuspensions { get; }
     DbSet<MembershipCreditMovement> MembershipCreditMovements { get; }
     DbSet<Reservation> Reservations { get; }
+    DbSet<ReservationStatusChange> ReservationStatusChanges { get; }
     DbSet<FamilyGroup> FamilyGroups { get; }
     DbSet<FamilyGroupMember> FamilyGroupMembers { get; }
     DbSet<Promotion> Promotions { get; }

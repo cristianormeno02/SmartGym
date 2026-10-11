@@ -18,4 +18,15 @@ public interface IMembershipEligibilityService
         Guid? explicitMembershipId = null,
         Guid? classSessionId = null,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyDictionary<Guid, SessionEligibilityEvaluationDto>> EvaluateForSessionsAsync(
+        Guid studentId,
+        IReadOnlyList<SessionEligibilityContextDto> sessions,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyDictionary<Guid, SessionEligibilityEvaluationDto>> EvaluateForSessionsAsync(
+        Guid studentId,
+        IReadOnlyList<SmartGym.Domain.Entities.Activities.ClassSession> sessions,
+        CancellationToken cancellationToken = default);
 }
+
