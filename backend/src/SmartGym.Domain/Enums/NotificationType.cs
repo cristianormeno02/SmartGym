@@ -6,5 +6,8 @@ public enum NotificationType
     ClassReminder = 2,
     MembershipExpiring = 3,
     PromotionAvailable = 4,
-    PaymentConfirmed = 5
+    PaymentConfirmed = 5,
+    MembershipActivated = 6,
+    MembershipSuspended = 7,
+    MembershipExpired = 8
 }

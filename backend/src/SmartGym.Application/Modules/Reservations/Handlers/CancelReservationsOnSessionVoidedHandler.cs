@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using SmartGym.Application.Common.Interfaces;
+using SmartGym.Application.Modules.Memberships.Services;
 using SmartGym.Domain.Entities.Activities;
 using SmartGym.Domain.Entities.Memberships;
 using SmartGym.Domain.Entities.Reservations;
@@ -22,10 +23,14 @@ public class CancelReservationsOnSessionVoidedHandler :
     IDomainEventHandler<ClassSessionRescheduled>
 {
     private readonly ISmartGymDbContext _dbContext;
+    private readonly ICreditLedgerService _creditLedgerService;
 
-    public CancelReservationsOnSessionVoidedHandler(ISmartGymDbContext dbContext)
+    public CancelReservationsOnSessionVoidedHandler(
+        ISmartGymDbContext dbContext,
+        ICreditLedgerService? creditLedgerService = null)
     {
         _dbContext = dbContext;
+        _creditLedgerService = creditLedgerService ?? new CreditLedgerService(dbContext);
     }
 
     public Task HandleAsync(ClassSessionSuspended domainEvent, CancellationToken cancellationToken = default) =>
@@ -74,8 +79,12 @@ public class CancelReservationsOnSessionVoidedHandler :
             // AddCompensatoryCreditAsync.
             if (reservation.Status != ReservationStatus.WaitList && reservation.Membership != null)
             {
-                var refund = reservation.Membership.RefundCredit(session.Id, $"Devolución por sesión cancelada/suspendida ({cancellationReason})");
-                _dbContext.MembershipCreditMovements.Add(refund);
+                var refund = await _creditLedgerService.RefundCreditForReservationAsync(
+                    reservation.Membership,
+                    session.Id,
+                    $"Devolución por sesión cancelada/suspendida ({cancellationReason})",
+                    performedByUserId: null,
+                    cancellationToken);
                 refundMovementId = refund.Id;
             }
 
@@ -86,3 +95,4 @@ public class CancelReservationsOnSessionVoidedHandler :
         session.ResetReservedCount();
     }
 }
+

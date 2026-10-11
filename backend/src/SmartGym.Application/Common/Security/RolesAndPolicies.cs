@@ -13,6 +13,18 @@ public static class Roles
     public const string AllAuthenticated = $"{Administrator},{Secretary},{Instructor},{Student}";
 }
 
+public static class Permissions
+{
+    public const string MembershipsRead = "MEMBERSHIPS_READ";
+    public const string MembershipsCreate = "MEMBERSHIPS_CREATE";
+    public const string MembershipsActivate = "MEMBERSHIPS_ACTIVATE";
+    public const string MembershipsSuspend = "MEMBERSHIPS_SUSPEND";
+    public const string MembershipsReactivate = "MEMBERSHIPS_REACTIVATE";
+    public const string MembershipsCancel = "MEMBERSHIPS_CANCEL";
+    public const string MembershipsRenew = "MEMBERSHIPS_RENEW";
+    public const string MembershipsManage = "MEMBERSHIPS_MANAGE";
+}
+
 public static class Policies
 {
     public const string RequireAdministrator = "RequireAdministrator";
@@ -22,4 +34,13 @@ public static class Policies
     public const string RequireStaff = "RequireStaff";
     public const string RequireTeachingAndStaff = "RequireTeachingAndStaff";
     public const string RequireAllAuthenticated = "RequireAllAuthenticated";
+
+    public const string MembershipsRead = Permissions.MembershipsRead;
+    public const string MembershipsCreate = Permissions.MembershipsCreate;
+    public const string MembershipsActivate = Permissions.MembershipsActivate;
+    public const string MembershipsSuspend = Permissions.MembershipsSuspend;
+    public const string MembershipsReactivate = Permissions.MembershipsReactivate;
+    public const string MembershipsCancel = Permissions.MembershipsCancel;
+    public const string MembershipsRenew = Permissions.MembershipsRenew;
+    public const string MembershipsManage = Permissions.MembershipsManage;
 }

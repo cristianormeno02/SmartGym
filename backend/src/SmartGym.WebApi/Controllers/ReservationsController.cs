@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SmartGym.Application.Common.Exceptions;
 using SmartGym.Application.Common.Interfaces;
 using SmartGym.Application.Common.Security;
 using SmartGym.Application.Modules.Reservations.Dtos;
@@ -41,6 +42,10 @@ public class ReservationsController : ControllerBase
             var reservation = await _reservationService.CreateReservationAsync(request, userId, cancellationToken);
             return Ok(reservation);
         }
+        catch (ConflictException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(new { message = ex.Message });
@@ -60,6 +65,10 @@ public class ReservationsController : ControllerBase
             var userId = _currentUserService.UserId ?? Guid.Empty;
             var cancelled = await _reservationService.CancelReservationAsync(id, request, userId, cancellationToken);
             return Ok(cancelled);
+        }
+        catch (ConflictException ex)
+        {
+            return Conflict(new { message = ex.Message });
         }
         catch (ArgumentException ex)
         {

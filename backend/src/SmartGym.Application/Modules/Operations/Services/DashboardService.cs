@@ -20,10 +20,11 @@ public class DashboardService : IDashboardService
     {
         var today = _gymCalendar.Today;
         var (todayStartUtc, todayEndUtc) = _gymCalendar.LocalDayRange(today, today);
-        var currentMonthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var nowUtc = _gymCalendar.UtcNow;
+        var currentMonthStart = new DateTime(nowUtc.Year, nowUtc.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         var in7Days = today.AddDays(7);
 
-        // Alumnos activos con membresía vigente
+        // Alumnos activos con membresía vigente (estado efectivo Active)
         var totalActiveStudents = await _dbContext.Memberships
             .Where(m => m.IsActive && m.Status == MembershipStatus.Active && m.StartDate <= today && today <= m.EndDate)
             .Select(m => m.StudentId)

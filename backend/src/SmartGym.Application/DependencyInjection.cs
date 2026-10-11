@@ -31,8 +31,10 @@ public static class DependencyInjection
         services.AddScoped<IClassSessionService, ClassSessionService>();
 
         services.AddScoped<IMembershipPlanService, MembershipPlanService>();
-        services.AddScoped<IMembershipService, MembershipService>();
         services.AddScoped<ICreditLedgerService, CreditLedgerService>();
+        services.AddScoped<IMembershipEligibilityService, MembershipEligibilityService>();
+        services.AddScoped<IMembershipActivationService, MembershipActivationService>();
+        services.AddScoped<IMembershipService, MembershipService>();
 
         services.AddScoped<IReservationService, ReservationService>();
 
@@ -63,6 +65,18 @@ public static class DependencyInjection
             sp.GetRequiredService<SmartGym.Application.Modules.Operations.Handlers.NotifyStudentsOnSessionChangeHandler>());
         services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Activities.ClassSessionRoomChanged>>(sp =>
             sp.GetRequiredService<SmartGym.Application.Modules.Operations.Handlers.NotifyStudentsOnSessionChangeHandler>());
+
+        services.AddScoped<SmartGym.Application.Modules.Memberships.Handlers.ActivateMembershipOnPaymentCompletedHandler>();
+        services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Operations.PaymentCompletedEvent>>(sp =>
+            sp.GetRequiredService<SmartGym.Application.Modules.Memberships.Handlers.ActivateMembershipOnPaymentCompletedHandler>());
+
+        services.AddScoped<SmartGym.Application.Modules.Reservations.Handlers.CancelReservationsOnMembershipSuspendedHandler>();
+        services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Memberships.MembershipSuspendedEvent>>(sp =>
+            sp.GetRequiredService<SmartGym.Application.Modules.Reservations.Handlers.CancelReservationsOnMembershipSuspendedHandler>());
+
+        services.AddScoped<SmartGym.Application.Modules.Reservations.Handlers.CancelFutureReservationsOnMembershipCancelledHandler>();
+        services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Memberships.MembershipCancelledEvent>>(sp =>
+            sp.GetRequiredService<SmartGym.Application.Modules.Reservations.Handlers.CancelFutureReservationsOnMembershipCancelledHandler>());
 
         return services;
     }

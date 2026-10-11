@@ -749,19 +749,108 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("ActivatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("AppliesToAllActivities")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<int>("AvailableCredits")
                         .HasColumnType("integer");
+
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("CancelledAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CancelledByUserId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("ARS");
+
+                    b.Property<decimal>("DiscountAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<int>("DurationDaysSnapshot")
+                        .HasColumnType("integer");
+
                     b.Property<DateOnly>("EndDate")
                         .HasColumnType("date");
+
+                    b.Property<DateTime?>("ExpiredNotificationSentAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ExpiringNotificationSentAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ExtraCreditsGranted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("InitialCredits")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("InitialCreditsLoaded")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsUnlimited")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<Guid>("MembershipPlanId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<decimal>("OriginalPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<Guid?>("PromotionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PromotionRedemptionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("PurchasePrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTime>("PurchasedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("RenewedFromMembershipId")
                         .HasColumnType("uuid");
 
                     b.Property<DateOnly>("StartDate")
@@ -779,15 +868,70 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("MembershipPlanId");
+                    b.HasIndex("CancelledByUserId");
 
-                    b.HasIndex("StudentId");
+                    b.HasIndex("CreatedByUserId");
 
-                    b.HasIndex("StudentId", "Status");
+                    b.HasIndex("MembershipPlanId")
+                        .HasDatabaseName("IX_Memberships_MembershipPlanId");
 
-                    b.ToTable("Memberships", (string)null);
+                    b.HasIndex("PromotionId");
+
+                    b.HasIndex("PromotionRedemptionId");
+
+                    b.HasIndex("PurchasedAtUtc")
+                        .IsDescending()
+                        .HasDatabaseName("IX_Memberships_PurchasedAtUtc");
+
+                    b.HasIndex("RenewedFromMembershipId");
+
+                    b.HasIndex("Status", "EndDate")
+                        .HasDatabaseName("IX_Memberships_Status_EndDate");
+
+                    b.HasIndex("StudentId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Memberships_Student_IdempotencyKey")
+                        .HasFilter("\"IdempotencyKey\" IS NOT NULL");
+
+                    b.HasIndex("StudentId", "Status", "EndDate")
+                        .IsDescending(false, false, true)
+                        .HasDatabaseName("IX_Memberships_Student_Status_EndDate");
+
+                    b.ToTable("Memberships", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Memberships_Cancellation", "((\"Status\" = 4) = (\"CancelledAtUtc\" IS NOT NULL AND \"CancellationReason\" IS NOT NULL))");
+
+                            t.HasCheckConstraint("CK_Memberships_Credits", "\"InitialCredits\" >= 0 AND \"ExtraCreditsGranted\" >= 0 AND \"TotalCredits\" >= 0 AND \"AvailableCredits\" >= 0");
+
+                            t.HasCheckConstraint("CK_Memberships_Dates", "\"EndDate\" >= \"StartDate\" AND \"DurationDaysSnapshot\" >= 1");
+
+                            t.HasCheckConstraint("CK_Memberships_Prices", "\"OriginalPrice\" >= 0 AND \"DiscountAmount\" >= 0 AND \"PurchasePrice\" >= 0");
+
+                            t.HasCheckConstraint("CK_Memberships_Status", "\"Status\" IN (0, 1, 2, 3, 4)");
+                        });
+                });
+
+            modelBuilder.Entity("SmartGym.Domain.Entities.Memberships.MembershipAllowedActivity", b =>
+                {
+                    b.Property<Guid>("MembershipId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ActivityId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("MembershipId", "ActivityId");
+
+                    b.HasIndex("ActivityId");
+
+                    b.ToTable("MembershipAllowedActivities", (string)null);
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Memberships.MembershipCreditMovement", b =>
@@ -900,6 +1044,110 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.HasIndex("ActivityId");
 
                     b.ToTable("MembershipPlanActivities", (string)null);
+                });
+
+            modelBuilder.Entity("SmartGym.Domain.Entities.Memberships.MembershipStatusChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ChangedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ChangedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("MembershipId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("NewStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int?>("PreviousStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChangedByUserId");
+
+                    b.HasIndex("MembershipId", "ChangedAtUtc");
+
+                    b.ToTable("MembershipStatusChanges", (string)null);
+                });
+
+            modelBuilder.Entity("SmartGym.Domain.Entities.Memberships.MembershipSuspension", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateOnly?>("EndDate")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("ExtendExpirationDate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<int>("ExtensionDaysApplied")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<bool>("IsActiveSuspension")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<Guid>("MembershipId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateOnly?>("ReactivatedAtDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime?>("ReactivatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ReactivatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime>("SuspendedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("SuspendedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReactivatedByUserId");
+
+                    b.HasIndex("SuspendedByUserId");
+
+                    b.HasIndex("MembershipId", "IsActiveSuspension");
+
+                    b.ToTable("MembershipSuspensions", (string)null);
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Operations.AuditLog", b =>
@@ -1705,11 +1953,36 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Memberships.Membership", b =>
                 {
+                    b.HasOne("SmartGym.Domain.Entities.Identity.User", "CancelledByUser")
+                        .WithMany()
+                        .HasForeignKey("CancelledByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartGym.Domain.Entities.Identity.User", "CreatedByUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SmartGym.Domain.Entities.Memberships.MembershipPlan", "MembershipPlan")
                         .WithMany()
                         .HasForeignKey("MembershipPlanId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("SmartGym.Domain.Entities.Promotions.Promotion", "Promotion")
+                        .WithMany()
+                        .HasForeignKey("PromotionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartGym.Domain.Entities.Promotions.PromotionRedemption", "PromotionRedemption")
+                        .WithMany()
+                        .HasForeignKey("PromotionRedemptionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartGym.Domain.Entities.Memberships.Membership", "RenewedFromMembership")
+                        .WithMany()
+                        .HasForeignKey("RenewedFromMembershipId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("SmartGym.Domain.Entities.Identity.Person", "Student")
                         .WithMany()
@@ -1717,9 +1990,38 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.Navigation("CancelledByUser");
+
+                    b.Navigation("CreatedByUser");
+
                     b.Navigation("MembershipPlan");
 
+                    b.Navigation("Promotion");
+
+                    b.Navigation("PromotionRedemption");
+
+                    b.Navigation("RenewedFromMembership");
+
                     b.Navigation("Student");
+                });
+
+            modelBuilder.Entity("SmartGym.Domain.Entities.Memberships.MembershipAllowedActivity", b =>
+                {
+                    b.HasOne("SmartGym.Domain.Entities.Activities.Activity", "Activity")
+                        .WithMany()
+                        .HasForeignKey("ActivityId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SmartGym.Domain.Entities.Memberships.Membership", "Membership")
+                        .WithMany("AllowedActivities")
+                        .HasForeignKey("MembershipId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Activity");
+
+                    b.Navigation("Membership");
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Memberships.MembershipCreditMovement", b =>
@@ -1732,7 +2034,7 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.HasOne("SmartGym.Domain.Entities.Memberships.Membership", "Membership")
                         .WithMany("CreditMovements")
                         .HasForeignKey("MembershipId")
-                        .OnDelete(DeleteBehavior.Cascade);
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("SmartGym.Domain.Entities.Identity.Person", "Student")
                         .WithMany()
@@ -1764,6 +2066,50 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.Navigation("Activity");
 
                     b.Navigation("MembershipPlan");
+                });
+
+            modelBuilder.Entity("SmartGym.Domain.Entities.Memberships.MembershipStatusChange", b =>
+                {
+                    b.HasOne("SmartGym.Domain.Entities.Identity.User", "ChangedByUser")
+                        .WithMany()
+                        .HasForeignKey("ChangedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartGym.Domain.Entities.Memberships.Membership", "Membership")
+                        .WithMany("StatusChanges")
+                        .HasForeignKey("MembershipId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ChangedByUser");
+
+                    b.Navigation("Membership");
+                });
+
+            modelBuilder.Entity("SmartGym.Domain.Entities.Memberships.MembershipSuspension", b =>
+                {
+                    b.HasOne("SmartGym.Domain.Entities.Memberships.Membership", "Membership")
+                        .WithMany("Suspensions")
+                        .HasForeignKey("MembershipId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SmartGym.Domain.Entities.Identity.User", "ReactivatedByUser")
+                        .WithMany()
+                        .HasForeignKey("ReactivatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartGym.Domain.Entities.Identity.User", "SuspendedByUser")
+                        .WithMany()
+                        .HasForeignKey("SuspendedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Membership");
+
+                    b.Navigation("ReactivatedByUser");
+
+                    b.Navigation("SuspendedByUser");
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Operations.NotificationMessage", b =>
@@ -1932,7 +2278,13 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Memberships.Membership", b =>
                 {
+                    b.Navigation("AllowedActivities");
+
                     b.Navigation("CreditMovements");
+
+                    b.Navigation("StatusChanges");
+
+                    b.Navigation("Suspensions");
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Memberships.MembershipPlan", b =>

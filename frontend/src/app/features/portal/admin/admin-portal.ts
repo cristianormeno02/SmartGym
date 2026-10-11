@@ -301,4 +301,16 @@ export class AdminPortalComponent implements OnInit {
       error: () => this.auditLogs.set([])
     });
   }
+
+  getMembershipStatusText(mem: { status: number; effectiveStatus?: number }): string {
+    const effective = mem.effectiveStatus ?? mem.status;
+    switch (effective) {
+      case 0: return 'Pendiente';
+      case 1: return 'Activa';
+      case 2: return 'Vencida';
+      case 3: return 'Suspendida';
+      case 4: return 'Cancelada';
+      default: return 'Desconocido';
+    }
+  }
 }

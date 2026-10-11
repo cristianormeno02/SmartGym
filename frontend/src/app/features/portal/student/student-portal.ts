@@ -40,7 +40,9 @@ import {
           <div class="flex items-center gap-4 bg-slate-950/60 border border-slate-800/80 px-5 py-3 rounded-xl">
             <div class="text-center">
               <span class="text-xs text-slate-400 uppercase font-medium">Créditos Disp.</span>
-              <div class="text-2xl font-black text-cyan-400">{{ activeMembership()?.availableCredits ?? 0 }}</div>
+              <div class="text-2xl font-black text-cyan-400">
+                {{ activeMembership()?.isUnlimited ? '∞' : (activeMembership()?.availableCredits ?? 0) }}
+              </div>
             </div>
             <div class="h-8 w-px bg-slate-800"></div>
             <div class="text-center">
@@ -193,7 +195,21 @@ import {
 
             <!-- Membership Details Card -->
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
-              <h3 class="text-lg font-bold text-white mb-3">Detalle de Membresía</h3>
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-lg font-bold text-white">Detalle de Membresía</h3>
+                @if (activeMembership(); as mem) {
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-xs px-2 py-0.5 rounded font-bold" [ngClass]="getMembershipStatusBadgeClass(mem)">
+                      {{ getMembershipStatusText(mem) }}
+                    </span>
+                    @if (mem.isDepleted) {
+                      <span class="text-xs px-2 py-0.5 rounded font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        Sin créditos
+                      </span>
+                    }
+                  </div>
+                }
+              </div>
               @if (activeMembership(); as mem) {
                 <div class="space-y-3 text-sm">
                   <div class="flex justify-between py-1 border-b border-slate-800">
@@ -201,17 +217,25 @@ import {
                     <span class="font-semibold text-slate-200">{{ mem.membershipPlanName }}</span>
                   </div>
                   <div class="flex justify-between py-1 border-b border-slate-800">
-                    <span class="text-slate-400">Vigencia hasta:</span>
-                    <span class="font-semibold text-slate-200">{{ mem.endDate | date:'mediumDate' }}</span>
+                    <span class="text-slate-400">Vigencia:</span>
+                    <span class="font-semibold text-slate-200">{{ mem.startDate | date:'shortDate' }} - {{ mem.endDate | date:'mediumDate' }}</span>
                   </div>
                   <div class="flex justify-between py-1 border-b border-slate-800">
                     <span class="text-slate-400">Créditos totales:</span>
-                    <span class="font-semibold text-slate-200">{{ mem.totalCredits }}</span>
+                    <span class="font-semibold text-slate-200">{{ mem.isUnlimited ? 'Ilimitado' : mem.totalCredits }}</span>
                   </div>
-                  <div class="flex justify-between py-1">
+                  <div class="flex justify-between py-1" [ngClass]="mem.hasOutstandingBalance ? 'border-b border-slate-800' : ''">
                     <span class="text-slate-400">Créditos disponibles:</span>
-                    <span class="font-bold text-cyan-400 text-base">{{ mem.availableCredits }}</span>
+                    <span class="font-bold text-base" [ngClass]="mem.isDepleted ? 'text-amber-400' : 'text-cyan-400'">
+                      {{ mem.isUnlimited ? 'Ilimitado' : mem.availableCredits }}
+                    </span>
                   </div>
+                  @if (mem.hasOutstandingBalance || (mem.pendingBalance ?? 0) > 0) {
+                    <div class="flex justify-between py-1 text-amber-300">
+                      <span>Saldo pendiente:</span>
+                      <span class="font-bold">\${{ mem.pendingBalance | number:'1.2-2' }}</span>
+                    </div>
+                  }
                 </div>
               } @else {
                 <p class="text-xs text-slate-500">No cuentas con una membresía activa actualmente.</p>
@@ -310,7 +334,12 @@ export class StudentPortalComponent implements OnInit {
   loadStudentData(studentId: string): void {
     this.gymApi.getActiveMembership(studentId).subscribe({
       next: (mem) => this.activeMembership.set(mem),
-      error: () => this.activeMembership.set(null)
+      error: () => {
+        this.gymApi.getCurrentMemberships(studentId).subscribe({
+          next: (list) => this.activeMembership.set(list.length > 0 ? list[0] : null),
+          error: () => this.activeMembership.set(null)
+        });
+      }
     });
 
     this.gymApi.getStudentReservations(studentId).subscribe({
@@ -411,6 +440,30 @@ export class StudentPortalComponent implements OnInit {
         this.notifications.update(list => list.map(n => n.id === notificationId ? { ...n, isRead: true } : n));
       }
     });
+  }
+
+  getMembershipStatusText(mem: Membership): string {
+    const effective = mem.effectiveStatus ?? mem.status;
+    switch (effective) {
+      case 0: return 'Pendiente';
+      case 1: return 'Activa';
+      case 2: return 'Vencida';
+      case 3: return 'Suspendida';
+      case 4: return 'Cancelada';
+      default: return 'Desconocido';
+    }
+  }
+
+  getMembershipStatusBadgeClass(mem: Membership): string {
+    const effective = mem.effectiveStatus ?? mem.status;
+    switch (effective) {
+      case 0: return 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
+      case 1: return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+      case 2: return 'bg-slate-700 text-slate-300';
+      case 3: return 'bg-orange-500/20 text-orange-300 border border-orange-500/30';
+      case 4: return 'bg-rose-500/20 text-rose-300 border border-rose-500/30';
+      default: return 'bg-slate-800 text-slate-400';
+    }
   }
 
   private showFeedback(msg: string, success: boolean): void {

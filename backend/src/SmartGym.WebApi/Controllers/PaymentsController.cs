@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SmartGym.Application.Common.Exceptions;
 using SmartGym.Application.Common.Interfaces;
 using SmartGym.Application.Common.Security;
 using SmartGym.Application.Modules.Operations.Dtos;
@@ -81,6 +82,64 @@ public class PaymentsController : ControllerBase
         {
             return BadRequest(new { message = ex.Message });
         }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("{id:guid}/confirm")]
+    [Authorize(Policy = Policies.RequireStaff)]
+    public async Task<IActionResult> ConfirmPayment(
+        Guid id,
+        [FromBody] ConfirmPaymentRequest? request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var userId = _currentUserService.UserId ?? Guid.Empty;
+            var confirmed = await _paymentService.ConfirmPaymentAsync(id, request, userId, cancellationToken);
+            return Ok(confirmed);
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ConflictException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("{id:guid}/fail")]
+    [Authorize(Policy = Policies.RequireStaff)]
+    public async Task<IActionResult> FailPayment(
+        Guid id,
+        [FromBody] FailPaymentRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var userId = _currentUserService.UserId ?? Guid.Empty;
+            var failed = await _paymentService.FailPaymentAsync(id, request, userId, cancellationToken);
+            return Ok(failed);
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ConflictException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     [HttpPost("{id:guid}/refund")]
@@ -97,3 +156,4 @@ public class PaymentsController : ControllerBase
         return Ok(refunded);
     }
 }
+

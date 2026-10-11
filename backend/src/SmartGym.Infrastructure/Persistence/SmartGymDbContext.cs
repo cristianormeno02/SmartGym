@@ -34,6 +34,9 @@ public class SmartGymDbContext : DbContext, ISmartGymDbContext
     public DbSet<MembershipPlan> MembershipPlans => Set<MembershipPlan>();
     public DbSet<MembershipPlanActivity> MembershipPlanActivities => Set<MembershipPlanActivity>();
     public DbSet<Membership> Memberships => Set<Membership>();
+    public DbSet<MembershipAllowedActivity> MembershipAllowedActivities => Set<MembershipAllowedActivity>();
+    public DbSet<MembershipStatusChange> MembershipStatusChanges => Set<MembershipStatusChange>();
+    public DbSet<MembershipSuspension> MembershipSuspensions => Set<MembershipSuspension>();
     public DbSet<MembershipCreditMovement> MembershipCreditMovements => Set<MembershipCreditMovement>();
     public DbSet<Reservation> Reservations => Set<Reservation>();
     public DbSet<FamilyGroup> FamilyGroups => Set<FamilyGroup>();
@@ -59,6 +62,57 @@ public class SmartGymDbContext : DbContext, ISmartGymDbContext
 
         await Database.ExecuteSqlInterpolatedAsync(
             $"SELECT 1 FROM \"ClassSessions\" WHERE \"Id\" = {classSessionId} FOR UPDATE",
+            cancellationToken);
+    }
+
+    public virtual async Task LockPersonForUpdateAsync(Guid personId, CancellationToken cancellationToken = default)
+    {
+        if (!Database.IsNpgsql())
+        {
+            return;
+        }
+
+        if (Database.CurrentTransaction == null)
+        {
+            throw new InvalidOperationException("El bloqueo de la persona requiere una transacción activa.");
+        }
+
+        await Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT 1 FROM \"People\" WHERE \"Id\" = {personId} FOR UPDATE",
+            cancellationToken);
+    }
+
+    public virtual async Task LockMembershipForUpdateAsync(Guid membershipId, CancellationToken cancellationToken = default)
+    {
+        if (!Database.IsNpgsql())
+        {
+            return;
+        }
+
+        if (Database.CurrentTransaction == null)
+        {
+            throw new InvalidOperationException("El bloqueo de la membresía requiere una transacción activa.");
+        }
+
+        await Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT 1 FROM \"Memberships\" WHERE \"Id\" = {membershipId} FOR UPDATE",
+            cancellationToken);
+    }
+
+    public virtual async Task LockStudentMembershipsForUpdateAsync(Guid studentId, CancellationToken cancellationToken = default)
+    {
+        if (!Database.IsNpgsql())
+        {
+            return;
+        }
+
+        if (Database.CurrentTransaction == null)
+        {
+            throw new InvalidOperationException("El bloqueo de las membresías del alumno requiere una transacción activa.");
+        }
+
+        await Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT 1 FROM \"Memberships\" WHERE \"StudentId\" = {studentId} FOR UPDATE",
             cancellationToken);
     }
 

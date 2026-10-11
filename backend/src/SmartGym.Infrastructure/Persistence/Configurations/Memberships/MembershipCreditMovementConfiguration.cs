@@ -29,6 +29,11 @@ public class MembershipCreditMovementConfiguration : IEntityTypeConfiguration<Me
         builder.HasIndex(cm => cm.MembershipId);
         builder.HasIndex(cm => cm.ClassSessionId);
 
+        builder.HasOne(cm => cm.Membership)
+            .WithMany(m => m.CreditMovements)
+            .HasForeignKey(cm => cm.MembershipId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasOne(cm => cm.Student)
             .WithMany()
             .HasForeignKey(cm => cm.StudentId)

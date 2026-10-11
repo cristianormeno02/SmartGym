@@ -16,6 +16,22 @@ public record CreditMovementDto(
     DateTime CreatedAtUtc
 );
 
+public record MembershipCreditsSummaryDto(
+    Guid MembershipId,
+    Guid StudentId,
+    bool IsUnlimited,
+    int InitialCredits,
+    int PromotionBonusCredits,
+    int CompensatoryCredits,
+    int ManualAdjustmentCredits,
+    int ConsumedCredits,
+    int RefundedCredits,
+    int ExpiredOrForfeitedCredits,
+    int AvailableCredits,
+    bool IsDepleted,
+    IReadOnlyList<CreditMovementDto> Movements
+);
+
 public record AddCompensatoryCreditRequest(
     Guid StudentId,
     Guid? ClassSessionId,

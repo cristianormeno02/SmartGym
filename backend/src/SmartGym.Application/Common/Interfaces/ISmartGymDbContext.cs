@@ -22,6 +22,9 @@ public interface ISmartGymDbContext
     DbSet<MembershipPlan> MembershipPlans { get; }
     DbSet<MembershipPlanActivity> MembershipPlanActivities { get; }
     DbSet<Membership> Memberships { get; }
+    DbSet<MembershipAllowedActivity> MembershipAllowedActivities { get; }
+    DbSet<MembershipStatusChange> MembershipStatusChanges { get; }
+    DbSet<MembershipSuspension> MembershipSuspensions { get; }
     DbSet<MembershipCreditMovement> MembershipCreditMovements { get; }
     DbSet<Reservation> Reservations { get; }
     DbSet<FamilyGroup> FamilyGroups { get; }
@@ -33,12 +36,31 @@ public interface ISmartGymDbContext
     DbSet<SmartGym.Domain.Entities.Operations.AuditLog> AuditLogs { get; }
 
     Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade Database { get; }
+    Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker ChangeTracker { get; }
 
     /// <summary>
     /// Bloquea la fila de la clase hasta el fin de la transacción actual, serializando las operaciones
     /// concurrentes que modifican su cupo. Debe invocarse dentro de una transacción y antes de leer la clase.
     /// </summary>
     Task LockClassSessionForUpdateAsync(Guid classSessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Bloquea la fila de la persona hasta el fin de la transacción actual para serializar contrataciones
+    /// o renovaciones concurrentes del mismo alumno.
+    /// </summary>
+    Task LockPersonForUpdateAsync(Guid personId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Bloquea la fila de la membresía hasta el fin de la transacción actual para serializar cambios de estado
+    /// o consumos concurrentes.
+    /// </summary>
+    Task LockMembershipForUpdateAsync(Guid membershipId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Bloquea todas las membresías del alumno hasta el fin de la transacción actual. Debe invocarse antes de
+    /// leerlas cuando se va a elegir una y consumir su saldo, para decidir sobre datos actualizados.
+    /// </summary>
+    Task LockStudentMembershipsForUpdateAsync(Guid studentId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Difiere las exclusiones de solapamiento de sala e instructor hasta el fin de la transacción actual.

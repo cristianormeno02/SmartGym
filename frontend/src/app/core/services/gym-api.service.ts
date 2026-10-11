@@ -9,6 +9,9 @@ import {
   ClassSession,
   MembershipPlan,
   Membership,
+  MembershipDetail,
+  MembershipEligibility,
+  MembershipCreditsSummary,
   Reservation,
   DashboardMetrics,
   MedicalCertificateStatus,
@@ -95,13 +98,36 @@ export class GymApiService {
     return this.http.get<Membership[]>(`${this.apiUrl}/memberships/student/${studentId}`);
   }
 
+  getCurrentMemberships(studentId: string): Observable<Membership[]> {
+    return this.http.get<Membership[]>(`${this.apiUrl}/memberships/student/${studentId}/current`);
+  }
+
   getActiveMembership(studentId: string): Observable<Membership> {
     return this.http.get<Membership>(`${this.apiUrl}/memberships/student/${studentId}/active`);
   }
 
+  getMembershipById(membershipId: string): Observable<MembershipDetail> {
+    return this.http.get<MembershipDetail>(`${this.apiUrl}/memberships/${membershipId}`);
+  }
+
+  getMembershipEligibility(
+    membershipId: string,
+    paramsObj?: { date?: string; activityId?: string; classSessionId?: string }
+  ): Observable<MembershipEligibility> {
+    let params = new HttpParams();
+    if (paramsObj?.date) params = params.set('date', paramsObj.date);
+    if (paramsObj?.activityId) params = params.set('activityId', paramsObj.activityId);
+    if (paramsObj?.classSessionId) params = params.set('classSessionId', paramsObj.classSessionId);
+    return this.http.get<MembershipEligibility>(`${this.apiUrl}/memberships/${membershipId}/eligibility`, { params });
+  }
+
+  getMembershipCredits(membershipId: string): Observable<MembershipCreditsSummary> {
+    return this.http.get<MembershipCreditsSummary>(`${this.apiUrl}/memberships/${membershipId}/credits`);
+  }
+
   // --- Reservas y Asistencia ---
-  createReservation(classSessionId: string, studentId: string): Observable<Reservation> {
-    return this.http.post<Reservation>(`${this.apiUrl}/reservations`, { classSessionId, studentId });
+  createReservation(classSessionId: string, studentId: string, membershipId?: string): Observable<Reservation> {
+    return this.http.post<Reservation>(`${this.apiUrl}/reservations`, { classSessionId, studentId, membershipId });
   }
 
   cancelReservation(reservationId: string, reason: string): Observable<Reservation> {

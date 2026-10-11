@@ -5,6 +5,7 @@ import { AuthService } from '../../../core/services/auth.service';
 import { GymApiService } from '../../../core/services/gym-api.service';
 import {
   ClassSession,
+  Membership,
   Reservation
 } from '../../../core/models/gym.models';
 
@@ -428,6 +429,18 @@ export class StaffPortalComponent implements OnInit {
       case 3: return 'Presente';
       case 4: return 'Ausente / No-Show';
       case 5: return 'En Espera';
+      default: return 'Desconocido';
+    }
+  }
+
+  getMembershipStatusText(mem: Membership): string {
+    const effective = mem.effectiveStatus ?? mem.status;
+    switch (effective) {
+      case 0: return 'Pendiente';
+      case 1: return 'Activa';
+      case 2: return 'Vencida';
+      case 3: return 'Suspendida';
+      case 4: return 'Cancelada';
       default: return 'Desconocido';
     }
   }

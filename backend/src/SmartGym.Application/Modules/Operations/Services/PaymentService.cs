@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SmartGym.Application.Common.Exceptions;
 using SmartGym.Application.Common.Interfaces;
 using SmartGym.Application.Modules.Operations.Dtos;
 using SmartGym.Domain.Entities.Operations;
@@ -61,6 +62,12 @@ public class PaymentService : IPaymentService
             throw new ArgumentException("El monto del pago debe ser superior a cero.");
         }
 
+        if (request.Status != PaymentStatus.Completed && request.Status != PaymentStatus.Pending)
+        {
+            throw new ArgumentException("El estado inicial del pago debe ser Completed o Pending.");
+        }
+
+        var now = DateTime.UtcNow;
         var payment = new Payment
         {
             Id = Guid.NewGuid(),
@@ -69,19 +76,80 @@ public class PaymentService : IPaymentService
             ClassSessionId = request.ClassSessionId,
             Amount = request.Amount,
             Method = request.Method,
-            Status = PaymentStatus.Completed,
+            Status = PaymentStatus.Pending,
             ExternalTransactionId = request.ExternalTransactionId?.Trim(),
             Notes = request.Notes?.Trim(),
-            RegisteredByUserId = currentUserId,
-            PaidAtUtc = DateTime.UtcNow,
-            CreatedAtUtc = DateTime.UtcNow,
+            RegisteredByUserId = currentUserId == Guid.Empty ? null : currentUserId,
+            PaidAtUtc = now,
+            CreatedAtUtc = now,
             IsActive = true
         };
+
+        if (request.Status == PaymentStatus.Completed)
+        {
+            payment.Complete(request.ExternalTransactionId);
+        }
 
         _dbContext.Payments.Add(payment);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         payment.PayerPerson = payer;
+        return MapToDto(payment);
+    }
+
+    public async Task<PaymentDto> ConfirmPaymentAsync(
+        Guid id,
+        ConfirmPaymentRequest? request,
+        Guid currentUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var payment = await _dbContext.Payments
+            .Include(p => p.PayerPerson)
+            .FirstOrDefaultAsync(p => p.Id == id && p.IsActive, cancellationToken)
+            ?? throw new NotFoundException("Pago no encontrado.");
+
+        if (payment.Status != PaymentStatus.Pending)
+        {
+            throw new ConflictException($"Sólo se puede confirmar un pago en estado Pending (estado actual: {payment.Status}).");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request?.Notes))
+        {
+            payment.Notes = string.IsNullOrWhiteSpace(payment.Notes)
+                ? request.Notes.Trim()
+                : $"{payment.Notes} | {request.Notes.Trim()}";
+        }
+
+        payment.Complete(request?.ExternalTransactionId);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return MapToDto(payment);
+    }
+
+    public async Task<PaymentDto> FailPaymentAsync(
+        Guid id,
+        FailPaymentRequest request,
+        Guid currentUserId,
+        CancellationToken cancellationToken = default)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.Reason))
+        {
+            throw new ValidationException("El motivo de rechazo del pago es obligatorio.");
+        }
+
+        var payment = await _dbContext.Payments
+            .Include(p => p.PayerPerson)
+            .FirstOrDefaultAsync(p => p.Id == id && p.IsActive, cancellationToken)
+            ?? throw new NotFoundException("Pago no encontrado.");
+
+        if (payment.Status != PaymentStatus.Pending)
+        {
+            throw new ConflictException($"Sólo se puede rechazar un pago en estado Pending (estado actual: {payment.Status}).");
+        }
+
+        payment.Fail(request.Reason);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
         return MapToDto(payment);
     }
 
@@ -115,3 +183,4 @@ public class PaymentService : IPaymentService
             p.PaidAtUtc
         );
 }
+

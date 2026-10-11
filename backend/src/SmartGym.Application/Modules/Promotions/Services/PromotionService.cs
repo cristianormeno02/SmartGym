@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SmartGym.Application.Common.Exceptions;
 using SmartGym.Application.Common.Interfaces;
 using SmartGym.Application.Modules.Promotions.Dtos;
 using SmartGym.Domain.Entities.Promotions;
@@ -9,10 +10,15 @@ namespace SmartGym.Application.Modules.Promotions.Services;
 public class PromotionService : IPromotionService
 {
     private readonly ISmartGymDbContext _dbContext;
+    private readonly SmartGym.Application.Common.IGymCalendar _gymCalendar;
 
-    public PromotionService(ISmartGymDbContext dbContext)
+    public PromotionService(
+        ISmartGymDbContext dbContext,
+        SmartGym.Application.Common.IGymCalendar? gymCalendar = null)
     {
         _dbContext = dbContext;
+        _gymCalendar = gymCalendar ?? new SmartGym.Application.Common.GymCalendar(
+            Microsoft.Extensions.Options.Options.Create(new SmartGym.Application.Common.GymOptions()));
     }
 
     public async Task<List<PromotionDto>> GetAllAsync(bool onlyActive = false, CancellationToken cancellationToken = default)
@@ -23,7 +29,7 @@ public class PromotionService : IPromotionService
 
         if (onlyActive)
         {
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var today = _gymCalendar.Today;
             query = query.Where(p => p.IsActive && p.ValidFrom <= today && (!p.ValidTo.HasValue || today <= p.ValidTo.Value));
         }
 
@@ -77,7 +83,7 @@ public class PromotionService : IPromotionService
             MaxUsesTotal = request.MaxUsesTotal,
             MaxUsesPerPerson = request.MaxUsesPerPerson > 0 ? request.MaxUsesPerPerson : 1,
             ApplicablePlanId = request.ApplicablePlanId,
-            CreatedAtUtc = DateTime.UtcNow,
+            CreatedAtUtc = _gymCalendar.UtcNow,
             IsActive = true
         };
 
@@ -97,7 +103,7 @@ public class PromotionService : IPromotionService
             throw new ArgumentException("El código promocional especificado no existe o no se encuentra activo.");
         }
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = _gymCalendar.Today;
         if (!promo.IsValidOn(today))
         {
             throw new InvalidOperationException("La promoción está vencida o ha superado el tope total de canjes permitidos.");
@@ -117,7 +123,8 @@ public class PromotionService : IPromotionService
         // Validación de condiciones
         if (promo.ConditionType == PromotionConditionType.NewStudent)
         {
-            var hasMemberships = await _dbContext.Memberships.AnyAsync(m => m.StudentId == person.Id, cancellationToken);
+            var hasMemberships = await _dbContext.Memberships
+                .AnyAsync(m => m.StudentId == person.Id && m.IsActive && m.Status != MembershipStatus.Cancelled, cancellationToken);
             if (hasMemberships)
             {
                 throw new InvalidOperationException("Esta promoción es de bienvenida y aplica exclusivamente a nuevos alumnos.");
@@ -132,9 +139,9 @@ public class PromotionService : IPromotionService
             }
         }
 
-        // Validación de tope de uso por persona
+        // Validación de tope de uso por persona (sólo canjes activos)
         var previousUses = await _dbContext.PromotionRedemptions
-            .CountAsync(r => r.PromotionId == promo.Id && r.PersonId == person.Id, cancellationToken);
+            .CountAsync(r => r.PromotionId == promo.Id && r.PersonId == person.Id && r.IsActive, cancellationToken);
 
         if (!promo.CanBeUsedBy(person.Id, previousUses))
         {
@@ -166,6 +173,7 @@ public class PromotionService : IPromotionService
         var promo = await _dbContext.Promotions.FirstAsync(p => p.Id == eval.PromotionId, cancellationToken);
         var person = await _dbContext.People.FirstAsync(p => p.Id == request.PersonId, cancellationToken);
 
+        var nowUtc = _gymCalendar.UtcNow;
         var redemption = new PromotionRedemption
         {
             Id = Guid.NewGuid(),
@@ -176,8 +184,8 @@ public class PromotionService : IPromotionService
             DiscountAmount = eval.DiscountAmount,
             FinalAmount = eval.FinalAmount,
             ExtraCreditsGranted = eval.ExtraCreditsGranted,
-            RedeemedAtUtc = DateTime.UtcNow,
-            CreatedAtUtc = DateTime.UtcNow,
+            RedeemedAtUtc = nowUtc,
+            CreatedAtUtc = nowUtc,
             IsActive = true
         };
 
@@ -199,13 +207,48 @@ public class PromotionService : IPromotionService
         );
     }
 
+    public async Task AttachRedemptionToMembershipAsync(
+        Guid redemptionId,
+        Guid membershipId,
+        CancellationToken cancellationToken = default)
+    {
+        var redemption = await _dbContext.PromotionRedemptions
+            .FirstOrDefaultAsync(r => r.Id == redemptionId, cancellationToken)
+            ?? throw new NotFoundException("El canje promocional especificado no existe.");
+
+        redemption.MembershipId = membershipId;
+        redemption.UpdatedAtUtc = _gymCalendar.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task VoidRedemptionAsync(
+        Guid redemptionId,
+        CancellationToken cancellationToken = default)
+    {
+        var redemption = await _dbContext.PromotionRedemptions
+            .Include(r => r.Promotion)
+            .FirstOrDefaultAsync(r => r.Id == redemptionId, cancellationToken)
+            ?? throw new NotFoundException("El canje promocional especificado no existe.");
+
+        if (!redemption.IsActive)
+        {
+            return;
+        }
+
+        redemption.IsActive = false;
+        redemption.UpdatedAtUtc = _gymCalendar.UtcNow;
+        redemption.Promotion?.DecrementUse();
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<List<PromotionRedemptionDto>> GetRedemptionsByPersonAsync(Guid personId, CancellationToken cancellationToken = default)
     {
         var list = await _dbContext.PromotionRedemptions
             .Include(r => r.Promotion)
             .Include(r => r.Person)
             .AsNoTracking()
-            .Where(r => r.PersonId == personId)
+            .Where(r => r.PersonId == personId && r.IsActive)
             .OrderByDescending(r => r.RedeemedAtUtc)
             .ToListAsync(cancellationToken);
 

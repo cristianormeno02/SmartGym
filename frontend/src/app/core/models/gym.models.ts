@@ -95,6 +95,14 @@ export interface MembershipPlan {
   isActive: boolean;
 }
 
+export enum MembershipStatus {
+  Pending = 0,
+  Active = 1,
+  Expired = 2,
+  Suspended = 3,
+  Cancelled = 4
+}
+
 export interface Membership {
   id: string;
   studentId: string;
@@ -104,12 +112,126 @@ export interface Membership {
   documentNumber?: string;
   membershipPlanId: string;
   membershipPlanName: string;
+  renewedFromMembershipId?: string;
   startDate: string;
   endDate: string;
   totalCredits: number;
   availableCredits: number;
-  status: number;
+  status: MembershipStatus; // 0=Pending, 1=Active, 2=Expired, 3=Suspended, 4=Cancelled
+  effectiveStatus?: MembershipStatus;
   isValidToday: boolean;
+  purchasedAtUtc?: string;
+  activatedAtUtc?: string;
+  durationDaysSnapshot?: number;
+  initialCredits?: number;
+  extraCreditsGranted?: number;
+  isUnlimited?: boolean;
+  appliesToAllActivities?: boolean;
+  initialCreditsLoaded?: boolean;
+  hasAvailableCredits?: boolean;
+  isDepleted?: boolean;
+  startsInFuture?: boolean;
+  daysRemaining?: number;
+  originalPrice?: number;
+  discountAmount?: number;
+  purchasePrice?: number;
+  currency?: string;
+  totalPaidAmount?: number;
+  pendingBalance?: number;
+  hasOutstandingBalance?: boolean;
+  promotionId?: string;
+  promotionCode?: string;
+  notes?: string;
+  version?: number;
+}
+
+export interface MembershipStatusChange {
+  id: string;
+  previousStatus?: MembershipStatus;
+  newStatus: MembershipStatus;
+  reason: string;
+  notes?: string;
+  changedByUserId?: string;
+  changedAtUtc: string;
+}
+
+export interface MembershipSuspension {
+  id: string;
+  startDate: string;
+  endDate?: string;
+  reactivatedAtDate?: string;
+  extendExpirationDate: boolean;
+  extensionDaysApplied: number;
+  reason: string;
+  notes?: string;
+  suspendedByUserId: string;
+  suspendedAtUtc: string;
+  reactivatedByUserId?: string;
+  reactivatedAtUtc?: string;
+  isActiveSuspension: boolean;
+}
+
+export interface MembershipPayment {
+  id: string;
+  studentId: string;
+  studentName: string;
+  membershipId?: string;
+  amount: number;
+  method: number;
+  status: number;
+  externalTransactionId?: string;
+  notes?: string;
+  paidAtUtc: string;
+}
+
+export interface MembershipDetail extends Membership {
+  promotionName?: string;
+  promotionRedemptionId?: string;
+  createdByUserId?: string;
+  cancelledAtUtc?: string;
+  cancelledByUserId?: string;
+  cancellationReason?: string;
+  allowedActivityIds: string[];
+  payments: MembershipPayment[];
+  suspensions: MembershipSuspension[];
+  statusHistory: MembershipStatusChange[];
+}
+
+export interface MembershipIneligibilityReason {
+  code: string;
+  message: string;
+}
+
+export interface MembershipEligibility {
+  membershipId: string;
+  studentId: string;
+  evaluatedDate: string;
+  evaluatedActivityId?: string;
+  evaluatedClassSessionId?: string;
+  isEligible: boolean;
+  effectiveStatus: MembershipStatus;
+  isUnlimited: boolean;
+  availableCredits: number;
+  hasAvailableCredits: boolean;
+  isDepleted: boolean;
+  ineligibilityReasons: MembershipIneligibilityReason[];
+}
+
+export interface MembershipCreditsSummary {
+  membershipId: string;
+  studentId: string;
+  isUnlimited: boolean;
+  initialCredits: number;
+  consumedCredits: number;
+  refundedCredits: number;
+  bonusCredits: number;
+  compensatoryCredits: number;
+  forfeitedCredits: number;
+  expiredCredits: number;
+  availableCredits: number;
+  hasAvailableCredits: boolean;
+  isDepleted: boolean;
+  movements: CreditMovement[];
 }
 
 export interface Reservation {
@@ -171,9 +293,9 @@ export interface NotificationItem {
 
 export interface CreditMovement {
   id: string;
-  membershipId: string;
+  membershipId?: string;
   studentId: string;
-  movementType: number; // 0=InitialCredit, 1=ReservationDebit, 2=EarlyCancellationRefund, 3=CompensatoryCredit, 4=SingleTicket
+  movementType: number; // 0=InitialCredit, 1=ReservationDebit, 2=EarlyCancellationRefund, 3=CompensatoryCredit, 4=SingleTicket, 5=PromotionBonus, 6=CancellationForfeit, 7=Expiration
   amount: number;
   balanceAfter: number;
   concept: string;

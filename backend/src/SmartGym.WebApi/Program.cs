@@ -30,6 +30,11 @@ builder.Services.AddOptions<SmartGym.Application.Common.ClassSessionsOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+builder.Services.AddOptions<SmartGym.Application.Common.MembershipsOptions>()
+    .Bind(builder.Configuration.GetSection(SmartGym.Application.Common.MembershipsOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddControllers();

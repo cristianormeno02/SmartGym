@@ -8,4 +8,10 @@ public class GymOptions
 
     [Required]
     public string TimeZoneId { get; set; } = "America/Argentina/San_Juan";
+
+    [Required]
+    [StringLength(3, MinimumLength = 3)]
+    public string DefaultCurrency { get; set; } = "ARS";
+
+    public bool RequireValidMedicalCertificateForAccess { get; set; } = false;
 }

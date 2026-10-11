@@ -60,4 +60,14 @@ public class Promotion : BaseEntity
         CurrentUsesTotal++;
         UpdatedAtUtc = DateTime.UtcNow;
     }
+
+    public void DecrementUse()
+    {
+        if (CurrentUsesTotal > 0)
+        {
+            CurrentUsesTotal--;
+            UpdatedAtUtc = DateTime.UtcNow;
+        }
+    }
 }
+

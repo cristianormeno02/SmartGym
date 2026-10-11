@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using SmartGym.Application.Common.Exceptions;
 using SmartGym.Application.Common.Interfaces;
+using SmartGym.Application.Modules.Memberships.Services;
 using SmartGym.Application.Modules.Reservations.Dtos;
 using SmartGym.Domain.Entities.Activities;
 using SmartGym.Domain.Entities.Memberships;
@@ -12,11 +14,19 @@ public class ReservationService : IReservationService
 {
     private readonly ISmartGymDbContext _dbContext;
     private readonly SmartGym.Application.Common.IGymCalendar _gymCalendar;
+    private readonly ICreditLedgerService _creditLedgerService;
+    private readonly IMembershipEligibilityService _eligibilityService;
 
-    public ReservationService(ISmartGymDbContext dbContext, SmartGym.Application.Common.IGymCalendar gymCalendar)
+    public ReservationService(
+        ISmartGymDbContext dbContext,
+        SmartGym.Application.Common.IGymCalendar gymCalendar,
+        ICreditLedgerService? creditLedgerService = null,
+        IMembershipEligibilityService? eligibilityService = null)
     {
         _dbContext = dbContext;
         _gymCalendar = gymCalendar;
+        _creditLedgerService = creditLedgerService ?? new CreditLedgerService(dbContext, gymCalendar);
+        _eligibilityService = eligibilityService ?? new MembershipEligibilityService(dbContext, gymCalendar);
     }
 
     public async Task<ReservationDto> CreateReservationAsync(
@@ -45,14 +55,15 @@ public class ReservationService : IReservationService
             throw new InvalidOperationException($"No se pueden realizar reservas para una clase en estado {session.Status}.");
         }
 
-        if (DateTime.UtcNow >= session.StartsAtUtc)
+        var nowUtc = _gymCalendar.UtcNow;
+        if (nowUtc >= session.StartsAtUtc)
         {
             throw new InvalidOperationException("No se pueden realizar reservas para una clase que ya ha iniciado o pasado.");
         }
 
         if (session.Activity.Status != ActivityStatus.Active)
         {
-            throw new InvalidOperationException($"La actividad '{session.Activity.Name}' no está disponible para reservas.");
+            throw new InvalidOperationException($"[{SmartGym.Application.Modules.Memberships.Dtos.EligibilityIssueCodes.ActivityNotActive}] La actividad '{session.Activity.Name}' no está disponible para reservas.");
         }
 
         // 2. Obtener alumno
@@ -78,35 +89,25 @@ public class ReservationService : IReservationService
             throw new InvalidOperationException("El alumno ya posee una reserva o se encuentra en lista de espera para esta clase.");
         }
 
-        // 4. Validar restricciones de edad
-        if (student.BirthDate.HasValue)
-        {
-            var age = DateTime.UtcNow.Year - student.BirthDate.Value.Year;
-            if (student.BirthDate.Value > DateTime.UtcNow.AddYears(-age))
-            {
-                age--;
-            }
+        // 4. Bloquear las membresías del alumno antes de leerlas, para elegir y consumir sobre saldos actualizados,
+        //    y evaluar elegibilidad y selección mediante IMembershipEligibilityService
+        await _dbContext.LockStudentMembershipsForUpdateAsync(student.Id, cancellationToken);
 
-            if (!session.Activity.IsAgeAllowed(age))
-            {
-                throw new InvalidOperationException($"La actividad '{session.Activity.Name}' no admite alumnos con edad de {age} años.");
-            }
-        }
-
-        // 5. Verificar membresía o pase individual disponible
         var sessionLocalDate = DateOnly.FromDateTime(_gymCalendar.ToLocal(session.StartsAtUtc).DateTime);
-        var activeMembership = await _dbContext.Memberships
-            .Include(m => m.MembershipPlan)
-                .ThenInclude(p => p.AllowedActivities)
-            .Where(m => m.StudentId == student.Id && m.IsActive && m.Status == MembershipStatus.Active)
-            .Where(m => m.StartDate <= sessionLocalDate && sessionLocalDate <= m.EndDate)
-            .OrderByDescending(m => m.EndDate)
-            .FirstOrDefaultAsync(cancellationToken);
+        var selection = await _eligibilityService.SelectMembershipForAsync(
+            studentId: student.Id,
+            activityId: session.ActivityId,
+            targetDate: sessionLocalDate,
+            explicitMembershipId: request.MembershipId,
+            classSessionId: session.Id,
+            cancellationToken: cancellationToken);
+
+        var activeMembership = selection.IsEligible ? selection.SelectedMembership : null;
 
         MembershipCreditMovement? creditMovement = null;
         Guid? membershipId = null;
 
-        // 6. Control de cupos y resolución de estado
+        // 5. Control de cupos y resolución de estado
         Reservation reservation;
 
         if (session.ReservedCount < session.Capacity)
@@ -114,18 +115,30 @@ public class ReservationService : IReservationService
             // Hay cupo disponible en sala
             if (activeMembership != null)
             {
-                if (!activeMembership.MembershipPlan.AllowsActivity(session.ActivityId))
-                {
-                    throw new InvalidOperationException($"El plan '{activeMembership.MembershipPlan.Name}' no incluye la actividad '{session.Activity.Name}'.");
-                }
-
-                creditMovement = activeMembership.DeductCredit(session.Id, $"Reserva de clase: {session.Activity.Name}", sessionLocalDate);
-                _dbContext.MembershipCreditMovements.Add(creditMovement);
+                creditMovement = await _creditLedgerService.ConsumeCreditForReservationAsync(
+                    activeMembership,
+                    session.Id,
+                    sessionLocalDate,
+                    $"Reserva de clase: {session.Activity.Name}",
+                    currentUserId,
+                    cancellationToken);
                 membershipId = activeMembership.Id;
             }
-            else
+            else if (!request.MembershipId.HasValue)
             {
-                // Buscar si compró un ticket individual para esta clase
+                // Si no tiene bloqueos de alumno/edad/actividad, verificar si compró un ticket individual para esta clase
+                var blockingStudentOrActivityIssue = selection.Issues.FirstOrDefault(i =>
+                    i.Code == SmartGym.Application.Modules.Memberships.Dtos.EligibilityIssueCodes.StudentNotActive ||
+                    i.Code == SmartGym.Application.Modules.Memberships.Dtos.EligibilityIssueCodes.ActivityNotActive ||
+                    i.Code == SmartGym.Application.Modules.Memberships.Dtos.EligibilityIssueCodes.AgeNotAllowed ||
+                    i.Code == SmartGym.Application.Modules.Memberships.Dtos.EligibilityIssueCodes.MedicalCertificateRequired ||
+                    i.Code == SmartGym.Application.Modules.Memberships.Dtos.EligibilityIssueCodes.UnderageEmergencyContactRequired);
+
+                if (blockingStudentOrActivityIssue != null)
+                {
+                    throw new InvalidOperationException($"[{blockingStudentOrActivityIssue.Code}] {blockingStudentOrActivityIssue.Message}");
+                }
+
                 var ticket = await _dbContext.MembershipCreditMovements
                     .FirstOrDefaultAsync(cm => cm.StudentId == student.Id &&
                                                cm.ClassSessionId == session.Id &&
@@ -135,10 +148,20 @@ public class ReservationService : IReservationService
 
                 if (ticket == null)
                 {
-                    throw new InvalidOperationException("El alumno no cuenta con una membresía activa que cubra esta actividad ni posee un ticket individual.");
+                    var reasons = selection.Issues.Count > 0
+                        ? string.Join(" | ", selection.Issues.Select(i => $"[{i.Code}] {i.Message}"))
+                        : "El alumno no cuenta con una membresía activa que cubra esta actividad ni posee un ticket individual.";
+                    throw new InvalidOperationException(reasons);
                 }
 
                 creditMovement = ticket;
+            }
+            else
+            {
+                var reasons = selection.Issues.Count > 0
+                    ? string.Join(" | ", selection.Issues.Select(i => $"[{i.Code}] {i.Message}"))
+                    : "La membresía seleccionada no es elegible para esta clase.";
+                throw new InvalidOperationException(reasons);
             }
 
             session.IncrementReservedCount();
@@ -151,13 +174,21 @@ public class ReservationService : IReservationService
                 MembershipId = membershipId,
                 CreditMovementId = creditMovement?.Id,
                 Status = ReservationStatus.Reserved,
-                ReservedAtUtc = DateTime.UtcNow,
+                ReservedAtUtc = nowUtc,
                 IsActive = true
             };
         }
         else
         {
-            // Cupo agotado -> Se incorpora a Lista de Espera (WaitList)
+            if (activeMembership == null && request.MembershipId.HasValue)
+            {
+                var reasons = selection.Issues.Count > 0
+                    ? string.Join(" | ", selection.Issues.Select(i => $"[{i.Code}] {i.Message}"))
+                    : "La membresía seleccionada no es elegible para esta clase.";
+                throw new InvalidOperationException(reasons);
+            }
+
+            // Cupo agotado -> Se incorpora a Lista de Espera (WaitList) sin consumir crédito aún
             var currentWaitlistCount = await _dbContext.Reservations
                 .CountAsync(r => r.ClassSessionId == session.Id && r.Status == ReservationStatus.WaitList, cancellationToken);
 
@@ -169,13 +200,13 @@ public class ReservationService : IReservationService
                 MembershipId = activeMembership?.Id,
                 Status = ReservationStatus.WaitList,
                 WaitListPosition = currentWaitlistCount + 1,
-                ReservedAtUtc = DateTime.UtcNow,
+                ReservedAtUtc = nowUtc,
                 IsActive = true
             };
         }
 
         _dbContext.Reservations.Add(reservation);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveChangesTranslatingConcurrencyAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         reservation.ClassSession = session;
@@ -192,15 +223,17 @@ public class ReservationService : IReservationService
     {
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-        var classSessionId = await _dbContext.Reservations
+        var reservationKeys = await _dbContext.Reservations
             .Where(r => r.Id == reservationId && r.IsActive)
-            .Select(r => (Guid?)r.ClassSessionId)
+            .Select(r => new { r.ClassSessionId, r.StudentId })
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new ArgumentException("Reserva no encontrada.");
+        var classSessionId = reservationKeys.ClassSessionId;
 
         // Bloquear la clase antes de leer la reserva: evita cancelaciones duplicadas (doble devolución de crédito)
         // y carreras con reservas concurrentes al liberar el cupo o promover la lista de espera.
         await _dbContext.LockClassSessionForUpdateAsync(classSessionId, cancellationToken);
+        await _dbContext.LockStudentMembershipsForUpdateAsync(reservationKeys.StudentId, cancellationToken);
 
         var reservation = await _dbContext.Reservations
             .Include(r => r.ClassSession)
@@ -228,7 +261,7 @@ public class ReservationService : IReservationService
         var wasInWaitList = reservation.Status == ReservationStatus.WaitList;
 
         // Evaluación de política de cancelación (ventana límite de 2 horas)
-        var hoursRemaining = (session.StartsAtUtc - DateTime.UtcNow).TotalHours;
+        var hoursRemaining = (session.StartsAtUtc - _gymCalendar.UtcNow).TotalHours;
         var isLateCancellation = hoursRemaining < 2.0;
 
         Guid? refundMovementId = null;
@@ -238,42 +271,94 @@ public class ReservationService : IReservationService
             // Si la cancelación es con anticipación (>= 2 hs) y pertenecía a membresía, se devuelve el crédito
             if (!isLateCancellation && reservation.Membership != null)
             {
-                var refundMovement = reservation.Membership.RefundCredit(session.Id, $"Devolución por cancelación anticipada ({hoursRemaining:F1}h antes)");
-                _dbContext.MembershipCreditMovements.Add(refundMovement);
+                var refundMovement = await _creditLedgerService.RefundCreditForReservationAsync(
+                    reservation.Membership,
+                    session.Id,
+                    $"Devolución por cancelación anticipada ({hoursRemaining:F1}h antes)",
+                    currentUserId,
+                    cancellationToken);
                 refundMovementId = refundMovement.Id;
             }
 
             session.DecrementReservedCount();
 
-            // Promoción automática del primero en lista de espera si existiere
-            var firstInWaitList = await _dbContext.Reservations
-                .Include(r => r.Membership)
-                .Where(r => r.ClassSessionId == session.Id && r.Status == ReservationStatus.WaitList)
-                .OrderBy(r => r.WaitListPosition)
-                .FirstOrDefaultAsync(cancellationToken);
-
-            if (firstInWaitList != null)
-            {
-                if (firstInWaitList.Membership != null && firstInWaitList.Membership.HasAvailableCredit())
-                {
-                    var localDate = DateOnly.FromDateTime(_gymCalendar.ToLocal(session.StartsAtUtc).DateTime);
-                    var debitMovement = firstInWaitList.Membership.DeductCredit(session.Id, "Promoción de lista de espera a reserva confirmada", localDate);
-                    _dbContext.MembershipCreditMovements.Add(debitMovement);
-                    firstInWaitList.CreditMovementId = debitMovement.Id;
-                }
-
-                firstInWaitList.Status = ReservationStatus.Reserved;
-                firstInWaitList.WaitListPosition = null;
-                session.IncrementReservedCount();
-            }
+            await PromoteFirstEligibleFromWaitListAsync(session, currentUserId, cancellationToken);
         }
 
         reservation.Cancel(request.Reason, isLateCancellation, refundMovementId);
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveChangesTranslatingConcurrencyAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         return MapToDto(reservation);
+    }
+
+    /// <summary>
+    /// Ocupa el cupo liberado con el primero de la lista de espera que pueda usarlo. Quien se anotó con una
+    /// membresía que ya no es utilizable para la clase (suspendida, vencida, sin créditos) conserva su lugar
+    /// en la lista y se continúa con el siguiente, sin impedir la cancelación en curso.
+    /// </summary>
+    private async Task PromoteFirstEligibleFromWaitListAsync(
+        ClassSession session,
+        Guid currentUserId,
+        CancellationToken cancellationToken)
+    {
+        var waitList = await _dbContext.Reservations
+            .Where(r => r.ClassSessionId == session.Id && r.IsActive && r.Status == ReservationStatus.WaitList)
+            .OrderBy(r => r.WaitListPosition)
+            .ToListAsync(cancellationToken);
+
+        var sessionLocalDate = DateOnly.FromDateTime(_gymCalendar.ToLocal(session.StartsAtUtc).DateTime);
+
+        foreach (var candidate in waitList)
+        {
+            if (candidate.MembershipId.HasValue)
+            {
+                await _dbContext.LockStudentMembershipsForUpdateAsync(candidate.StudentId, cancellationToken);
+
+                var selection = await _eligibilityService.SelectMembershipForAsync(
+                    studentId: candidate.StudentId,
+                    activityId: session.ActivityId,
+                    targetDate: sessionLocalDate,
+                    explicitMembershipId: candidate.MembershipId,
+                    classSessionId: session.Id,
+                    cancellationToken: cancellationToken);
+
+                if (!selection.IsEligible || selection.SelectedMembership == null)
+                {
+                    continue;
+                }
+
+                var debitMovement = await _creditLedgerService.ConsumeCreditForReservationAsync(
+                    selection.SelectedMembership,
+                    session.Id,
+                    sessionLocalDate,
+                    "Promoción de lista de espera a reserva confirmada",
+                    currentUserId,
+                    cancellationToken);
+                candidate.CreditMovementId = debitMovement.Id;
+            }
+
+            candidate.Status = ReservationStatus.Reserved;
+            candidate.WaitListPosition = null;
+            candidate.UpdatedAtUtc = _gymCalendar.UtcNow;
+            session.IncrementReservedCount();
+            return;
+        }
+    }
+
+    private async Task SaveChangesTranslatingConcurrencyAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConflictException(
+                "La membresía o la clase fue modificada por otra operación. Intente nuevamente.",
+                ex);
+        }
     }
 
     public async Task<ReservationDto> RecordAttendanceAsync(

@@ -24,7 +24,17 @@ public record RegisterPaymentRequest(
     decimal Amount,
     PaymentMethod Method,
     string? ExternalTransactionId,
-    string? Notes
+    string? Notes,
+    PaymentStatus Status = PaymentStatus.Completed
+);
+
+public record ConfirmPaymentRequest(
+    string? ExternalTransactionId = null,
+    string? Notes = null
+);
+
+public record FailPaymentRequest(
+    string Reason
 );
 
 public record MedicalCertificateStatusDto(

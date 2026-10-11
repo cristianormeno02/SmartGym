@@ -29,7 +29,8 @@ public record ReservationDto(
 
 public record CreateReservationRequest(
     Guid ClassSessionId,
-    Guid StudentId
+    Guid StudentId,
+    Guid? MembershipId = null
 );
 
 public record CancelReservationRequest(
