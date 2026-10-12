@@ -271,7 +271,7 @@ Cuando `Memberships` suspende o cancela una membresía, `Reservations` SHALL can
 
 ### Requirement: Reservas con pases individuales, créditos compensatorios y promociones
 El sistema SHALL permitir reservar con derechos distintos de una membresía:
-- **Pase individual (`SingleClassTicket`)**: movimiento `SingleClassTicket` activo del alumno para esa clase. Si existen pagos en `Payments` vinculados al alumno y la clase, al menos uno SHALL estar `Completed`; en caso contrario se rechaza con `409` (`PAYMENT_NOT_CONFIRMED`).
+- **Pase individual (`SingleClassTicket`)**: movimiento `SingleClassTicket` activo del alumno para esa clase. Si existen pagos en `Payments` vinculados al alumno y la clase, al menos uno SHALL estar confirmado con importe neto positivo (estado `Completed` o `PartiallyRefunded`); en caso contrario (sólo pagos `Pending`, `Failed`, `Cancelled` o `Refunded`) se rechaza con `409` (`PAYMENT_NOT_CONFIRMED`). La reserva SHALL registrar en `PaymentId` el pago confirmado más reciente.
 - **Crédito compensatorio autónomo (`CompensatoryCredit`)**: movimiento `ClassSuspensionCompensation` sin membresía, vigente en la fecha local de la clase y aplicable a su actividad. Permite reservar aun sin membresía activa.
 - En ambos casos el derecho se vincula a la reserva mediante `SingleClassTicketMovementId` y un índice único parcial SHALL impedir que el mismo movimiento respalde más de una reserva que lo retiene (`PENDING`, `CONFIRMED`, `ATTENDED`, `NO_SHOW` o `CANCELLED` tardía).
 - **Promoción (`PromotionalBenefit`)**: aplica sólo cuando la promoción cubre el acceso completo a la clase (clase gratis o 100% de descuento); si no, se rechaza con `409` (`PROMOTION_NOT_APPLICABLE`). La evaluación y el canje se delegan en `Promotions`, el canje se registra al confirmar la reserva y queda vinculado a ella (`PromotionRedemptionId`), y un canje SHALL respaldar una única reserva. Los descuentos parciales sobre una clase paga se aplican en la compra del pase individual, fuera de este módulo.
@@ -282,6 +282,14 @@ El sistema SHALL permitir reservar con derechos distintos de una membresía:
 
 #### Scenario: Pase individual con pago sin confirmar
 - **WHEN** un alumno intenta reservar con un pase cuyo único pago vinculado está `Pending`
+- **THEN** el sistema rechaza con `409 Conflict` (`PAYMENT_NOT_CONFIRMED`)
+
+#### Scenario: Pase individual con pago parcialmente devuelto
+- **WHEN** un alumno intenta reservar con un pase cuyo único pago vinculado está `PartiallyRefunded`
+- **THEN** la reserva queda `CONFIRMED` con `AccessType = SingleClassTicket`
+
+#### Scenario: Pase individual con pago totalmente devuelto
+- **WHEN** un alumno intenta reservar con un pase cuyo único pago vinculado está `Refunded`
 - **THEN** el sistema rechaza con `409 Conflict` (`PAYMENT_NOT_CONFIRMED`)
 
 #### Scenario: Reserva con crédito compensatorio autónomo
