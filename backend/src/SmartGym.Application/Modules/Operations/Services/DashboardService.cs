@@ -57,9 +57,15 @@ public class DashboardService : IDashboardService
             : 0.0;
 
         // Facturación del mes actual
-        var monthlyRevenue = await _dbContext.Payments
-            .Where(p => p.Status == PaymentStatus.Completed && p.PaidAtUtc >= currentMonthStart)
+        // Cobros confirmados en el mes menos devoluciones registradas en el mes: una devolución no altera
+        // los ingresos de meses anteriores.
+        var monthlyConfirmed = await _dbContext.Payments
+            .Where(p => p.IsActive && p.ConfirmedAtUtc >= currentMonthStart)
             .SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
+        var monthlyRefunded = await _dbContext.PaymentRefunds
+            .Where(r => r.IsActive && r.CreatedAtUtc >= currentMonthStart)
+            .SumAsync(r => (decimal?)r.Amount, cancellationToken) ?? 0m;
+        var monthlyRevenue = monthlyConfirmed - monthlyRefunded;
 
         // Membresías por vencer en los próximos 7 días
         var expiringMemberships = await _dbContext.Memberships

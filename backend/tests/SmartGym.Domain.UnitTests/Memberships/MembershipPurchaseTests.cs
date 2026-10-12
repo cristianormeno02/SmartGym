@@ -290,4 +290,109 @@ public class MembershipPurchaseTests
         Assert.Equal(0, await db.Memberships.CountAsync());
         Assert.Equal(0, await db.MembershipCreditMovements.CountAsync());
     }
+
+    private static Payment NewUnlinkedPayment(Guid payerId, decimal amount, DateTime paidAtUtc, string currency = "ARS") => new()
+    {
+        Id = Guid.NewGuid(),
+        PayerPersonId = payerId,
+        Amount = amount,
+        Currency = currency,
+        Method = PaymentMethod.Cash,
+        Status = PaymentStatus.Completed,
+        PaidAtUtc = paidAtUtc,
+        ConfirmedAtUtc = paidAtUtc,
+        IsActive = true
+    };
+
+    [Fact]
+    public async Task CreateAsync_WithExistingCompletedPaymentId_AppliesItThroughPayments_AndActivatesMembership()
+    {
+        await using var db = CreateDbContext();
+        var today = new DateOnly(2026, 4, 1);
+        var calendar = new StubGymCalendar(today);
+        var (student, plan, _, _) = await SeedStudentAndPlanAsync(db);
+        var service = CreateService(db, calendar);
+
+        var payment = NewUnlinkedPayment(student.Id, 24000m, calendar.UtcNow);
+        db.Payments.Add(payment);
+        await db.SaveChangesAsync();
+
+        var result = await service.CreateAsync(
+            new CreateMembershipRequest(student.Id, plan.Id, today, PaymentId: payment.Id),
+            Guid.NewGuid(),
+            isCallerAdministrator: false);
+
+        Assert.Equal(MembershipStatus.Active, result.Status);
+        Assert.Equal(24000m, result.TotalPaidAmount);
+        Assert.Equal(result.Id, (await db.Payments.SingleAsync(p => p.Id == payment.Id)).MembershipId);
+
+        // La aplicación pasa por Payments: queda su registro de auditoría
+        Assert.Contains(await db.AuditLogs.ToListAsync(), a => a.Action == "PAYMENT_APPLIED" && a.EntityId == payment.Id.ToString());
+    }
+
+    [Theory]
+    [InlineData("USD", 24000, "CURRENCY_MISMATCH")]
+    [InlineData("ARS", 30000, "OBLIGATION_OVERPAID")]
+    public async Task CreateAsync_WithExistingPaymentIdThatDoesNotFit_ThrowsCodedConflictAndRollsBack(
+        string currency, decimal amount, string expectedCode)
+    {
+        await using var db = CreateDbContext();
+        var today = new DateOnly(2026, 4, 1);
+        var calendar = new StubGymCalendar(today);
+        var (student, plan, _, _) = await SeedStudentAndPlanAsync(db);
+        var service = CreateService(db, calendar);
+
+        var payment = NewUnlinkedPayment(student.Id, amount, calendar.UtcNow, currency);
+        db.Payments.Add(payment);
+        await db.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => service.CreateAsync(
+            new CreateMembershipRequest(student.Id, plan.Id, today, PaymentId: payment.Id),
+            Guid.NewGuid(),
+            isCallerAdministrator: false));
+
+        Assert.Equal(expectedCode, ex.Code);
+        Assert.Equal(0, await db.Memberships.CountAsync());
+        Assert.Null((await db.Payments.SingleAsync(p => p.Id == payment.Id)).MembershipId);
+    }
+
+    [Fact]
+    public async Task GetById_ReportsNetPaidAmount_ForPartiallyRefundedAndRefundedPayments()
+    {
+        await using var db = CreateDbContext();
+        var today = new DateOnly(2026, 4, 1);
+        var calendar = new StubGymCalendar(today);
+        var (student, plan, _, _) = await SeedStudentAndPlanAsync(db);
+        var service = CreateService(db, calendar);
+
+        var created = await service.CreateAsync(
+            new CreateMembershipRequest(student.Id, plan.Id, today),
+            Guid.NewGuid(),
+            isCallerAdministrator: false);
+
+        Payment Linked(decimal amount, decimal refunded, PaymentStatus status)
+        {
+            var p = NewUnlinkedPayment(student.Id, amount, calendar.UtcNow);
+            p.MembershipId = created.Id;
+            p.RefundedAmount = refunded;
+            p.Status = status;
+            return p;
+        }
+
+        db.Payments.AddRange(
+            Linked(15000m, 5000m, PaymentStatus.PartiallyRefunded),
+            Linked(10000m, 0m, PaymentStatus.Completed),
+            Linked(24000m, 24000m, PaymentStatus.Refunded));
+        await db.SaveChangesAsync();
+
+        var detail = await service.GetByIdAsync(created.Id);
+
+        Assert.Equal(20000m, detail.TotalPaidAmount);
+        Assert.Equal(4000m, detail.PendingBalance);
+        Assert.Equal(3, detail.Payments.Count);
+        Assert.Contains(detail.Payments, p => p.Status == PaymentStatus.PartiallyRefunded && p.RefundedAmount == 5000m && p.NetAmount == 10000m);
+
+        var listed = await service.GetPagedAsync(new MembershipListFilter(StudentId: student.Id));
+        Assert.Equal(20000m, Assert.Single(listed.Items).TotalPaidAmount);
+    }
 }

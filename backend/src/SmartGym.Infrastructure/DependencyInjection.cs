@@ -163,6 +163,20 @@ public static class DependencyInjection
             options.AddPolicy(Policies.PromotionsRedemptionsRead, policy =>
                 policy.RequireRole(Roles.Administrator, Roles.Secretary));
 
+            options.AddPolicy(Policies.PaymentsRead, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.PaymentsCreate, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.PaymentsConfirm, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.PaymentsCancel, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.PaymentsAllocate, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            // Las devoluciones quedan reservadas al administrador
+            options.AddPolicy(Policies.PaymentsRefund, policy =>
+                policy.RequireRole(Roles.Administrator));
+
             options.AddPolicy(Policies.NotificationsReadOwn, policy =>
                 policy.RequireAuthenticatedUser());
             options.AddPolicy(Policies.NotificationsMarkReadOwn, policy =>

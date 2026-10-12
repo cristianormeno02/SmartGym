@@ -403,7 +403,7 @@ public class MembershipEligibilityService : IMembershipEligibilityService
                 .ToList();
 
             var paymentConfirmed = paymentsForSession.Count == 0 ||
-                                   paymentsForSession.Any(p => p.Status == PaymentStatus.Completed);
+                                   paymentsForSession.Any(p => p.Status.HasNetAmount());
 
             if (paymentConfirmed)
             {

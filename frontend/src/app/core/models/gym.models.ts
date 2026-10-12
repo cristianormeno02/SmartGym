@@ -171,17 +171,105 @@ export interface MembershipSuspension {
   isActiveSuspension: boolean;
 }
 
-export interface MembershipPayment {
+/** Cash = 1, BankTransfer = 2, CreditCard = 3, DebitCard = 4, DigitalWallet = 5, Other = 6. */
+export type PaymentMethod = 1 | 2 | 3 | 4 | 5 | 6;
+
+/** Pending = 1, Completed = 2, Failed = 3, Refunded = 4, Cancelled = 5, PartiallyRefunded = 6. */
+export type PaymentStatus = 1 | 2 | 3 | 4 | 5 | 6;
+
+/** Manual = 1. */
+export type PaymentProvider = 1;
+
+export interface Payment {
   id: string;
-  studentId: string;
-  studentName: string;
+  payerPersonId: string;
+  payerName: string;
   membershipId?: string;
+  classSessionId?: string;
   amount: number;
-  method: number;
-  status: number;
+  method: PaymentMethod;
+  status: PaymentStatus;
   externalTransactionId?: string;
+  receiptUrl?: string;
   notes?: string;
   paidAtUtc: string;
+  provider: PaymentProvider;
+  currency: string;
+  refundedAmount: number;
+  /** Importe cobrado menos lo devuelto. */
+  netAmount: number;
+  confirmedAtUtc?: string;
+  cancelledAtUtc?: string;
+}
+
+/** Pago tal como llega en el detalle de una membresía: mismo contrato que /api/payments. */
+export type MembershipPayment = Payment;
+
+export interface PaymentRefund {
+  id: string;
+  paymentId: string;
+  amount: number;
+  currency: string;
+  reason: string;
+  notes?: string;
+  requestedByUserId?: string;
+  createdAtUtc: string;
+}
+
+export interface MembershipBalance {
+  membershipId: string;
+  studentId: string;
+  purchasePrice: number;
+  currency: string;
+  /** Neto de los pagos confirmados. */
+  totalPaidAmount: number;
+  pendingPaymentsAmount: number;
+  pendingBalance: number;
+  payments: Payment[];
+  refunds: PaymentRefund[];
+}
+
+export interface PaymentFilter {
+  studentId?: string;
+  membershipId?: string;
+  classSessionId?: string;
+  status?: PaymentStatus;
+  method?: PaymentMethod;
+  fromUtc?: string;
+  toUtc?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface RegisterPaymentRequest {
+  payerPersonId: string;
+  membershipId?: string;
+  classSessionId?: string;
+  amount: number;
+  method: PaymentMethod;
+  externalTransactionId?: string;
+  notes?: string;
+  /** Sólo Pending (1) o Completed (2). Por defecto Completed. */
+  status?: PaymentStatus;
+  currency?: string;
+}
+
+export interface ApplyPaymentRequest {
+  membershipId?: string;
+  classSessionId?: string;
+}
+
+export interface CreatePaymentRefundRequest {
+  amount: number;
+  reason: string;
+  notes?: string;
+}
+
+/** Cuerpo de error de /api/payments. */
+export interface PaymentApiError {
+  code: string;
+  message: string;
+  details?: unknown;
 }
 
 export interface MembershipDetail extends Membership {

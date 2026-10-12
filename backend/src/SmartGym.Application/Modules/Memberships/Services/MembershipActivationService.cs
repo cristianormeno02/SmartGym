@@ -190,8 +190,9 @@ public class MembershipActivationService : IMembershipActivationService
             }
         }
 
+        // Importe neto: un pago parcialmente devuelto cuenta por lo que no se devolvió
         return allPayments.Values
-            .Where(p => p.IsActive && p.Status == PaymentStatus.Completed)
-            .Sum(p => p.Amount);
+            .Where(p => p.IsActive && p.Status.HasNetAmount())
+            .Sum(p => p.NetAmount);
     }
 }

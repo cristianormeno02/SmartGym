@@ -14,7 +14,13 @@ public record PaymentDto(
     string? ExternalTransactionId,
     string? ReceiptUrl,
     string? Notes,
-    DateTime PaidAtUtc
+    DateTime PaidAtUtc,
+    PaymentProvider Provider = PaymentProvider.Manual,
+    string Currency = "ARS",
+    decimal RefundedAmount = 0m,
+    decimal NetAmount = 0m,
+    DateTime? ConfirmedAtUtc = null,
+    DateTime? CancelledAtUtc = null
 );
 
 public record RegisterPaymentRequest(
@@ -25,7 +31,8 @@ public record RegisterPaymentRequest(
     PaymentMethod Method,
     string? ExternalTransactionId,
     string? Notes,
-    PaymentStatus Status = PaymentStatus.Completed
+    PaymentStatus Status = PaymentStatus.Completed,
+    string? Currency = null
 );
 
 public record ConfirmPaymentRequest(
@@ -36,6 +43,62 @@ public record ConfirmPaymentRequest(
 public record FailPaymentRequest(
     string Reason
 );
+
+public record CancelPaymentRequest(
+    string Reason
+);
+
+public record ApplyPaymentRequest(
+    Guid? MembershipId,
+    Guid? ClassSessionId
+);
+
+public record CreatePaymentRefundRequest(
+    decimal Amount,
+    string Reason,
+    string? Notes = null
+);
+
+public record PaymentRefundDto(
+    Guid Id,
+    Guid PaymentId,
+    decimal Amount,
+    string Currency,
+    string Reason,
+    string? Notes,
+    Guid? RequestedByUserId,
+    DateTime CreatedAtUtc
+);
+
+public record PaymentListFilter(
+    Guid? StudentId = null,
+    Guid? MembershipId = null,
+    Guid? ClassSessionId = null,
+    PaymentStatus? Status = null,
+    PaymentMethod? Method = null,
+    DateTime? FromUtc = null,
+    DateTime? ToUtc = null,
+    int Page = 1,
+    int PageSize = 20
+);
+
+public record MembershipBalanceDto(
+    Guid MembershipId,
+    Guid StudentId,
+    decimal PurchasePrice,
+    string Currency,
+    decimal TotalPaidAmount,
+    decimal PendingPaymentsAmount,
+    decimal PendingBalance,
+    IReadOnlyList<PaymentDto> Payments,
+    IReadOnlyList<PaymentRefundDto> Refunds
+);
+
+/// <summary>
+/// Resultado de una operación con <c>Idempotency-Key</c>: <c>Created</c> es falso cuando la clave ya se había
+/// usado con los mismos datos y se devuelve el recurso existente.
+/// </summary>
+public record IdempotentResult<T>(T Value, bool Created);
 
 public record MedicalCertificateStatusDto(
     Guid PersonId,

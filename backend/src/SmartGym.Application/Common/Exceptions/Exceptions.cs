@@ -2,7 +2,12 @@ namespace SmartGym.Application.Common.Exceptions;
 
 public class NotFoundException : Exception
 {
+    public string? Code { get; init; }
+
     public NotFoundException(string message) : base(message) { }
+
+    public static NotFoundException WithCode(string code, string message) =>
+        new(message) { Code = code };
 }
 
 public class ConflictException : Exception

@@ -6,5 +6,7 @@ public enum PaymentMethod
     BankTransfer = 2,
     CreditCard = 3,
     DebitCard = 4,
-    MercadoPago = 5
+    // Conserva el entero del antiguo valor MercadoPago: el proveedor se modela aparte en PaymentProvider.
+    DigitalWallet = 5,
+    Other = 6
 }

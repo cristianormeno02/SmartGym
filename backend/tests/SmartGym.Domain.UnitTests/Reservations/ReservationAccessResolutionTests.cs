@@ -301,6 +301,71 @@ public class ReservationAccessResolutionTests
         Assert.Equal(ticket.Id, created.SingleClassTicketMovementId);
     }
 
+    [Theory]
+    [InlineData(PaymentStatus.PartiallyRefunded, true)]
+    [InlineData(PaymentStatus.Refunded, false)]
+    [InlineData(PaymentStatus.Cancelled, false)]
+    [InlineData(PaymentStatus.Failed, false)]
+    public async Task SingleClassTicket_OnlyPaymentsWithNetAmountEnableAccess(PaymentStatus paymentStatus, bool enablesAccess)
+    {
+        await using var db = CreateDbContext();
+        var today = new DateOnly(2026, 8, 1);
+        var calendar = new StubGymCalendar(today);
+        var (student, _, _, _, session) = await SeedStudentAndSessionAsync(db, calendar);
+        var service = new ReservationService(db, calendar);
+        var eligibility = new MembershipEligibilityService(db, calendar, Options.Create(new GymOptions()));
+
+        var ticket = new MembershipCreditMovement
+        {
+            Id = Guid.NewGuid(),
+            StudentId = student.Id,
+            ClassSessionId = session.Id,
+            Type = CreditMovementType.SingleClassTicket,
+            Amount = 1,
+            Reason = "Pase individual",
+            CreatedAtUtc = calendar.UtcNow,
+            IsActive = true
+        };
+        var payment = new Payment
+        {
+            Id = Guid.NewGuid(),
+            PayerPersonId = student.Id,
+            ClassSessionId = session.Id,
+            Amount = 3500m,
+            RefundedAmount = paymentStatus switch
+            {
+                PaymentStatus.PartiallyRefunded => 1000m,
+                PaymentStatus.Refunded => 3500m,
+                _ => 0m
+            },
+            Method = PaymentMethod.Cash,
+            Status = paymentStatus,
+            PaidAtUtc = calendar.UtcNow,
+            IsActive = true
+        };
+        db.MembershipCreditMovements.Add(ticket);
+        db.Payments.Add(payment);
+        await db.SaveChangesAsync();
+
+        var evaluation = (await eligibility.EvaluateForSessionsAsync(
+            student.Id,
+            new[] { new SessionEligibilityContextDto(session.Id, session.ActivityId, DateOnly.FromDateTime(session.StartsAtUtc)) }))[session.Id];
+        Assert.Equal(enablesAccess, evaluation.IsEligible);
+
+        var request = new CreateReservationRequest(session.Id, student.Id, SingleClassTicketMovementId: ticket.Id);
+        if (enablesAccess)
+        {
+            var created = await service.CreateReservationAsync(request, Guid.NewGuid());
+            Assert.Equal(ReservationAccessType.SingleClassTicket, created.AccessType);
+            Assert.Equal(payment.Id, created.PaymentId);
+        }
+        else
+        {
+            var ex = await Assert.ThrowsAsync<ConflictException>(() => service.CreateReservationAsync(request, Guid.NewGuid()));
+            Assert.Equal(ReservationErrorCodes.PaymentNotConfirmed, ex.Code);
+        }
+    }
+
     [Fact]
     public async Task CompensatoryCredit_RejectsWhenExpiredOrOutOfActivityScope_AndPreventsReuseWhileHeld()
     {
