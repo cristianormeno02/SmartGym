@@ -19,6 +19,47 @@ public class NotificationModelConfigurationTests
     }
 
     [Fact]
+    public void Model_ShouldMatchMigrationsSnapshot()
+    {
+        var options = new DbContextOptionsBuilder<SmartGymDbContext>()
+            .UseNpgsql("Host=localhost;Database=model_only")
+            .Options;
+        using var dbContext = new SmartGymDbContext(options);
+
+        Assert.False(
+            dbContext.Database.HasPendingModelChanges(),
+            "El modelo EF difiere de SmartGymDbContextModelSnapshot: falta una migración o hay que corregir la configuración.");
+    }
+
+    [Fact]
+    public void NotificationMessage_ShouldConfigureDescendingSentAtIndexesWithoutChannelDefault()
+    {
+        var model = BuildModel();
+        var entity = model.FindEntityType(typeof(NotificationMessage))!;
+
+        var sentAtIdx = Assert.Single(
+            entity.GetIndexes(),
+            i => i.GetDatabaseName() == "IX_NotificationMessages_RecipientPersonId_SentAtUtc");
+        Assert.Equal(new[] { false, true }, sentAtIdx.IsDescending);
+
+        var categorySentAtIdx = Assert.Single(
+            entity.GetIndexes(),
+            i => i.GetDatabaseName() == "IX_NotificationMessages_RecipientPersonId_Category_SentAtUtc");
+        Assert.Equal(new[] { false, false, true }, categorySentAtIdx.IsDescending);
+
+        Assert.False(entity.FindProperty(nameof(NotificationMessage.Channel))!.TryGetDefaultValue(out _));
+    }
+
+    [Fact]
+    public void NotificationDelivery_MaxAttempts_ShouldNotHaveDatabaseDefault()
+    {
+        var model = BuildModel();
+        var entity = model.FindEntityType(typeof(NotificationDelivery))!;
+
+        Assert.False(entity.FindProperty(nameof(NotificationDelivery.MaxAttempts))!.TryGetDefaultValue(out _));
+    }
+
+    [Fact]
     public void NotificationMessage_ShouldConfigureRestrictFkAndPartialIdempotencyIndex()
     {
         var model = BuildModel();

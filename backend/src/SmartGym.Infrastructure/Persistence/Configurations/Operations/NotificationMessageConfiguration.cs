@@ -21,8 +21,7 @@ public class NotificationMessageConfiguration : IEntityTypeConfiguration<Notific
             .IsRequired();
 
         builder.Property(n => n.Channel)
-            .IsRequired()
-            .HasDefaultValue(NotificationChannel.InApp);
+            .IsRequired();
 
         builder.Property(n => n.Title)
             .IsRequired()
@@ -50,9 +49,11 @@ public class NotificationMessageConfiguration : IEntityTypeConfiguration<Notific
         builder.HasIndex(n => n.RecipientPersonId);
         builder.HasIndex(n => new { n.RecipientPersonId, n.IsRead });
         builder.HasIndex(n => new { n.RecipientPersonId, n.SentAtUtc })
-            .HasDatabaseName("IX_NotificationMessages_Recipient_SentAtUtc");
+            .IsDescending(false, true)
+            .HasDatabaseName("IX_NotificationMessages_RecipientPersonId_SentAtUtc");
         builder.HasIndex(n => new { n.RecipientPersonId, n.Category, n.SentAtUtc })
-            .HasDatabaseName("IX_NotificationMessages_Recipient_Category_SentAtUtc");
+            .IsDescending(false, false, true)
+            .HasDatabaseName("IX_NotificationMessages_RecipientPersonId_Category_SentAtUtc");
 
         builder.HasIndex(n => new { n.RecipientPersonId, n.IdempotencyKey })
             .IsUnique()

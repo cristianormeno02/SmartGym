@@ -1245,26 +1245,19 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("DeliveredAtUtc")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Destination")
-                        .HasMaxLength(320)
-                        .HasColumnType("character varying(320)");
-
-                    b.Property<string>("ErrorCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("ErrorMessage")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsPermanentFailure")
                         .HasColumnType("boolean");
 
                     b.Property<DateTime?>("LastAttemptAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastErrorCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("LastErrorMessage")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<int>("MaxAttempts")
                         .ValueGeneratedOnAdd()
@@ -1274,19 +1267,31 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("NextAttemptAtUtc")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid>("NotificationMessageId")
+                    b.Property<Guid>("NotificationId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
 
                     b.Property<string>("ProviderMessageId")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<string>("ProviderName")
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)");
+                    b.Property<string>("RecipientAddress")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
 
                     b.Property<Guid?>("RetriedByUserId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("RetryReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("SentAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
@@ -1296,7 +1301,7 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("NotificationMessageId", "Channel")
+                    b.HasIndex("NotificationId", "Channel")
                         .IsUnique()
                         .HasDatabaseName("UX_NotificationDeliveries_Notification_Channel");
 
@@ -1420,10 +1425,10 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<bool>("IsActive")
+                    b.Property<bool>("Enabled")
                         .HasColumnType("boolean");
 
-                    b.Property<bool>("IsEnabled")
+                    b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
                     b.Property<Guid>("PersonId")
@@ -1449,16 +1454,13 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("AllowedVariables")
                         .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<string>("BodyTemplate")
                         .IsRequired()
-                        .HasMaxLength(8000)
-                        .HasColumnType("character varying(8000)");
-
-                    b.Property<int>("Category")
-                        .HasColumnType("integer");
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
 
                     b.Property<int>("Channel")
                         .HasColumnType("integer");
@@ -1484,21 +1486,10 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(10)")
                         .HasDefaultValue("es-AR");
 
-                    b.Property<string>("PlainTextTemplate")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<uint>("RowVersion")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("xid")
-                        .HasColumnName("xmin");
-
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
                     b.Property<string>("SubjectTemplate")
-                        .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
@@ -1509,16 +1500,20 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("Version")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(1);
+                        .HasColumnType("integer");
+
+                    b.Property<uint>("VersionToken")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id");
 
                     b.HasIndex("Type", "Channel", "Locale")
                         .IsUnique()
                         .HasDatabaseName("UX_NotificationTemplates_Active_Type_Channel_Locale")
-                        .HasFilter("\"Status\" = 2 AND \"IsActive\" = TRUE");
+                        .HasFilter("\"Status\" = 2 AND \"IsActive\"");
 
                     b.HasIndex("Code", "Channel", "Locale", "Version")
                         .IsUnique()
@@ -2686,13 +2681,13 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Operations.NotificationDelivery", b =>
                 {
-                    b.HasOne("SmartGym.Domain.Entities.Operations.NotificationMessage", "NotificationMessage")
+                    b.HasOne("SmartGym.Domain.Entities.Operations.NotificationMessage", "Notification")
                         .WithMany("Deliveries")
-                        .HasForeignKey("NotificationMessageId")
+                        .HasForeignKey("NotificationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("NotificationMessage");
+                    b.Navigation("Notification");
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Operations.NotificationMessage", b =>
