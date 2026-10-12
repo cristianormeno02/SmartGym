@@ -1,5 +1,8 @@
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using SmartGym.Application.Modules.Operations.Interfaces;
 using SmartGym.Application.Common.Exceptions;
 using SmartGym.Application.Common.Interfaces;
 using SmartGym.Application.Common.Security;
@@ -22,6 +25,7 @@ public record PaymentApiError(string Code, string Message, object? Details = nul
 public class PaymentsController : ControllerBase
 {
     public const string IdempotencyKeyHeader = "Idempotency-Key";
+    public const string WebhookRateLimitPolicy = "payment-webhooks";
 
     private readonly IPaymentService _paymentService;
     private readonly ICurrentUserService _currentUserService;
@@ -48,9 +52,10 @@ public class PaymentsController : ControllerBase
         [FromQuery] DateTime? toUtc = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
+        [FromQuery] PaymentProvider? provider = null,
         CancellationToken cancellationToken = default) =>
         ExecuteAsync(async () => Ok(await _paymentService.GetPagedAsync(
-            new PaymentListFilter(studentId, membershipId, classSessionId, status, method, fromUtc, toUtc, page, pageSize),
+            new PaymentListFilter(studentId, membershipId, classSessionId, status, method, fromUtc, toUtc, page, pageSize, provider),
             cancellationToken)));
 
     [HttpGet("pending")]
@@ -139,13 +144,113 @@ public class PaymentsController : ControllerBase
         CancellationToken cancellationToken) =>
         ExecuteAsync(async () => Ok(await _paymentService.FailPaymentAsync(id, request, CurrentUserId, cancellationToken)));
 
+    /// <summary>
+    /// El personal cancela cualquier pago pendiente (<c>PAYMENTS_CANCEL</c>); el alumno, sólo su propio checkout en
+    /// línea pendiente. Por eso la autorización se resuelve aquí y no con una política.
+    /// </summary>
     [HttpPost("{id:guid}/cancel")]
-    [Authorize(Policy = Policies.PaymentsCancel)]
+    [Authorize]
     public Task<IActionResult> CancelPayment(
         Guid id,
         [FromBody] CancelPaymentRequest request,
         CancellationToken cancellationToken) =>
-        ExecuteAsync(async () => Ok(await _paymentService.CancelPaymentAsync(id, request, CurrentUserId, cancellationToken)));
+        ExecuteAsync(async () =>
+        {
+            if (!IsStaff)
+            {
+                var payment = await _paymentService.GetByIdAsync(id, cancellationToken);
+                var isOwnOpenCheckout = payment != null &&
+                                        CanAccess(payment.PayerPersonId) &&
+                                        payment.Provider != PaymentProvider.Manual &&
+                                        payment.Status == PaymentStatus.Pending;
+                if (!isOwnOpenCheckout)
+                {
+                    return Forbidden();
+                }
+            }
+
+            return Ok(await _paymentService.CancelPaymentAsync(id, request, CurrentUserId, cancellationToken));
+        });
+
+    // ---- Pasarela externa ----
+
+    /// <summary>
+    /// Inicia el pago en línea de una membresía. El importe lo calcula el servidor (saldo pendiente); lo puede
+    /// iniciar el personal o el alumno titular.
+    /// </summary>
+    [HttpPost("checkout")]
+    [Authorize]
+    public Task<IActionResult> CreateCheckout([FromBody] CreatePaymentCheckoutRequest request, CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            var balance = await _paymentService.GetMembershipBalanceAsync(request.MembershipId, cancellationToken);
+            if (!CanAccess(balance.StudentId))
+            {
+                return Forbidden();
+            }
+
+            var result = await _paymentService.CreateCheckoutAsync(request, CurrentUserId, IdempotencyKey, cancellationToken);
+            return result.Created
+                ? CreatedAtAction(nameof(GetById), new { id = result.Value.Id }, result.Value)
+                : Ok(result.Value);
+        });
+
+    /// <summary>
+    /// Notificaciones del proveedor. No lleva usuario: la autenticidad la da la firma, que se verifica antes de
+    /// cualquier otro procesamiento. Responde 200 a todo evento verificado para que el proveedor no lo reintente.
+    /// </summary>
+    [HttpPost("webhooks/{provider}")]
+    [AllowAnonymous]
+    [EnableRateLimiting(WebhookRateLimitPolicy)]
+    [RequestSizeLimit(64 * 1024)]
+    public Task<IActionResult> ReceiveWebhook(string provider, CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            // Sólo nombres de proveedores externos: ni números ni Manual
+            if (!Enum.TryParse<PaymentProvider>(provider, ignoreCase: true, out var paymentProvider) ||
+                !Enum.IsDefined(paymentProvider) ||
+                paymentProvider == PaymentProvider.Manual ||
+                int.TryParse(provider, out _))
+            {
+                return NotFound(new PaymentApiError(PaymentErrorCodes.ProviderNotSupported, "Proveedor de pagos desconocido."));
+            }
+
+            using var reader = new StreamReader(Request.Body, Encoding.UTF8);
+            var rawBody = await reader.ReadToEndAsync(cancellationToken);
+
+            var webhookRequest = new WebhookRequest(
+                rawBody,
+                Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString(), StringComparer.OrdinalIgnoreCase),
+                Request.Query.ToDictionary(q => q.Key, q => q.Value.ToString(), StringComparer.OrdinalIgnoreCase));
+
+            var result = await _paymentService.ProcessWebhookAsync(paymentProvider, webhookRequest, cancellationToken);
+
+            return result == WebhookProcessingResult.InvalidSignature
+                ? Unauthorized(new PaymentApiError(PaymentErrorCodes.WebhookSignatureInvalid, "Firma de notificación inválida."))
+                : Ok(new { status = result.ToString() });
+        });
+
+    [HttpPost("{id:guid}/reconcile")]
+    [Authorize(Policy = Policies.PaymentsReconcile)]
+    public Task<IActionResult> Reconcile(Guid id, CancellationToken cancellationToken) =>
+        ExecuteAsync(async () => Ok(await _paymentService.ReconcileAsync(id, CurrentUserId, cancellationToken)));
+
+    [HttpGet("discrepancies")]
+    [Authorize(Policy = Policies.PaymentsReconcile)]
+    public Task<IActionResult> GetDiscrepancies(
+        [FromQuery] PaymentDiscrepancyStatus? status = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default) =>
+        ExecuteAsync(async () => Ok(await _paymentService.GetDiscrepanciesAsync(status, page, pageSize, cancellationToken)));
+
+    [HttpPost("discrepancies/{id:guid}/resolve")]
+    [Authorize(Policy = Policies.PaymentsReconcile)]
+    public Task<IActionResult> ResolveDiscrepancy(
+        Guid id,
+        [FromBody] ResolvePaymentDiscrepancyRequest request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () => Ok(await _paymentService.ResolveDiscrepancyAsync(id, request, CurrentUserId, cancellationToken)));
 
     [HttpPost("{id:guid}/apply")]
     [Authorize(Policy = Policies.PaymentsAllocate)]
@@ -180,15 +285,11 @@ public class PaymentsController : ControllerBase
             : null;
 
     /// <summary>El personal accede a cualquier pago; un alumno, sólo a lo propio. Un instructor no accede.</summary>
-    private bool CanAccess(Guid ownerPersonId)
-    {
-        if (_currentUserService.IsInRole(Roles.Administrator) || _currentUserService.IsInRole(Roles.Secretary))
-        {
-            return true;
-        }
+    private bool CanAccess(Guid ownerPersonId) =>
+        IsStaff || (_currentUserService.IsInRole(Roles.Student) && _currentUserService.PersonId == ownerPersonId);
 
-        return _currentUserService.IsInRole(Roles.Student) && _currentUserService.PersonId == ownerPersonId;
-    }
+    private bool IsStaff =>
+        _currentUserService.IsInRole(Roles.Administrator) || _currentUserService.IsInRole(Roles.Secretary);
 
     private IActionResult Forbidden() =>
         StatusCode(StatusCodes.Status403Forbidden, new PaymentApiError("FORBIDDEN", "No tenés acceso a este recurso."));
@@ -217,6 +318,11 @@ public class PaymentsController : ControllerBase
         catch (ValidationException ex)
         {
             return BadRequest(new PaymentApiError("VALIDATION_ERROR", ex.Message, ex.Errors));
+        }
+        catch (ExternalServiceException ex)
+        {
+            // El proveedor de pagos no respondió o rechazó la operación: lo guardado quedó en un estado recuperable
+            return StatusCode(StatusCodes.Status502BadGateway, new PaymentApiError(ex.Code, ex.Message));
         }
     }
 }

@@ -2,12 +2,15 @@ using System.Text.Json;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SmartGym.Application.Common;
 using SmartGym.Application.Common.Exceptions;
 using SmartGym.Application.Common.Interfaces;
 using SmartGym.Application.Common.Models;
 using SmartGym.Application.Modules.Operations.Dtos;
+using SmartGym.Application.Modules.Operations.Interfaces;
 using SmartGym.Application.Modules.Operations.Validators;
 using SmartGym.Domain.Entities.Operations;
 using SmartGym.Domain.Enums;
@@ -15,7 +18,7 @@ using ValidationException = SmartGym.Application.Common.Exceptions.ValidationExc
 
 namespace SmartGym.Application.Modules.Operations.Services;
 
-public class PaymentService : IPaymentService
+public partial class PaymentService : IPaymentService
 {
     private const int MaxPageSize = 100;
     private const int MaxIdempotencyKeyLength = 100;
@@ -30,13 +33,22 @@ public class PaymentService : IPaymentService
     private readonly IGymCalendar _gymCalendar;
     private readonly GymOptions _gymOptions;
     private readonly ICurrentUserService? _currentUserService;
+    private readonly IPaymentProviderResolver? _providerResolver;
+    private readonly PaymentsOptions _paymentsOptions;
+    private readonly ILogger<PaymentService> _logger;
 
     public PaymentService(
         ISmartGymDbContext dbContext,
         IGymCalendar? gymCalendar = null,
         IOptions<GymOptions>? gymOptions = null,
-        ICurrentUserService? currentUserService = null)
+        ICurrentUserService? currentUserService = null,
+        IPaymentProviderResolver? providerResolver = null,
+        IOptions<PaymentsOptions>? paymentsOptions = null,
+        ILogger<PaymentService>? logger = null)
     {
+        _providerResolver = providerResolver;
+        _paymentsOptions = paymentsOptions?.Value ?? new PaymentsOptions();
+        _logger = logger ?? NullLogger<PaymentService>.Instance;
         _dbContext = dbContext;
         _gymOptions = gymOptions?.Value ?? new GymOptions();
         _gymCalendar = gymCalendar ?? new GymCalendar(Options.Create(_gymOptions));
@@ -75,6 +87,11 @@ public class PaymentService : IPaymentService
         if (filter.Method.HasValue)
         {
             query = query.Where(p => p.Method == filter.Method.Value);
+        }
+
+        if (filter.Provider.HasValue)
+        {
+            query = query.Where(p => p.Provider == filter.Provider.Value);
         }
 
         if (filter.FromUtc.HasValue)
@@ -294,6 +311,7 @@ public class PaymentService : IPaymentService
         await using var transaction = await BeginOwnTransactionAsync(cancellationToken);
         var payment = await LockAndLoadAsync(id, targetMembershipId: null, cancellationToken);
 
+        EnsureManual(payment);
         EnsureStatus(payment, PaymentStatus.Pending, "confirmar");
 
         // Un pago pendiente no reserva saldo: otro cobro pudo cubrir la membresía entretanto
@@ -331,6 +349,7 @@ public class PaymentService : IPaymentService
         await using var transaction = await BeginOwnTransactionAsync(cancellationToken);
         var payment = await LockAndLoadAsync(id, targetMembershipId: null, cancellationToken);
 
+        EnsureManual(payment);
         EnsureStatus(payment, PaymentStatus.Pending, "rechazar");
 
         var before = Snapshot(payment);
@@ -428,6 +447,12 @@ public class PaymentService : IPaymentService
 
         await using var transaction = await BeginOwnTransactionAsync(cancellationToken);
         var payment = await LockAndLoadAsync(paymentId, targetMembershipId: null, cancellationToken);
+
+        // La devolución de un pago externo se ejecuta contra el proveedor, en varios pasos
+        if (payment.IsExternal)
+        {
+            return await CreateExternalRefundAsync(payment, transaction, request, reason, key, currentUserId, cancellationToken);
+        }
 
         if (key != null)
         {
@@ -686,6 +711,17 @@ public class PaymentService : IPaymentService
         }
     }
 
+    // Un pago de proveedor externo sólo se confirma o rechaza con información verificada del proveedor.
+    private static void EnsureManual(Payment payment)
+    {
+        if (payment.IsExternal)
+        {
+            throw ConflictException.WithCode(
+                PaymentErrorCodes.ExternalPaymentManualConfirmForbidden,
+                "Un pago de proveedor externo no se puede confirmar ni rechazar manualmente.");
+        }
+    }
+
     private static NotFoundException PaymentNotFound() =>
         NotFoundException.WithCode(PaymentErrorCodes.NotFound, "Pago no encontrado.");
 
@@ -701,16 +737,24 @@ public class PaymentService : IPaymentService
     /// La auditoría se agrega al mismo guardado que la operación (no usa <c>IAuditService</c>, que guarda por su
     /// cuenta): así queda en la misma transacción y no adelanta el guardado de quien llama.
     /// </summary>
-    private void AddAuditLog(string action, Guid paymentId, Guid? userId, object? oldValues, object? newValues)
+    private void AddAuditLog(
+        string action,
+        Guid paymentId,
+        Guid? userId,
+        object? oldValues,
+        object? newValues,
+        string entityName = nameof(Payment),
+        bool systemAction = false)
     {
         var nowUtc = _gymCalendar.UtcNow;
-        var isAuthenticated = _currentUserService is { IsAuthenticated: true };
+        // Una acción del sistema (webhook, vencimiento) no se atribuye al usuario de la solicitud en curso
+        var isAuthenticated = !systemAction && _currentUserService is { IsAuthenticated: true };
 
         _dbContext.AuditLogs.Add(new AuditLog
         {
             Id = Guid.NewGuid(),
             Action = action,
-            EntityName = nameof(Payment),
+            EntityName = entityName,
             EntityId = paymentId.ToString(),
             OldValues = oldValues == null ? null : JsonSerializer.Serialize(oldValues),
             NewValues = newValues == null ? null : JsonSerializer.Serialize(newValues),
@@ -754,9 +798,13 @@ public class PaymentService : IPaymentService
             p.RefundedAmount,
             p.NetAmount,
             p.ConfirmedAtUtc,
-            p.CancelledAtUtc
+            p.CancelledAtUtc,
+            p.CheckoutUrl,
+            p.ExpiresAtUtc
         );
 
     private static PaymentRefundDto MapToDto(PaymentRefund r) =>
-        new(r.Id, r.PaymentId, r.Amount, r.Currency, r.Reason, r.Notes, r.RequestedByUserId, r.CreatedAtUtc);
+        new(
+            r.Id, r.PaymentId, r.Amount, r.Currency, r.Reason, r.Notes, r.RequestedByUserId, r.CreatedAtUtc,
+            r.Status, r.ExternalRefundId, r.CompletedAtUtc, r.FailureReason);
 }

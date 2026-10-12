@@ -34,6 +34,8 @@ public interface ISmartGymDbContext
     DbSet<PromotionRedemption> PromotionRedemptions { get; }
     DbSet<SmartGym.Domain.Entities.Operations.Payment> Payments { get; }
     DbSet<SmartGym.Domain.Entities.Operations.PaymentRefund> PaymentRefunds { get; }
+    DbSet<SmartGym.Domain.Entities.Operations.PaymentWebhookEvent> PaymentWebhookEvents { get; }
+    DbSet<SmartGym.Domain.Entities.Operations.PaymentDiscrepancy> PaymentDiscrepancies { get; }
     DbSet<SmartGym.Domain.Entities.Operations.NotificationMessage> NotificationMessages { get; }
     DbSet<SmartGym.Domain.Entities.Operations.NotificationDelivery> NotificationDeliveries { get; }
     DbSet<SmartGym.Domain.Entities.Operations.NotificationPreference> NotificationPreferences { get; }

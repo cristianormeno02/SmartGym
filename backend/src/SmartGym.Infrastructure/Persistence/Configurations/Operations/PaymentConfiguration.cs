@@ -53,9 +53,16 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(p => p.Version)
             .IsRowVersion();
 
+        builder.Property(p => p.ExternalReference)
+            .HasMaxLength(150);
+
+        builder.Property(p => p.CheckoutUrl)
+            .HasMaxLength(500);
+
         builder.Ignore(p => p.NetAmount);
         builder.Ignore(p => p.IsConfirmed);
         builder.Ignore(p => p.IsApplied);
+        builder.Ignore(p => p.IsExternal);
 
         builder.ToTable(t =>
         {
@@ -78,6 +85,19 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
             .IsUnique()
             .HasDatabaseName("UX_Payments_Payer_IdempotencyKey")
             .HasFilter("\"IdempotencyKey\" IS NOT NULL");
+
+        // Una transacción del proveedor confirma un único pago. Los pagos manuales (Provider = 1) quedan fuera:
+        // su referencia externa es texto libre del operador.
+        builder.HasIndex(p => new { p.Provider, p.ExternalTransactionId })
+            .IsUnique()
+            .HasDatabaseName("UX_Payments_Provider_ExternalTx")
+            .HasFilter("\"Provider\" <> 1 AND \"ExternalTransactionId\" IS NOT NULL");
+
+        // A lo sumo un checkout abierto (externo y Pending) por membresía
+        // Índice con nombre: convive con el índice común sobre MembershipId
+        builder.HasIndex(p => p.MembershipId, "UX_Payments_OpenCheckout")
+            .IsUnique()
+            .HasFilter("\"Provider\" <> 1 AND \"Status\" = 1");
 
         builder.HasOne(p => p.PayerPerson)
             .WithMany()

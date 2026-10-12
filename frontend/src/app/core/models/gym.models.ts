@@ -177,8 +177,20 @@ export type PaymentMethod = 1 | 2 | 3 | 4 | 5 | 6;
 /** Pending = 1, Completed = 2, Failed = 3, Refunded = 4, Cancelled = 5, PartiallyRefunded = 6. */
 export type PaymentStatus = 1 | 2 | 3 | 4 | 5 | 6;
 
-/** Manual = 1. */
-export type PaymentProvider = 1;
+/** Manual = 1, MercadoPago = 2. */
+export type PaymentProvider = 1 | 2;
+
+/** Pending = 1, Completed = 2, Failed = 3. */
+export type PaymentRefundStatus = 1 | 2 | 3;
+
+/**
+ * AmountMismatch = 1, CurrencyMismatch = 2, ApprovedAfterTerminalState = 3, Overpayment = 4,
+ * DuplicateCharge = 5, ExternalRefund = 6, UnknownPayment = 7.
+ */
+export type PaymentDiscrepancyType = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
+/** Open = 1, Resolved = 2. */
+export type PaymentDiscrepancyStatus = 1 | 2;
 
 export interface Payment {
   id: string;
@@ -200,6 +212,29 @@ export interface Payment {
   netAmount: number;
   confirmedAtUtc?: string;
   cancelledAtUtc?: string;
+  /** Sólo en pagos en línea pendientes: adonde enviar al alumno para pagar. */
+  checkoutUrl?: string;
+  expiresAtUtc?: string;
+}
+
+/** Diferencia entre lo que informa la pasarela y el pago interno, pendiente de revisión. */
+export interface PaymentDiscrepancy {
+  id: string;
+  paymentId?: string;
+  provider: PaymentProvider;
+  type: PaymentDiscrepancyType;
+  status: PaymentDiscrepancyStatus;
+  internalAmount?: number;
+  internalCurrency?: string;
+  internalStatus?: string;
+  externalAmount?: number;
+  externalCurrency?: string;
+  externalStatus?: string;
+  externalTransactionId?: string;
+  detectedAtUtc: string;
+  resolvedAtUtc?: string;
+  resolvedByUserId?: string;
+  resolutionNotes?: string;
 }
 
 /** Pago tal como llega en el detalle de una membresía: mismo contrato que /api/payments. */
@@ -214,6 +249,11 @@ export interface PaymentRefund {
   notes?: string;
   requestedByUserId?: string;
   createdAtUtc: string;
+  /** La devolución de un pago en línea queda pendiente hasta que la pasarela responde. */
+  status: PaymentRefundStatus;
+  externalRefundId?: string;
+  completedAtUtc?: string;
+  failureReason?: string;
 }
 
 export interface MembershipBalance {
@@ -235,6 +275,7 @@ export interface PaymentFilter {
   classSessionId?: string;
   status?: PaymentStatus;
   method?: PaymentMethod;
+  provider?: PaymentProvider;
   fromUtc?: string;
   toUtc?: string;
   page?: number;

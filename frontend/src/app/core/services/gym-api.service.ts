@@ -34,7 +34,9 @@ import {
   MembershipBalance,
   RegisterPaymentRequest,
   ApplyPaymentRequest,
-  CreatePaymentRefundRequest
+  CreatePaymentRefundRequest,
+  PaymentDiscrepancy,
+  PaymentDiscrepancyStatus
 } from '../models/gym.models';
 
 @Injectable({
@@ -298,6 +300,29 @@ export class GymApiService {
     return this.http.post<PaymentRefund>(`${this.apiUrl}/payments/${paymentId}/refunds`, request, {
       headers: this.idempotencyHeaders(idempotencyKey)
     });
+  }
+
+  // --- Pagos en línea ---
+
+  /** El importe lo calcula el servidor (saldo pendiente). Redirigir al alumno a `checkoutUrl`. */
+  createPaymentCheckout(membershipId: string, idempotencyKey?: string): Observable<Payment> {
+    return this.http.post<Payment>(`${this.apiUrl}/payments/checkout`, { membershipId }, {
+      headers: this.idempotencyHeaders(idempotencyKey)
+    });
+  }
+
+  reconcilePayment(paymentId: string): Observable<Payment> {
+    return this.http.post<Payment>(`${this.apiUrl}/payments/${paymentId}/reconcile`, {});
+  }
+
+  getPaymentDiscrepancies(status?: PaymentDiscrepancyStatus, page = 1, pageSize = 20): Observable<PagedResult<PaymentDiscrepancy>> {
+    return this.http.get<PagedResult<PaymentDiscrepancy>>(`${this.apiUrl}/payments/discrepancies`, {
+      params: this.toParams({ status, page, pageSize })
+    });
+  }
+
+  resolvePaymentDiscrepancy(discrepancyId: string, notes: string): Observable<PaymentDiscrepancy> {
+    return this.http.post<PaymentDiscrepancy>(`${this.apiUrl}/payments/discrepancies/${discrepancyId}/resolve`, { notes });
   }
 
   private idempotencyHeaders(idempotencyKey?: string): HttpHeaders {

@@ -176,6 +176,9 @@ public static class DependencyInjection
             // Las devoluciones quedan reservadas al administrador
             options.AddPolicy(Policies.PaymentsRefund, policy =>
                 policy.RequireRole(Roles.Administrator));
+            // Conciliar y resolver discrepancias con la pasarela, también
+            options.AddPolicy(Policies.PaymentsReconcile, policy =>
+                policy.RequireRole(Roles.Administrator));
 
             options.AddPolicy(Policies.NotificationsReadOwn, policy =>
                 policy.RequireAuthenticatedUser());
@@ -206,7 +209,31 @@ public static class DependencyInjection
         services.AddScoped<SmartGym.Application.Modules.Operations.Services.INotificationChannelProvider>(sp =>
             sp.GetRequiredService<SmartGym.Application.Modules.Operations.Services.IEmailNotificationProvider>());
 
+        // Proveedores de pago: sin credenciales el proveedor no se registra y el checkout responde PROVIDER_NOT_SUPPORTED
+        services.Configure<SmartGym.Application.Common.PaymentsOptions>(
+            configuration.GetSection(SmartGym.Application.Common.PaymentsOptions.SectionName));
+        services.Configure<SmartGym.Infrastructure.Services.Payments.MercadoPagoOptions>(
+            configuration.GetSection(SmartGym.Infrastructure.Services.Payments.MercadoPagoOptions.SectionName));
+
+        var mercadoPagoOptions = configuration
+            .GetSection(SmartGym.Infrastructure.Services.Payments.MercadoPagoOptions.SectionName)
+            .Get<SmartGym.Infrastructure.Services.Payments.MercadoPagoOptions>() ?? new SmartGym.Infrastructure.Services.Payments.MercadoPagoOptions();
+
+        if (mercadoPagoOptions.IsConfigured)
+        {
+            services.AddSingleton<SmartGym.Application.Modules.Operations.Interfaces.IPaymentProvider>(sp =>
+                new SmartGym.Infrastructure.Services.Payments.MercadoPagoPaymentProvider(
+                    sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SmartGym.Infrastructure.Services.Payments.MercadoPagoOptions>>(),
+                    new HttpClient
+                    {
+                        BaseAddress = new Uri(mercadoPagoOptions.BaseUrl),
+                        Timeout = TimeSpan.FromSeconds(Math.Max(1, mercadoPagoOptions.TimeoutSeconds))
+                    },
+                    sp.GetService<TimeProvider>()));
+        }
+
         // Background Workers
+        services.AddHostedService<SmartGym.Infrastructure.Services.BackgroundJobs.PaymentExpirationWorker>();
         services.AddHostedService<SmartGym.Infrastructure.Services.BackgroundJobs.ClassSessionGenerationWorker>();
         services.AddHostedService<SmartGym.Infrastructure.Services.BackgroundJobs.MembershipExpirationWorker>();
         services.AddHostedService<SmartGym.Infrastructure.Services.BackgroundJobs.ReservationWaitlistWorker>();

@@ -63,7 +63,7 @@ public class DashboardService : IDashboardService
             .Where(p => p.IsActive && p.ConfirmedAtUtc >= currentMonthStart)
             .SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
         var monthlyRefunded = await _dbContext.PaymentRefunds
-            .Where(r => r.IsActive && r.CreatedAtUtc >= currentMonthStart)
+            .Where(r => r.IsActive && r.Status == PaymentRefundStatus.Completed && r.CompletedAtUtc >= currentMonthStart)
             .SumAsync(r => (decimal?)r.Amount, cancellationToken) ?? 0m;
         var monthlyRevenue = monthlyConfirmed - monthlyRefunded;
 

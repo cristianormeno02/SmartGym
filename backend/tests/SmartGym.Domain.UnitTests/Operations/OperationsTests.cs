@@ -317,6 +317,176 @@ public class OperationsTests
         Assert.Throws<InvalidOperationException>(() => payment.ApplyToMembership(Guid.NewGuid(), null));
     }
 
+    // ---- Pasarela externa ----
+
+    private static Payment NewExternalPayment(PaymentStatus status = PaymentStatus.Pending, decimal amount = 40000m)
+    {
+        var payment = NewPayment(status, amount);
+        payment.Provider = PaymentProvider.MercadoPago;
+        payment.MembershipId = Guid.NewGuid();
+        return payment;
+    }
+
+    [Fact]
+    public void GatewayEnums_ShouldBeDefined()
+    {
+        Assert.Equal(2, (int)PaymentProvider.MercadoPago);
+        Assert.Equal(1, (int)PaymentRefundStatus.Pending);
+        Assert.Equal(2, (int)PaymentRefundStatus.Completed);
+        Assert.Equal(3, (int)PaymentRefundStatus.Failed);
+        Assert.Equal(1, (int)PaymentDiscrepancyStatus.Open);
+        Assert.Equal(2, (int)PaymentDiscrepancyStatus.Resolved);
+        Assert.Equal(1, (int)PaymentWebhookEventStatus.Received);
+        Assert.Equal(2, (int)PaymentWebhookEventStatus.Processed);
+        Assert.Equal(3, (int)PaymentWebhookEventStatus.Ignored);
+        Assert.Equal(
+            new[] { "AmountMismatch", "CurrencyMismatch", "ApprovedAfterTerminalState", "Overpayment", "DuplicateCharge", "ExternalRefund", "UnknownPayment" },
+            Enum.GetNames<PaymentDiscrepancyType>());
+    }
+
+    [Fact]
+    public void Payment_IsExternal_AndCheckoutExpiration()
+    {
+        var now = new DateTime(2026, 10, 12, 15, 0, 0, DateTimeKind.Utc);
+        var manual = NewPayment(PaymentStatus.Pending);
+        var external = NewExternalPayment();
+        external.ExpiresAtUtc = now.AddMinutes(60);
+
+        Assert.False(manual.IsExternal);
+        Assert.False(manual.IsCheckoutExpired(now));
+        Assert.True(external.IsExternal);
+        Assert.False(external.IsCheckoutExpired(now));
+        Assert.True(external.IsCheckoutExpired(now.AddMinutes(60)));
+
+        // Sólo un checkout pendiente puede vencer
+        external.Complete("MP-1", now);
+        Assert.False(external.IsCheckoutExpired(now.AddDays(1)));
+    }
+
+    [Fact]
+    public void Payment_RegisterRefund_OnManualPayment_CreatesCompletedRefund()
+    {
+        var payment = NewCompletedPayment(30000m);
+        var now = new DateTime(2026, 10, 12, 15, 0, 0, DateTimeKind.Utc);
+
+        var refund = payment.RegisterRefund(10000m, "Ajuste", null, nowUtc: now);
+
+        Assert.Equal(PaymentRefundStatus.Completed, refund.Status);
+        Assert.Equal(now, refund.CompletedAtUtc);
+        Assert.Null(refund.ExternalRefundId);
+    }
+
+    [Fact]
+    public void Payment_RequestRefund_CreatesPendingRefund_WithoutTouchingThePayment()
+    {
+        var payment = NewExternalPayment();
+        payment.Complete("MP-1");
+        payment.ClearDomainEvents();
+
+        var refund = payment.RequestRefund(10000m, "Ajuste", Guid.NewGuid(), pendingRefundsAmount: 0m);
+
+        Assert.Equal(PaymentRefundStatus.Pending, refund.Status);
+        Assert.Null(refund.CompletedAtUtc);
+        Assert.Equal(0m, payment.RefundedAmount);
+        Assert.Equal(PaymentStatus.Completed, payment.Status);
+        Assert.Empty(payment.DomainEvents);
+    }
+
+    [Fact]
+    public void Payment_RequestRefund_ReservesPendingRefunds()
+    {
+        var payment = NewExternalPayment(amount: 20000m);
+        payment.Complete("MP-1");
+
+        payment.RequestRefund(15000m, "Primera", null, pendingRefundsAmount: 0m);
+
+        // Disponible: 20000 - 0 devueltos - 15000 pendientes = 5000
+        Assert.Throws<InvalidOperationException>(() =>
+            payment.RequestRefund(5000.01m, "Excede", null, pendingRefundsAmount: 15000m));
+        var fits = payment.RequestRefund(5000m, "Cabe", null, pendingRefundsAmount: 15000m);
+        Assert.Equal(PaymentRefundStatus.Pending, fits.Status);
+    }
+
+    [Fact]
+    public void Payment_CompleteRefund_AppliesAmountStatusAndNotification()
+    {
+        var payment = NewExternalPayment(amount: 40000m);
+        payment.Complete("MP-1");
+        var refund = payment.RequestRefund(10000m, "Ajuste", null, pendingRefundsAmount: 0m);
+        payment.ClearDomainEvents();
+        var now = new DateTime(2026, 10, 12, 16, 0, 0, DateTimeKind.Utc);
+
+        payment.CompleteRefund(refund, "MP-REF-9", now);
+
+        Assert.Equal(PaymentRefundStatus.Completed, refund.Status);
+        Assert.Equal("MP-REF-9", refund.ExternalRefundId);
+        Assert.Equal(now, refund.CompletedAtUtc);
+        Assert.Equal(10000m, payment.RefundedAmount);
+        Assert.Equal(PaymentStatus.PartiallyRefunded, payment.Status);
+        var evt = Assert.Single(payment.DomainEvents.OfType<PaymentRefundedNotificationEvent>());
+        Assert.Equal(refund.Id, evt.RefundId);
+
+        // Una devolución ya resuelta no se vuelve a aplicar
+        Assert.Throws<InvalidOperationException>(() => payment.CompleteRefund(refund, "MP-REF-9", now));
+        Assert.Equal(10000m, payment.RefundedAmount);
+    }
+
+    [Fact]
+    public void PaymentRefund_Fail_KeepsThePaymentUntouched_AndIsTerminal()
+    {
+        var payment = NewExternalPayment();
+        payment.Complete("MP-1");
+        var refund = payment.RequestRefund(10000m, "Ajuste", null, pendingRefundsAmount: 0m);
+
+        refund.Fail("El proveedor rechazó el reintegro", new DateTime(2026, 10, 12, 16, 0, 0, DateTimeKind.Utc));
+
+        Assert.Equal(PaymentRefundStatus.Failed, refund.Status);
+        Assert.Equal("El proveedor rechazó el reintegro", refund.FailureReason);
+        Assert.Equal(0m, payment.RefundedAmount);
+        Assert.Throws<InvalidOperationException>(() => refund.Fail("Otra vez"));
+        Assert.Throws<InvalidOperationException>(() => payment.CompleteRefund(refund, "MP-REF-1"));
+    }
+
+    [Fact]
+    public void PaymentDiscrepancy_Create_CapturesInternalAndExternalValues()
+    {
+        var payment = NewExternalPayment(amount: 25000m);
+        var now = new DateTime(2026, 10, 12, 15, 0, 0, DateTimeKind.Utc);
+
+        var discrepancy = PaymentDiscrepancy.Create(
+            PaymentDiscrepancyType.AmountMismatch, PaymentProvider.MercadoPago, payment, "MP-77", 20000m, "ARS", "Approved", now);
+
+        Assert.Equal(PaymentDiscrepancyStatus.Open, discrepancy.Status);
+        Assert.Equal(payment.Id, discrepancy.PaymentId);
+        Assert.Equal(25000m, discrepancy.InternalAmount);
+        Assert.Equal("ARS", discrepancy.InternalCurrency);
+        Assert.Equal("Pending", discrepancy.InternalStatus);
+        Assert.Equal(20000m, discrepancy.ExternalAmount);
+        Assert.Equal("Approved", discrepancy.ExternalStatus);
+        Assert.Equal("MP-77", discrepancy.ExternalTransactionId);
+        Assert.Equal(now, discrepancy.DetectedAtUtc);
+    }
+
+    [Fact]
+    public void PaymentDiscrepancy_Resolve_RequiresNotes_AndRejectsASecondResolution()
+    {
+        var discrepancy = PaymentDiscrepancy.Create(
+            PaymentDiscrepancyType.UnknownPayment, PaymentProvider.MercadoPago, null, "MP-88", 1000m, "ARS", "Approved");
+        var adminId = Guid.NewGuid();
+        var now = new DateTime(2026, 10, 12, 17, 0, 0, DateTimeKind.Utc);
+
+        Assert.Null(discrepancy.PaymentId);
+        Assert.Throws<ArgumentException>(() => discrepancy.Resolve("  ", adminId, now));
+
+        discrepancy.Resolve("Devuelto desde el panel del proveedor", adminId, now);
+
+        Assert.Equal(PaymentDiscrepancyStatus.Resolved, discrepancy.Status);
+        Assert.Equal("Devuelto desde el panel del proveedor", discrepancy.ResolutionNotes);
+        Assert.Equal(adminId, discrepancy.ResolvedByUserId);
+        Assert.Equal(now, discrepancy.ResolvedAtUtc);
+        Assert.Throws<InvalidOperationException>(() => discrepancy.Resolve("Otra nota", adminId, now));
+    }
+
     [Fact]
     public void NewEnumValues_ForCreditMovementTypeAndNotificationType_ShouldBeDefined()
     {
