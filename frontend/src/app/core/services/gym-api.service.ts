@@ -27,7 +27,14 @@ import {
   CreditMovement,
   Promotion,
   AuditLog,
-  AdminUserOverview
+  AdminUserOverview,
+  Payment,
+  PaymentRefund,
+  PaymentFilter,
+  MembershipBalance,
+  RegisterPaymentRequest,
+  ApplyPaymentRequest,
+  CreatePaymentRefundRequest
 } from '../models/gym.models';
 
 @Injectable({
@@ -235,6 +242,76 @@ export class GymApiService {
 
   issueSingleClassTicket(request: { studentId: string; classSessionId: string; price: number; paymentMethod: number }): Observable<any> {
     return this.http.post(`${this.apiUrl}/credits/single-ticket`, request);
+  }
+
+  // --- Pagos ---
+  getPayments(filter: PaymentFilter = {}): Observable<PagedResult<Payment>> {
+    return this.http.get<PagedResult<Payment>>(`${this.apiUrl}/payments`, { params: this.toParams(filter) });
+  }
+
+  getPendingPayments(page = 1, pageSize = 20): Observable<PagedResult<Payment>> {
+    return this.http.get<PagedResult<Payment>>(`${this.apiUrl}/payments/pending`, {
+      params: this.toParams({ page, pageSize })
+    });
+  }
+
+  getPaymentById(paymentId: string): Observable<Payment> {
+    return this.http.get<Payment>(`${this.apiUrl}/payments/${paymentId}`);
+  }
+
+  getStudentPayments(studentId: string): Observable<Payment[]> {
+    return this.http.get<Payment[]>(`${this.apiUrl}/payments/student/${studentId}`);
+  }
+
+  getPaymentRefunds(paymentId: string): Observable<PaymentRefund[]> {
+    return this.http.get<PaymentRefund[]>(`${this.apiUrl}/payments/${paymentId}/refunds`);
+  }
+
+  getMembershipBalance(membershipId: string): Observable<MembershipBalance> {
+    return this.http.get<MembershipBalance>(`${this.apiUrl}/payments/obligations/membership/${membershipId}`);
+  }
+
+  /** La clave de idempotencia evita un cobro duplicado ante un doble envío o un reintento. */
+  registerPayment(request: RegisterPaymentRequest, idempotencyKey?: string): Observable<Payment> {
+    return this.http.post<Payment>(`${this.apiUrl}/payments`, request, {
+      headers: this.idempotencyHeaders(idempotencyKey)
+    });
+  }
+
+  confirmPayment(paymentId: string, externalTransactionId?: string, notes?: string): Observable<Payment> {
+    return this.http.post<Payment>(`${this.apiUrl}/payments/${paymentId}/confirm`, { externalTransactionId, notes });
+  }
+
+  failPayment(paymentId: string, reason: string): Observable<Payment> {
+    return this.http.post<Payment>(`${this.apiUrl}/payments/${paymentId}/fail`, { reason });
+  }
+
+  cancelPayment(paymentId: string, reason: string): Observable<Payment> {
+    return this.http.post<Payment>(`${this.apiUrl}/payments/${paymentId}/cancel`, { reason });
+  }
+
+  applyPayment(paymentId: string, request: ApplyPaymentRequest): Observable<Payment> {
+    return this.http.post<Payment>(`${this.apiUrl}/payments/${paymentId}/apply`, request);
+  }
+
+  refundPayment(paymentId: string, request: CreatePaymentRefundRequest, idempotencyKey?: string): Observable<PaymentRefund> {
+    return this.http.post<PaymentRefund>(`${this.apiUrl}/payments/${paymentId}/refunds`, request, {
+      headers: this.idempotencyHeaders(idempotencyKey)
+    });
+  }
+
+  private idempotencyHeaders(idempotencyKey?: string): HttpHeaders {
+    return idempotencyKey ? new HttpHeaders({ 'Idempotency-Key': idempotencyKey }) : new HttpHeaders();
+  }
+
+  private toParams(values: object): HttpParams {
+    let params = new HttpParams();
+    for (const [key, value] of Object.entries(values)) {
+      if (value !== undefined && value !== null && value !== '') {
+        params = params.set(key, String(value));
+      }
+    }
+    return params;
   }
 
   // --- Certificados Médicos ---

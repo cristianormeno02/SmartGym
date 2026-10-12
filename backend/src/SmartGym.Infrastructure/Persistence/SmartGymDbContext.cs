@@ -60,6 +60,7 @@ public class SmartGymDbContext : DbContext, ISmartGymDbContext
     public DbSet<Promotion> Promotions => Set<Promotion>();
     public DbSet<PromotionRedemption> PromotionRedemptions => Set<PromotionRedemption>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<PaymentRefund> PaymentRefunds => Set<PaymentRefund>();
     public DbSet<NotificationMessage> NotificationMessages => Set<NotificationMessage>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
@@ -129,6 +130,23 @@ public class SmartGymDbContext : DbContext, ISmartGymDbContext
 
         await Database.ExecuteSqlInterpolatedAsync(
             $"SELECT 1 FROM \"Promotions\" WHERE \"Id\" = {promotionId} FOR UPDATE",
+            cancellationToken);
+    }
+
+    public virtual async Task LockPaymentForUpdateAsync(Guid paymentId, CancellationToken cancellationToken = default)
+    {
+        if (!Database.IsNpgsql())
+        {
+            return;
+        }
+
+        if (Database.CurrentTransaction == null)
+        {
+            throw new InvalidOperationException("El bloqueo del pago requiere una transacción activa.");
+        }
+
+        await Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT 1 FROM \"Payments\" WHERE \"Id\" = {paymentId} FOR UPDATE",
             cancellationToken);
     }
 

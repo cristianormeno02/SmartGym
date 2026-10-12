@@ -34,6 +34,13 @@ public static class Permissions
     public const string PromotionsRead = "PROMOTIONS_READ";
     public const string PromotionsManage = "PROMOTIONS_MANAGE";
     public const string PromotionsRedemptionsRead = "PROMOTIONS_REDEMPTIONS_READ";
+
+    public const string PaymentsRead = "PAYMENTS_READ";
+    public const string PaymentsCreate = "PAYMENTS_CREATE";
+    public const string PaymentsConfirm = "PAYMENTS_CONFIRM";
+    public const string PaymentsCancel = "PAYMENTS_CANCEL";
+    public const string PaymentsAllocate = "PAYMENTS_ALLOCATE";
+    public const string PaymentsRefund = "PAYMENTS_REFUND";
 }
 
 public static class Policies
@@ -65,4 +72,11 @@ public static class Policies
     public const string PromotionsRead = Permissions.PromotionsRead;
     public const string PromotionsManage = Permissions.PromotionsManage;
     public const string PromotionsRedemptionsRead = Permissions.PromotionsRedemptionsRead;
+
+    public const string PaymentsRead = Permissions.PaymentsRead;
+    public const string PaymentsCreate = Permissions.PaymentsCreate;
+    public const string PaymentsConfirm = Permissions.PaymentsConfirm;
+    public const string PaymentsCancel = Permissions.PaymentsCancel;
+    public const string PaymentsAllocate = Permissions.PaymentsAllocate;
+    public const string PaymentsRefund = Permissions.PaymentsRefund;
 }

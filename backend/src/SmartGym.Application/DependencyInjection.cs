@@ -71,6 +71,18 @@ public static class DependencyInjection
         services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Operations.PaymentCompletedEvent>>(sp =>
             sp.GetRequiredService<SmartGym.Application.Modules.Memberships.Handlers.ActivateMembershipOnPaymentCompletedHandler>());
 
+        services.AddScoped<SmartGym.Application.Modules.Memberships.Handlers.ActivateMembershipOnPaymentAppliedHandler>();
+        services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Operations.PaymentAppliedEvent>>(sp =>
+            sp.GetRequiredService<SmartGym.Application.Modules.Memberships.Handlers.ActivateMembershipOnPaymentAppliedHandler>());
+
+        services.AddScoped<SmartGym.Application.Modules.Operations.Handlers.NotifyPayerOnPaymentLifecycleHandler>();
+        services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Operations.PaymentConfirmedNotificationEvent>>(sp =>
+            sp.GetRequiredService<SmartGym.Application.Modules.Operations.Handlers.NotifyPayerOnPaymentLifecycleHandler>());
+        services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Operations.PaymentFailedNotificationEvent>>(sp =>
+            sp.GetRequiredService<SmartGym.Application.Modules.Operations.Handlers.NotifyPayerOnPaymentLifecycleHandler>());
+        services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Operations.PaymentRefundedNotificationEvent>>(sp =>
+            sp.GetRequiredService<SmartGym.Application.Modules.Operations.Handlers.NotifyPayerOnPaymentLifecycleHandler>());
+
         services.AddScoped<SmartGym.Application.Modules.Reservations.Handlers.CancelReservationsOnMembershipSuspendedHandler>();
         services.AddScoped<IDomainEventHandler<SmartGym.Domain.Events.Memberships.MembershipSuspendedEvent>>(sp =>
             sp.GetRequiredService<SmartGym.Application.Modules.Reservations.Handlers.CancelReservationsOnMembershipSuspendedHandler>());

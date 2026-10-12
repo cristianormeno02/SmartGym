@@ -61,6 +61,7 @@ public class MembershipActivationServiceTests
     {
         var options = new DbContextOptionsBuilder<SmartGymDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         return new SmartGymDbContext(options, sp);
     }
@@ -211,6 +212,45 @@ public class MembershipActivationServiceTests
     }
 
     [Fact]
+    public async Task TryActivate_ShouldCountNetAmountOfCompletedAndPartiallyRefundedPayments_AndIgnoreRefunded()
+    {
+        await using var db = CreateDbContext();
+        var calendar = new StubGymCalendar();
+        var ledger = new CreditLedgerService(db, calendar);
+        IMembershipActivationService activationService = new MembershipActivationService(db, ledger, calendar);
+        var (student, _, membership) = await SeedPendingMembershipAsync(db, calendar, price: 25000m);
+
+        Payment NewPayment(decimal amount, decimal refunded, PaymentStatus status) => new()
+        {
+            Id = Guid.NewGuid(),
+            PayerPersonId = student.Id,
+            MembershipId = membership.Id,
+            Amount = amount,
+            RefundedAmount = refunded,
+            Method = PaymentMethod.Cash,
+            Status = status,
+            PaidAtUtc = calendar.UtcNow,
+            IsActive = true
+        };
+
+        // 15000 con 5000 devueltos (neto 10000) + 10000 + un pago totalmente devuelto (neto 0) = 20000 < 25000
+        db.Payments.AddRange(
+            NewPayment(15000m, 5000m, PaymentStatus.PartiallyRefunded),
+            NewPayment(10000m, 0m, PaymentStatus.Completed),
+            NewPayment(30000m, 30000m, PaymentStatus.Refunded));
+        await db.SaveChangesAsync();
+
+        Assert.False(await activationService.TryActivateAsync(membership.Id));
+        Assert.Equal(MembershipStatus.Pending, (await db.Memberships.SingleAsync(m => m.Id == membership.Id)).Status);
+
+        db.Payments.Add(NewPayment(5000m, 0m, PaymentStatus.Completed));
+        await db.SaveChangesAsync();
+
+        Assert.True(await activationService.TryActivateAsync(membership.Id));
+        Assert.Equal(MembershipStatus.Active, (await db.Memberships.SingleAsync(m => m.Id == membership.Id)).Status);
+    }
+
+    [Fact]
     public async Task ActivateMembershipOnPaymentCompletedHandler_ShouldActivateWhenPaymentCompletes_AndNotWhenFailed()
     {
         var calendar = new StubGymCalendar();
@@ -256,10 +296,10 @@ public class MembershipActivationServiceTests
         Assert.Equal(8, activated.AvailableCredits);
 
         // Now test a second Pending membership whose payment is Failed -> stays Pending with 0 credits
-        var (_, _, membership2) = await SeedPendingMembershipAsync(db, calendar, price: 20000m, credits: 8);
+        var (student2, _, membership2) = await SeedPendingMembershipAsync(db, calendar, price: 20000m, credits: 8);
         var pendingPayment2 = await paymentService.RegisterPaymentAsync(
             new RegisterPaymentRequest(
-                student.Id,
+                student2.Id,
                 membership2.Id,
                 null,
                 20000m,

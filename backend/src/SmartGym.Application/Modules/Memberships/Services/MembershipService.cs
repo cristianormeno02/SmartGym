@@ -379,9 +379,12 @@ public class MembershipService : IMembershipService
             }
             else if (linkedPayment != null)
             {
-                linkedPayment.MembershipId = createdMembership.Id;
-                linkedPayment.UpdatedAtUtc = nowUtc;
-                await _dbContext.SaveChangesAsync(cancellationToken);
+                // La aplicación pasa por Payments: valida titularidad, moneda y saldo, y deja su auditoría
+                await _paymentService.ApplyPaymentAsync(
+                    linkedPayment.Id,
+                    new ApplyPaymentRequest(createdMembership.Id, null),
+                    currentUserId ?? Guid.Empty,
+                    cancellationToken);
             }
 
             await _activationService.TryActivateAsync(
@@ -1467,13 +1470,13 @@ public class MembershipService : IMembershipService
             .Where(p => p.MembershipId.HasValue &&
                         membershipIds.Contains(p.MembershipId.Value) &&
                         p.IsActive &&
-                        p.Status == PaymentStatus.Completed)
-            .Select(p => new { MembershipId = p.MembershipId!.Value, p.Amount })
+                        (p.Status == PaymentStatus.Completed || p.Status == PaymentStatus.PartiallyRefunded))
+            .Select(p => new { MembershipId = p.MembershipId!.Value, NetAmount = p.Amount - p.RefundedAmount })
             .ToListAsync(cancellationToken);
 
         return payments
             .GroupBy(p => p.MembershipId)
-            .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.NetAmount));
     }
 
     private static MembershipSummaryDto MapToSummaryDto(
@@ -1584,8 +1587,8 @@ public class MembershipService : IMembershipService
         MembershipCreditsSummaryDto creditsSummary)
     {
         var totalPaidAmount = payments
-            .Where(p => p.Status == PaymentStatus.Completed)
-            .Sum(p => p.Amount);
+            .Where(p => p.Status.HasNetAmount())
+            .Sum(p => p.NetAmount);
 
         var summary = MapToSummaryDto(m, today, totalPaidAmount);
 
@@ -1607,7 +1610,13 @@ public class MembershipService : IMembershipService
                 p.ExternalTransactionId,
                 p.ReceiptUrl,
                 p.Notes,
-                p.PaidAtUtc))
+                p.PaidAtUtc,
+                p.Provider,
+                p.Currency,
+                p.RefundedAmount,
+                p.NetAmount,
+                p.ConfirmedAtUtc,
+                p.CancelledAtUtc))
             .ToList();
 
         var suspensionDtos = m.Suspensions

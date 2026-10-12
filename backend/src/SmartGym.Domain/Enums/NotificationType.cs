@@ -15,5 +15,8 @@ public enum NotificationType
     ReservationWaitlisted = 11,
     ReservationPromotedFromWaitlist = 12,
     WaitlistSpotOffered = 13,
-    WaitlistOfferExpired = 14
+    WaitlistOfferExpired = 14,
+    // Mismos valores que reserva notifications-module (15-20 quedan para sus tipos).
+    PaymentFailed = 21,
+    PaymentRefunded = 22
 }

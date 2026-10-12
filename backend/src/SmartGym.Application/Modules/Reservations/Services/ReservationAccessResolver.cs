@@ -471,7 +471,8 @@ public class ReservationAccessResolver : IReservationAccessResolver
             return null;
         }
 
-        var completed = payments.FirstOrDefault(p => p.Status == PaymentStatus.Completed);
+        // Un pago devuelto por completo ya no respalda el pase
+        var completed = payments.FirstOrDefault(p => p.Status.HasNetAmount());
         if (completed == null)
         {
             throw ConflictException.WithCode(

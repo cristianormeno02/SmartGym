@@ -33,6 +33,7 @@ public interface ISmartGymDbContext
     DbSet<Promotion> Promotions { get; }
     DbSet<PromotionRedemption> PromotionRedemptions { get; }
     DbSet<SmartGym.Domain.Entities.Operations.Payment> Payments { get; }
+    DbSet<SmartGym.Domain.Entities.Operations.PaymentRefund> PaymentRefunds { get; }
     DbSet<SmartGym.Domain.Entities.Operations.NotificationMessage> NotificationMessages { get; }
     DbSet<SmartGym.Domain.Entities.Operations.AuditLog> AuditLogs { get; }
 
@@ -69,6 +70,13 @@ public interface ISmartGymDbContext
     /// (clases, membresías, promoción): no debe tomarse ningún otro después.
     /// </summary>
     Task LockPromotionForUpdateAsync(Guid promotionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Bloquea la fila del pago hasta el fin de la transacción actual para serializar su confirmación, rechazo,
+    /// cancelación, aplicación y devoluciones. Se toma después de la persona, la clase y la membresía, y el estado
+    /// del pago debe leerse después de bloquearlo. Las operaciones de pagos no toman el bloqueo de promoción.
+    /// </summary>
+    Task LockPaymentForUpdateAsync(Guid paymentId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Difiere las exclusiones de solapamiento de sala e instructor hasta el fin de la transacción actual.

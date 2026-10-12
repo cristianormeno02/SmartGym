@@ -1283,15 +1283,32 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
+                    b.Property<DateTime?>("CancelledAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid?>("ClassSessionId")
                         .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ConfirmedAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("ARS");
+
                     b.Property<string>("ExternalTransactionId")
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
@@ -1312,9 +1329,20 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("PayerPersonId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("Provider")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1);
+
                     b.Property<string>("ReceiptUrl")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
+
+                    b.Property<decimal>("RefundedAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasDefaultValue(0m);
 
                     b.Property<Guid?>("RegisteredByUserId")
                         .HasColumnType("uuid");
@@ -1325,9 +1353,17 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ClassSessionId");
+
+                    b.HasIndex("ConfirmedAtUtc");
 
                     b.HasIndex("MembershipId");
 
@@ -1337,7 +1373,75 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("Status");
 
-                    b.ToTable("Payments", (string)null);
+                    b.HasIndex("PayerPersonId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Payments_Payer_IdempotencyKey")
+                        .HasFilter("\"IdempotencyKey\" IS NOT NULL");
+
+                    b.ToTable("Payments", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Payments_Amounts", "\"Amount\" > 0 AND \"RefundedAmount\" >= 0 AND \"RefundedAmount\" <= \"Amount\"");
+
+                            t.HasCheckConstraint("CK_Payments_SingleTarget", "\"MembershipId\" IS NULL OR \"ClassSessionId\" IS NULL");
+                        });
+                });
+
+            modelBuilder.Entity("SmartGym.Domain.Entities.Operations.PaymentRefund", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid>("PaymentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid?>("RequestedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAtUtc");
+
+                    b.HasIndex("PaymentId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PaymentRefunds_Payment_IdempotencyKey")
+                        .HasFilter("\"IdempotencyKey\" IS NOT NULL");
+
+                    b.ToTable("PaymentRefunds", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PaymentRefunds_Amount", "\"Amount\" > 0");
+                        });
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Promotions.FamilyGroup", b =>
@@ -2342,12 +2446,12 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.HasOne("SmartGym.Domain.Entities.Activities.ClassSession", "ClassSession")
                         .WithMany()
                         .HasForeignKey("ClassSessionId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("SmartGym.Domain.Entities.Memberships.Membership", "Membership")
                         .WithMany()
                         .HasForeignKey("MembershipId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("SmartGym.Domain.Entities.Identity.Person", "PayerPerson")
                         .WithMany()
@@ -2360,6 +2464,17 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.Navigation("Membership");
 
                     b.Navigation("PayerPerson");
+                });
+
+            modelBuilder.Entity("SmartGym.Domain.Entities.Operations.PaymentRefund", b =>
+                {
+                    b.HasOne("SmartGym.Domain.Entities.Operations.Payment", "Payment")
+                        .WithMany("Refunds")
+                        .HasForeignKey("PaymentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Payment");
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Promotions.FamilyGroup", b =>
@@ -2578,6 +2693,11 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("SmartGym.Domain.Entities.Memberships.MembershipPlan", b =>
                 {
                     b.Navigation("AllowedActivities");
+                });
+
+            modelBuilder.Entity("SmartGym.Domain.Entities.Operations.Payment", b =>
+                {
+                    b.Navigation("Refunds");
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Promotions.FamilyGroup", b =>
