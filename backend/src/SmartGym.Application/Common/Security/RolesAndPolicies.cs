@@ -41,6 +41,7 @@ public static class Permissions
     public const string PaymentsCancel = "PAYMENTS_CANCEL";
     public const string PaymentsAllocate = "PAYMENTS_ALLOCATE";
     public const string PaymentsRefund = "PAYMENTS_REFUND";
+    public const string PaymentsReconcile = "PAYMENTS_RECONCILE";
 
     public const string NotificationsReadOwn = "NOTIFICATIONS_READ_OWN";
     public const string NotificationsMarkReadOwn = "NOTIFICATIONS_MARK_READ_OWN";
@@ -89,6 +90,7 @@ public static class Policies
     public const string PaymentsCancel = Permissions.PaymentsCancel;
     public const string PaymentsAllocate = Permissions.PaymentsAllocate;
     public const string PaymentsRefund = Permissions.PaymentsRefund;
+    public const string PaymentsReconcile = Permissions.PaymentsReconcile;
 
     public const string NotificationsReadOwn = Permissions.NotificationsReadOwn;
     public const string NotificationsMarkReadOwn = Permissions.NotificationsMarkReadOwn;

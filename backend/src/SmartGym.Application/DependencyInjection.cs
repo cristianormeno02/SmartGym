@@ -42,6 +42,8 @@ public static class DependencyInjection
         services.AddScoped<IFamilyGroupService, FamilyGroupService>();
         services.AddScoped<IPromotionService, PromotionService>();
 
+        // Los proveedores de pago (IPaymentProvider) los registra Infrastructure sólo si tienen credenciales
+        services.AddScoped<SmartGym.Application.Modules.Operations.Interfaces.IPaymentProviderResolver, PaymentProviderResolver>();
         services.AddScoped<IPaymentService, PaymentService>();
         services.AddScoped<IMedicalCertificateService, MedicalCertificateService>();
         services.AddScoped<INotificationRecipientResolver, NotificationRecipientResolver>();

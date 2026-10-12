@@ -80,6 +80,10 @@ VALUES
         {
             var migrator = dbContext.GetService<IMigrator>();
             await migrator.MigrateAsync(TargetMigration);
+
+            // Las verificaciones usan el modelo actual de EF, que ya incluye columnas de migraciones posteriores:
+            // se aplican también, sin que alteren los datos que migró HardenPaymentsModule.
+            await migrator.MigrateAsync();
         }
 
         // 4. Verify each data migration step

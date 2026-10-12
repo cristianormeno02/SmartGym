@@ -30,9 +30,14 @@ En `SmartGym.Application/Modules/Operations/Interfaces/`:
 - `Task<ExternalRefundResult> RequestRefundAsync(string externalTransactionId, decimal amount, string idempotencyKey, CancellationToken ct)`
 - `ExternalWebhookEvent? VerifyAndParseWebhook(WebhookRequest request)` — `WebhookRequest` lleva cuerpo crudo, cabeceras y query string; devuelve `null` si la firma no es válida, o `ExternalEventId`, `ExternalTransactionId` y tipo de evento.
 
-`IPaymentProviderResolver` resuelve por `PaymentProvider` y lanza `PROVIDER_NOT_SUPPORTED` si no hay implementación configurada. `MercadoPagoPaymentProvider` vive en `SmartGym.Infrastructure` y lee `MercadoPagoOptions` (`AccessToken`, `WebhookSecret`, `NotificationUrl`, `BackUrls`, `CheckoutExpirationMinutes` por defecto 60, `WebhookToleranceSeconds`) desde user-secrets o variables de entorno. Si las credenciales no están configuradas, el proveedor no se registra.
+`IPaymentProviderResolver` resuelve por `PaymentProvider` y lanza `PROVIDER_NOT_SUPPORTED` si no hay implementación configurada. Su implementación (`PaymentProviderResolver`) vive en `Application`: sólo elige entre los `IPaymentProvider` registrados. `MercadoPagoPaymentProvider` vive en `SmartGym.Infrastructure` y lee `MercadoPagoOptions` (`AccessToken`, `WebhookSecret`, `BaseUrl`, `NotificationUrl`, `SuccessUrl` / `FailureUrl` / `PendingUrl`, `WebhookToleranceSeconds`, `TimeoutSeconds`) desde user-secrets o variables de entorno. Si falta `AccessToken` o `WebhookSecret`, el proveedor no se registra. El vencimiento del checkout (`CheckoutExpirationMinutes`, por defecto 60) y el intervalo del worker están en `PaymentsOptions` (`Application`), porque los usa el servicio y no el adaptador. Las claves quedan documentadas en `appsettings.json` con las credenciales vacías.
 
-*La verificación recibe la solicitud completa y no sólo el cuerpo* porque la firma de Mercado Pago se calcula sobre datos de la query string y de las cabeceras además de una marca de tiempo. El formato exacto del manifiesto se confirma contra la documentación vigente al implementar (tarea 3.1).
+*La verificación recibe la solicitud completa y no sólo el cuerpo* porque la firma de Mercado Pago no cubre el cuerpo. Confirmado contra su documentación: la cabecera `x-signature` trae `ts=<marca>,v1=<hash>`, y el hash es el HMAC-SHA256 en hexadecimal, con la clave secreta de Webhooks, del manifiesto `id:<data.id>;request-id:<x-request-id>;ts:<ts>;`, donde `data.id` viene en la query string y va en minúsculas si es alfanumérico. De ahí salen tres decisiones del adaptador:
+- No usa ningún dato del cuerpo. El identificador del evento es `x-request-id`, que sí está firmado, y no el `id` del cuerpo.
+- Rechaza la notificación si falta cualquiera de los tres valores, aunque la documentación indique omitir del manifiesto los ausentes: sin `data.id` no hay transacción que consultar.
+- Acepta la marca de tiempo en segundos o en milisegundos (la documentación muestra ambas) y exige que esté dentro de la tolerancia.
+
+Quedan por verificar en el sandbox, porque la documentación consultada no los detalla: los campos `transaction_amount_refunded` y `external_reference` de `GET /v1/payments/{id}`, y la búsqueda `GET /v1/payments/search?external_reference=`. La creación de preferencias (`POST /checkout/preferences` con `external_reference`, `expires`, `expiration_date_to`, `notification_url`; respuesta `id` e `init_point`) y el reintegro (`POST /v1/payments/{id}/refunds` con `amount` y cabecera `X-Idempotency-Key`) sí coinciden con la referencia.
 
 ### Decision 2 – Modelo de datos
 
@@ -46,7 +51,8 @@ En `SmartGym.Application/Modules/Operations/Interfaces/`:
 - `UX_Payments_Provider_ExternalTx`: único sobre `("Provider", "ExternalTransactionId")` donde `"Provider" <> 1 AND "ExternalTransactionId" IS NOT NULL`. Excluye los pagos manuales, cuyo valor es texto libre.
 - `UX_Payments_OpenCheckout`: único sobre `("MembershipId")` donde `"Provider" <> 1 AND "Status" = 1`. Respalda `CHECKOUT_ALREADY_OPEN`; el vencimiento lo hace efectivo el worker, y el servicio cancela en el momento un checkout ya vencido antes de crear otro.
 - `UX_PaymentWebhookEvents_Provider_ExternalEventId`: único sobre `("Provider", "ExternalEventId")`.
-- `UX_PaymentDiscrepancies_Open`: único sobre `("PaymentId", "Type")` donde `"Status" = 1 AND "PaymentId" IS NOT NULL`; y sobre `("Provider", "ExternalTransactionId", "Type")` donde `"Status" = 1 AND "PaymentId" IS NULL` para `UnknownPayment`.
+- `UX_PaymentDiscrepancies_Open_Payment`: único sobre `("PaymentId", "Type")` donde `"Status" = 1 AND "PaymentId" IS NOT NULL`.
+- `UX_PaymentDiscrepancies_Open_Unknown`: único sobre `("Provider", "ExternalTransactionId", "Type")` donde `"Status" = 1 AND "PaymentId" IS NULL`, para `UnknownPayment`.
 
 ### Decision 3 – Checkout en tres pasos
 
@@ -65,8 +71,8 @@ El importe se toma siempre del saldo pendiente calculado en el servidor; la soli
 1. El controlador lee el cuerpo crudo y arma `WebhookRequest`. Proveedor desconocido → `404`.
 2. `VerifyAndParseWebhook`. Firma inválida o fuera de tolerancia → `401` (`WEBHOOK_SIGNATURE_INVALID`) y un `LogWarning`. **No se escribe nada en la base**: guardar intentos no verificados permitiría a un tercero ocupar un `ExternalEventId` legítimo o llenar las tablas desde un endpoint anónimo. El endpoint lleva además límite de tasa.
 3. Si el evento ya figura como `Processed` o `Ignored` → `200`.
-4. **Sin transacción:** `GetPaymentAsync(externalTransactionId)`. Un fallo transitorio responde `503` para que el proveedor reintente.
-5. **Transacción:** localiza el pago por la referencia externa del snapshot; bloquea membresía y pago; inserta el evento con `ON CONFLICT DO NOTHING` — si no insertó fila, otra copia lo está procesando o ya lo procesó → `200`; aplica la tabla de reglas; marca el evento `Processed` o `Ignored`; confirma.
+4. **Sin transacción:** `GetPaymentAsync(externalTransactionId)`. Un fallo transitorio responde `502` (`PROVIDER_UNAVAILABLE`), sin registrar el evento, para que el proveedor reintente. Si el proveedor no conoce la transacción, el evento se registra como `Ignored`.
+5. **Transacción:** localiza el pago por la referencia externa del snapshot (o por su `ExternalTransactionId`); bloquea membresía y pago; vuelve a comprobar si el evento ya existe — si existe, otra copia lo procesó mientras se esperaba el bloqueo → `200`; registra el evento; aplica la tabla de reglas; confirma. El bloqueo del pago serializa las copias simultáneas, así que la comprobación basta sin SQL específico. Cuando no hay pago que bloquear (`UnknownPayment`), dos copias simultáneas chocan contra los índices únicos y la que pierde responde `200`.
 
 **Tabla de reglas** (compartida con la conciliación en un único método `ApplyProviderSnapshot`):
 
@@ -103,7 +109,7 @@ Una devolución que quede `Pending` por una interrupción entre 2 y 3 la resuelv
 
 `POST /api/payments/{id}/reconcile`: obtiene el snapshot fuera de transacción (`GetPaymentAsync` si hay `ExternalTransactionId`, si no `FindPaymentByReferenceAsync`), luego bloquea y aplica `ApplyProviderSnapshot` y la resolución de devoluciones `Pending`. Sobre un pago `Manual` → `409` (`PAYMENT_NOT_EXTERNAL`).
 
-Las discrepancias se insertan con `ON CONFLICT DO NOTHING` contra `UX_PaymentDiscrepancies_Open`, lo que hace idempotentes webhook y conciliación. Resolver una discrepancia sólo registra la decisión (notas, usuario, fecha): la acción correctiva la ejecuta el administrador con las operaciones normales (una devolución desde el sistema para `Overpayment` y `DuplicateCharge`) o en el panel del proveedor cuando el pago interno no admite devolución (`ApprovedAfterTerminalState`, `UnknownPayment`).
+Antes de insertar una discrepancia se comprueba, con el pago bloqueado, que no haya otra abierta del mismo tipo; los índices `UX_PaymentDiscrepancies_Open_*` son la última barrera. Eso hace idempotentes webhook y conciliación. Resolver una discrepancia sólo registra la decisión (notas, usuario, fecha): la acción correctiva la ejecuta el administrador con las operaciones normales (una devolución desde el sistema para `Overpayment` y `DuplicateCharge`) o en el panel del proveedor cuando el pago interno no admite devolución (`ApprovedAfterTerminalState`, `UnknownPayment`).
 
 ### Decision 8 – API, permisos y errores
 
@@ -116,7 +122,7 @@ Las discrepancias se insertan con `ON CONFLICT DO NOTHING` contra `UX_PaymentDis
 | `GET /api/payments/discrepancies` | `PAYMENTS_RECONCILE` | Paginado, filtro por estado |
 | `POST /api/payments/discrepancies/{id}/resolve` | `PAYMENTS_RECONCILE` | Notas obligatorias |
 
-`PAYMENTS_RECONCILE` sólo para `Administrator`. `PaymentDto` agrega `checkoutUrl` y `expiresAtUtc`. `GET /api/payments` agrega el filtro `provider`.
+`PAYMENTS_RECONCILE` sólo para `Administrator`. `POST /{id}/cancel` deja de llevar la política `PAYMENTS_CANCEL` como atributo: la acción admite al personal (administrador o secretario, los mismos roles de esa política) o al alumno titular cuando el pago es un checkout externo `Pending`, y eso no se expresa con una política por rol. El webhook lleva la política de límite de tasa `payment-webhooks` (120 solicitudes por minuto por IP). `PaymentDto` agrega `checkoutUrl` y `expiresAtUtc`. `GET /api/payments` agrega el filtro `provider`.
 
 Códigos nuevos en `PaymentErrorCodes`: `EXTERNAL_PAYMENT_MANUAL_CONFIRM_FORBIDDEN`, `PROVIDER_NOT_SUPPORTED`, `CHECKOUT_ALREADY_OPEN`, `PAYMENT_NOT_EXTERNAL`, `DISCREPANCY_NOT_FOUND` (404), `DISCREPANCY_ALREADY_RESOLVED` (409), `WEBHOOK_SIGNATURE_INVALID` (401), `PROVIDER_UNAVAILABLE` y `PROVIDER_REFUND_FAILED` (502).
 

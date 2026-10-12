@@ -36,6 +36,7 @@ public class DashboardRevenueTests
         Currency = payment.Currency,
         Reason = "Ajuste",
         CreatedAtUtc = createdAtUtc,
+        CompletedAtUtc = createdAtUtc,
         IsActive = true
     };
 

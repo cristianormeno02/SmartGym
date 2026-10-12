@@ -31,7 +31,18 @@ public class PaymentRefundConfiguration : IEntityTypeConfiguration<PaymentRefund
         builder.Property(r => r.IdempotencyKey)
             .HasMaxLength(100);
 
+        builder.Property(r => r.Status)
+            .IsRequired()
+            .HasDefaultValue(SmartGym.Domain.Enums.PaymentRefundStatus.Completed);
+
+        builder.Property(r => r.ExternalRefundId)
+            .HasMaxLength(150);
+
+        builder.Property(r => r.FailureReason)
+            .HasMaxLength(500);
+
         builder.HasIndex(r => r.CreatedAtUtc);
+        builder.HasIndex(r => r.CompletedAtUtc);
 
         builder.HasIndex(r => new { r.PaymentId, r.IdempotencyKey })
             .IsUnique()

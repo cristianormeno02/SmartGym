@@ -40,9 +40,29 @@ builder.Services.AddOptions<SmartGym.Application.Common.ReservationsOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+builder.Services.AddOptions<SmartGym.Application.Common.PaymentsOptions>()
+    .Bind(builder.Configuration.GetSection(SmartGym.Application.Common.PaymentsOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddControllers();
+
+// El webhook de pagos es anónimo: se limita por origen para acotar el costo de verificar firmas
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(SmartGym.WebApi.Controllers.PaymentsController.WebhookRateLimitPolicy, httpContext =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 120,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+});
 
 var app = builder.Build();
 
@@ -68,6 +88,7 @@ if (publicStorageOptions.UseLocalStorage)
 }
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.MapControllers();
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "Healthy", timestamp = DateTime.UtcNow }))

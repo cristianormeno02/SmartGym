@@ -29,6 +29,21 @@ public class ConflictException : Exception
         new(message, details) { Code = code };
 }
 
+/// <summary>
+/// Un servicio externo del que depende la operación no respondió o la rechazó (HTTP 502). Lo que se haya
+/// guardado antes de llamarlo queda en un estado coherente y recuperable.
+/// </summary>
+public class ExternalServiceException : Exception
+{
+    public string Code { get; }
+
+    public ExternalServiceException(string code, string message, Exception? innerException = null)
+        : base(message, innerException)
+    {
+        Code = code;
+    }
+}
+
 public class ForbiddenException : Exception
 {
     public ForbiddenException(string message) : base(message) { }

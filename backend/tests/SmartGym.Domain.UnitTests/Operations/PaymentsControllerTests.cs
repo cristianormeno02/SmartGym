@@ -120,7 +120,8 @@ public class PaymentsControllerTests : IAsyncDisposable
     [InlineData(nameof(PaymentsController.RegisterPayment), Policies.PaymentsCreate)]
     [InlineData(nameof(PaymentsController.ConfirmPayment), Policies.PaymentsConfirm)]
     [InlineData(nameof(PaymentsController.FailPayment), Policies.PaymentsConfirm)]
-    [InlineData(nameof(PaymentsController.CancelPayment), Policies.PaymentsCancel)]
+    // La cancelación admite además al titular de un checkout en línea: se autoriza dentro de la acción
+    [InlineData(nameof(PaymentsController.CancelPayment), null)]
     [InlineData(nameof(PaymentsController.ApplyPayment), Policies.PaymentsAllocate)]
     [InlineData(nameof(PaymentsController.CreateRefund), Policies.PaymentsRefund)]
     [InlineData(nameof(PaymentsController.GetById), null)]
@@ -143,7 +144,10 @@ public class PaymentsControllerTests : IAsyncDisposable
             .Where(m => m.GetCustomAttributes<HttpMethodAttribute>().Any())
             .ToList();
 
-        Assert.All(actions, m => Assert.NotNull(m.GetCustomAttribute<AuthorizeAttribute>()));
+        // Sólo el webhook del proveedor es anónimo: lo autentica su firma
+        Assert.All(
+            actions.Where(m => m.Name != nameof(PaymentsController.ReceiveWebhook)),
+            m => Assert.NotNull(m.GetCustomAttribute<AuthorizeAttribute>()));
 
         var templates = actions.SelectMany(m => m.GetCustomAttributes<HttpMethodAttribute>()).Select(a => a.Template).ToList();
         Assert.Contains("person/{studentId:guid}", templates);

@@ -41,6 +41,11 @@ public class Payment : BaseEntity, IHasDomainEvents
     public Guid? RegisteredByUserId { get; set; }
     public string? IdempotencyKey { get; set; }
 
+    // Sólo en pagos de proveedor externo: identificador del checkout en el proveedor, URL de pago y vencimiento.
+    public string? ExternalReference { get; set; }
+    public string? CheckoutUrl { get; set; }
+    public DateTime? ExpiresAtUtc { get; set; }
+
     public uint Version { get; set; } // xmin
 
     public ICollection<PaymentRefund> Refunds { get; set; } = new List<PaymentRefund>();
@@ -51,6 +56,12 @@ public class Payment : BaseEntity, IHasDomainEvents
     public bool IsConfirmed => Status.IsConfirmed();
 
     public bool IsApplied => MembershipId.HasValue || ClassSessionId.HasValue;
+
+    /// <summary>Lo procesa un proveedor externo: sólo se confirma con información verificada de ese proveedor.</summary>
+    public bool IsExternal => Provider != PaymentProvider.Manual;
+
+    public bool IsCheckoutExpired(DateTime nowUtc) =>
+        IsExternal && Status == PaymentStatus.Pending && ExpiresAtUtc.HasValue && ExpiresAtUtc.Value <= nowUtc;
 
     public void Complete(string? externalTransactionId = null, DateTime? nowUtc = null)
     {
@@ -80,7 +91,8 @@ public class Payment : BaseEntity, IHasDomainEvents
         AddDomainEvent(new PaymentConfirmedNotificationEvent(Id, PayerPersonId, Amount, Currency));
     }
 
-    public void Fail(string? reason = null, DateTime? nowUtc = null)
+    /// <param name="notifyPayer">Falso cuando el pago no llegó a intentarse (no se pudo crear el checkout).</param>
+    public void Fail(string? reason = null, DateTime? nowUtc = null, bool notifyPayer = true)
     {
         if (Status != PaymentStatus.Pending)
         {
@@ -91,7 +103,10 @@ public class Payment : BaseEntity, IHasDomainEvents
         AppendNote("Rechazo", reason);
         UpdatedAtUtc = nowUtc ?? DateTime.UtcNow;
 
-        AddDomainEvent(new PaymentFailedNotificationEvent(Id, PayerPersonId, Amount, Currency, reason?.Trim() ?? string.Empty));
+        if (notifyPayer)
+        {
+            AddDomainEvent(new PaymentFailedNotificationEvent(Id, PayerPersonId, Amount, Currency, reason?.Trim() ?? string.Empty));
+        }
     }
 
     public void Cancel(string? reason = null, DateTime? nowUtc = null)
@@ -131,10 +146,29 @@ public class Payment : BaseEntity, IHasDomainEvents
         UpdatedAtUtc = nowUtc ?? DateTime.UtcNow;
     }
 
+    /// <summary>Devolución efectiva en el acto: la de un pago manual, que no depende de un proveedor.</summary>
     public PaymentRefund RegisterRefund(
         decimal amount,
         string reason,
         Guid? requestedByUserId,
+        string? idempotencyKey = null,
+        string? notes = null,
+        DateTime? nowUtc = null)
+    {
+        var refund = RequestRefund(amount, reason, requestedByUserId, 0m, idempotencyKey, notes, nowUtc);
+        CompleteRefund(refund, externalRefundId: null, nowUtc);
+        return refund;
+    }
+
+    /// <summary>
+    /// Registra una devolución pendiente de la respuesta del proveedor. No modifica el pago, pero su importe
+    /// queda reservado: <paramref name="pendingRefundsAmount"/> es la suma de las otras devoluciones pendientes.
+    /// </summary>
+    public PaymentRefund RequestRefund(
+        decimal amount,
+        string reason,
+        Guid? requestedByUserId,
+        decimal pendingRefundsAmount,
         string? idempotencyKey = null,
         string? notes = null,
         DateTime? nowUtc = null)
@@ -154,10 +188,11 @@ public class Payment : BaseEntity, IHasDomainEvents
             throw new ArgumentException("El motivo de la devolución es obligatorio.", nameof(reason));
         }
 
-        if (amount > NetAmount)
+        var available = NetAmount - pendingRefundsAmount;
+        if (amount > available)
         {
             throw new InvalidOperationException(
-                $"La devolución ({amount}) supera el importe disponible para devolver ({NetAmount}).");
+                $"La devolución ({amount}) supera el importe disponible para devolver ({available}).");
         }
 
         var now = nowUtc ?? DateTime.UtcNow;
@@ -170,6 +205,7 @@ public class Payment : BaseEntity, IHasDomainEvents
             Currency = Currency,
             Reason = reason.Trim(),
             Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim(),
+            Status = PaymentRefundStatus.Pending,
             RequestedByUserId = requestedByUserId,
             IdempotencyKey = idempotencyKey,
             CreatedAtUtc = now,
@@ -177,12 +213,38 @@ public class Payment : BaseEntity, IHasDomainEvents
         };
 
         Refunds.Add(refund);
-        RefundedAmount += amount;
+        return refund;
+    }
+
+    /// <summary>
+    /// Hace efectiva una devolución pendiente: recién aquí cambia el importe devuelto y el estado del pago.
+    /// </summary>
+    public void CompleteRefund(PaymentRefund refund, string? externalRefundId = null, DateTime? nowUtc = null)
+    {
+        if (refund.PaymentId != Id)
+        {
+            throw new InvalidOperationException("La devolución no pertenece a este pago.");
+        }
+
+        if (Status != PaymentStatus.Completed && Status != PaymentStatus.PartiallyRefunded)
+        {
+            throw new InvalidOperationException($"Sólo se puede devolver un pago confirmado (estado actual: {Status}).");
+        }
+
+        if (refund.Amount > NetAmount)
+        {
+            throw new InvalidOperationException(
+                $"La devolución ({refund.Amount}) supera el importe disponible para devolver ({NetAmount}).");
+        }
+
+        var now = nowUtc ?? DateTime.UtcNow;
+        refund.Complete(externalRefundId, now);
+
+        RefundedAmount += refund.Amount;
         Status = RefundedAmount == Amount ? PaymentStatus.Refunded : PaymentStatus.PartiallyRefunded;
         UpdatedAtUtc = now;
 
-        AddDomainEvent(new PaymentRefundedNotificationEvent(Id, refund.Id, PayerPersonId, amount, Currency));
-        return refund;
+        AddDomainEvent(new PaymentRefundedNotificationEvent(Id, refund.Id, PayerPersonId, refund.Amount, Currency));
     }
 
     private void EnsureCanBeApplied()

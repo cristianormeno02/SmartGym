@@ -20,7 +20,9 @@ public record PaymentDto(
     decimal RefundedAmount = 0m,
     decimal NetAmount = 0m,
     DateTime? ConfirmedAtUtc = null,
-    DateTime? CancelledAtUtc = null
+    DateTime? CancelledAtUtc = null,
+    string? CheckoutUrl = null,
+    DateTime? ExpiresAtUtc = null
 );
 
 public record RegisterPaymentRequest(
@@ -67,7 +69,11 @@ public record PaymentRefundDto(
     string Reason,
     string? Notes,
     Guid? RequestedByUserId,
-    DateTime CreatedAtUtc
+    DateTime CreatedAtUtc,
+    PaymentRefundStatus Status = PaymentRefundStatus.Completed,
+    string? ExternalRefundId = null,
+    DateTime? CompletedAtUtc = null,
+    string? FailureReason = null
 );
 
 public record PaymentListFilter(
@@ -79,8 +85,49 @@ public record PaymentListFilter(
     DateTime? FromUtc = null,
     DateTime? ToUtc = null,
     int Page = 1,
-    int PageSize = 20
+    int PageSize = 20,
+    PaymentProvider? Provider = null
 );
+
+/// <summary>El importe no se informa: es el saldo pendiente de la membresía, calculado en el servidor.</summary>
+public record CreatePaymentCheckoutRequest(
+    Guid MembershipId,
+    PaymentProvider Provider = PaymentProvider.MercadoPago
+);
+
+public record PaymentDiscrepancyDto(
+    Guid Id,
+    Guid? PaymentId,
+    PaymentProvider Provider,
+    PaymentDiscrepancyType Type,
+    PaymentDiscrepancyStatus Status,
+    decimal? InternalAmount,
+    string? InternalCurrency,
+    string? InternalStatus,
+    decimal? ExternalAmount,
+    string? ExternalCurrency,
+    string? ExternalStatus,
+    string? ExternalTransactionId,
+    DateTime DetectedAtUtc,
+    DateTime? ResolvedAtUtc,
+    Guid? ResolvedByUserId,
+    string? ResolutionNotes
+);
+
+public record ResolvePaymentDiscrepancyRequest(
+    string Notes
+);
+
+public enum WebhookProcessingResult
+{
+    /// <summary>La firma no es auténtica: no se procesó ni se registró nada.</summary>
+    InvalidSignature,
+    Processed,
+    /// <summary>El mismo evento ya se había recibido.</summary>
+    AlreadyProcessed,
+    /// <summary>El proveedor no conoce la transacción notificada.</summary>
+    Ignored
+}
 
 public record MembershipBalanceDto(
     Guid MembershipId,

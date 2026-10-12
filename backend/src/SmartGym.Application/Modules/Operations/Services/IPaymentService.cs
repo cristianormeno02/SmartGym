@@ -27,4 +27,26 @@ public interface IPaymentService
     Task<PaymentDto> ApplyPaymentAsync(Guid id, ApplyPaymentRequest request, Guid currentUserId, CancellationToken cancellationToken = default);
 
     Task<IdempotentResult<PaymentRefundDto>> CreateRefundAsync(Guid paymentId, CreatePaymentRefundRequest request, Guid currentUserId, string? idempotencyKey, CancellationToken cancellationToken = default);
+
+    // ---- Pasarela externa ----
+
+    /// <summary>
+    /// Crea un pago pendiente del proveedor por el saldo pendiente de la membresía y devuelve su URL de pago.
+    /// </summary>
+    Task<IdempotentResult<PaymentDto>> CreateCheckoutAsync(CreatePaymentCheckoutRequest request, Guid currentUserId, string? idempotencyKey, CancellationToken cancellationToken = default);
+
+    /// <summary>Cancela los checkouts externos pendientes ya vencidos. Devuelve cuántos canceló.</summary>
+    Task<int> ExpireCheckoutsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Procesa una notificación del proveedor: verifica su firma, consulta al proveedor el estado real de la
+    /// transacción y recién entonces actúa sobre el pago.
+    /// </summary>
+    Task<WebhookProcessingResult> ProcessWebhookAsync(SmartGym.Domain.Enums.PaymentProvider provider, SmartGym.Application.Modules.Operations.Interfaces.WebhookRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Contrasta un pago externo con el proveedor y resuelve sus devoluciones pendientes.</summary>
+    Task<PaymentDto> ReconcileAsync(Guid id, Guid currentUserId, CancellationToken cancellationToken = default);
+
+    Task<PagedResult<PaymentDiscrepancyDto>> GetDiscrepanciesAsync(SmartGym.Domain.Enums.PaymentDiscrepancyStatus? status, int page, int pageSize, CancellationToken cancellationToken = default);
+    Task<PaymentDiscrepancyDto> ResolveDiscrepancyAsync(Guid id, ResolvePaymentDiscrepancyRequest request, Guid currentUserId, CancellationToken cancellationToken = default);
 }
