@@ -37,4 +37,4 @@ Las rutas son relativas a `backend/src/` salvo indicación; `tests/...` abrevia 
 ## 7. Frontend y verificación final
 
 - [x] 7.1 Actualizar `frontend/src/app/core/models/gym.models.ts` y `frontend/src/app/core/services/gym-api.service.ts`: `MembershipPayment` / `PaymentDto` con `provider`, `currency`, `refundedAmount`, `netAmount` y los estados nuevos; métodos de listado paginado, saldo de membresía, aplicación, cancelación y devoluciones; verificar que `npm run build` en `frontend/` compile sin errores.
-- [ ] 7.2 Ejecutar `dotnet test backend/SmartGym.slnx` y `openspec validate payments-core --strict`, comprobando que todas las pruebas unitarias y de integración y la validación de especificaciones pasen sin errores.
+- [x] 7.2 Ejecutar `dotnet test backend/SmartGym.slnx` y `openspec validate payments-core --strict`, comprobando que todas las pruebas unitarias y de integración y la validación de especificaciones pasen sin errores.
