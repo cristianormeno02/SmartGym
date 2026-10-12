@@ -158,10 +158,15 @@ export class NotificationsService {
 
   // --- Administración de Entregas y Plantillas ---
 
-  getFailedDeliveries(pageNumber = 1, pageSize = 20): Observable<PagedResult<NotificationDeliveryItem>> {
+  getFailedDeliveries(
+    pageNumber = 1,
+    pageSize = 20,
+    includeProviderNotConfigured = false
+  ): Observable<PagedResult<NotificationDeliveryItem>> {
     const params = new HttpParams()
       .set('page', String(pageNumber))
-      .set('pageSize', String(pageSize));
+      .set('pageSize', String(pageSize))
+      .set('excludeProviderNotConfigured', String(!includeProviderNotConfigured));
     return this.http.get<PagedResult<NotificationDeliveryItem>>(`${this.apiUrl}/admin/notifications/deliveries/failed`, { params });
   }
 

@@ -23,7 +23,7 @@ public interface INotificationService
     Task<PagedResult<NotificationDto>> GetAdminPagedAsync(AdminNotificationQueryFilter filter, CancellationToken cancellationToken = default);
     Task<NotificationDto> GetAdminByIdAsync(Guid notificationId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<NotificationDeliveryDto>> GetDeliveriesByNotificationIdAsync(Guid notificationId, CancellationToken cancellationToken = default);
-    Task<PagedResult<NotificationDeliveryDto>> GetFailedDeliveriesPagedAsync(int page = 1, int pageSize = 20, NotificationChannel? channel = null, CancellationToken cancellationToken = default);
+    Task<PagedResult<NotificationDeliveryDto>> GetFailedDeliveriesPagedAsync(int page = 1, int pageSize = 20, NotificationChannel? channel = null, bool excludeProviderNotConfigured = false, CancellationToken cancellationToken = default);
     Task<NotificationDeliveryDto> RetryDeliveryAsync(Guid deliveryId, RetryNotificationDeliveryRequest request, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<NotificationTemplateDto>> GetTemplatesAsync(NotificationTemplateQueryFilter filter, CancellationToken cancellationToken = default);

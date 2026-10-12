@@ -378,6 +378,42 @@ public class NotificationDispatcherAndDeliveryTests
         Assert.Contains("Meditación", message.MetadataJson);
     }
 
+    [Fact]
+    public async Task GetFailedDeliveriesPagedAsync_CanExcludeProviderNotConfiguredFailures()
+    {
+        await using var db = CreateDbContext();
+        var student = Person.Create("Mora", "Vega", "mora@test.com", new DateTime(1992, 2, 2, 0, 0, 0, DateTimeKind.Utc));
+        db.People.Add(student);
+        await db.SaveChangesAsync();
+
+        var nowUtc = CreateCalendar().UtcNow;
+        var dispatcher = CreateDispatcher(db);
+        foreach (var key in new[] { "res-confirmed:a", "res-confirmed:b" })
+        {
+            await dispatcher.DispatchAsync(new DispatchNotificationCommand(
+                TargetPersonId: student.Id,
+                Type: NotificationType.ReservationConfirmed,
+                Variables: new Dictionary<string, string?> { ["activityName"] = "Yoga", ["sessionDate"] = "20/10 19:00" },
+                IdempotencyKey: key));
+        }
+
+        var emailDeliveries = await db.NotificationDeliveries
+            .Where(d => d.Channel == NotificationChannel.Email)
+            .ToListAsync();
+        emailDeliveries[0].RecordPermanentFailure("PROVIDER_NOT_CONFIGURED", "Sin proveedor.", nowUtc);
+        emailDeliveries[1].RecordPermanentFailure("INVALID_RECIPIENT_EMAIL", "Dirección inválida.", nowUtc);
+        await db.SaveChangesAsync();
+
+        var service = new NotificationService(db, CreateCalendar());
+
+        var all = await service.GetFailedDeliveriesPagedAsync();
+        Assert.Equal(2, all.TotalCount);
+
+        var actionable = await service.GetFailedDeliveriesPagedAsync(excludeProviderNotConfigured: true);
+        Assert.Equal(1, actionable.TotalCount);
+        Assert.Equal("INVALID_RECIPIENT_EMAIL", Assert.Single(actionable.Items).ErrorCode);
+    }
+
     private sealed class FakeEmailChannelProvider : IEmailNotificationProvider
     {
         private readonly Func<ChannelDeliveryRequest, ChannelDeliveryResult> _handler;
