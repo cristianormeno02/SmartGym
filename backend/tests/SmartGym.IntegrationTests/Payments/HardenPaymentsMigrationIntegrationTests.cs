@@ -11,7 +11,7 @@ namespace SmartGym.IntegrationTests.Payments;
 [Collection("PostgresIntegration")]
 public class HardenPaymentsMigrationIntegrationTests
 {
-    private const string PreviousMigration = "20261012032939_HardenPromotionsModule";
+    private const string PreviousMigration = "20261012130000_HardenNotificationsModule";
     private const string TargetMigration = "20261012131844_HardenPaymentsModule";
 
     private readonly PostgresDatabaseFixture _fixture;

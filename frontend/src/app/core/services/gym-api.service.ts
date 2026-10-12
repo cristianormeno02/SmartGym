@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 import {
   Activity,
   PublicActivity,
@@ -329,7 +329,17 @@ export class GymApiService {
   // --- Notificaciones ---
   getMyNotifications(onlyUnread = false): Observable<NotificationItem[]> {
     const params = new HttpParams().set('onlyUnread', onlyUnread);
-    return this.http.get<NotificationItem[]>(`${this.apiUrl}/notifications/my`, { params });
+    return this.http.get<NotificationItem[]>(`${this.apiUrl}/notifications/my`, { params }).pipe(
+      map((items) =>
+        (items ?? []).map((raw) => ({
+          ...raw,
+          body: raw.body ?? raw.message ?? '',
+          message: raw.body ?? raw.message ?? '',
+          sentAtUtc: raw.sentAtUtc ?? raw.createdAtUtc ?? '',
+          createdAtUtc: raw.sentAtUtc ?? raw.createdAtUtc ?? ''
+        }))
+      )
+    );
   }
 
   markNotificationAsRead(id: string): Observable<any> {

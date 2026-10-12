@@ -16,17 +16,25 @@ public class MembershipActivationService : IMembershipActivationService
     private readonly ICreditLedgerService _creditLedgerService;
     private readonly IGymCalendar _gymCalendar;
     private readonly IAuditService? _auditService;
+    private readonly INotificationDispatcher _notificationDispatcher;
 
     public MembershipActivationService(
         ISmartGymDbContext dbContext,
         ICreditLedgerService creditLedgerService,
         IGymCalendar? gymCalendar = null,
-        IAuditService? auditService = null)
+        IAuditService? auditService = null,
+        INotificationDispatcher? notificationDispatcher = null)
     {
         _dbContext = dbContext;
         _creditLedgerService = creditLedgerService;
         _gymCalendar = gymCalendar ?? new GymCalendar(Options.Create(new GymOptions()));
         _auditService = auditService;
+        _notificationDispatcher = notificationDispatcher ?? new NotificationDispatcher(
+            dbContext,
+            new NotificationRecipientResolver(dbContext, _gymCalendar),
+            new NotificationTemplateRenderer(dbContext),
+            new NotificationService(dbContext, _gymCalendar),
+            _gymCalendar);
     }
 
     public async Task<bool> TryActivateAsync(
@@ -102,19 +110,31 @@ public class MembershipActivationService : IMembershipActivationService
         membership.Activate(today, nowUtc, authorizedByUserId, resolvedReason);
         await _creditLedgerService.RecordInitialCreditsAsync(membership, authorizedByUserId, cancellationToken);
 
-        _dbContext.NotificationMessages.Add(new NotificationMessage
+        try
         {
-            Id = Guid.NewGuid(),
-            RecipientPersonId = membership.StudentId,
-            Type = NotificationType.MembershipActivated,
-            Channel = NotificationChannel.InApp,
-            Title = "Membresía activada",
-            Body = $"Tu membresía ha sido activada con vigencia del {membership.StartDate:yyyy-MM-dd} al {membership.EndDate:yyyy-MM-dd}.",
-            IsRead = false,
-            SentAtUtc = nowUtc,
-            CreatedAtUtc = nowUtc,
-            IsActive = true
-        });
+            await _notificationDispatcher.DispatchAsync(
+                new DispatchNotificationCommand(
+                    TargetPersonId: membership.StudentId,
+                    Type: NotificationType.MembershipActivated,
+                    Variables: new Dictionary<string, string?>
+                    {
+                        ["planName"] = "Membresía",
+                        ["startDate"] = $"{membership.StartDate:yyyy-MM-dd}",
+                        ["endDate"] = $"{membership.EndDate:yyyy-MM-dd}"
+                    },
+                    IdempotencyKey: $"membership-activated:{membership.Id}",
+                    RelatedEntityType: "Membership",
+                    RelatedEntityId: membership.Id,
+                    ActionUrl: "/portal/alumno",
+                    DirectTitleOverride: "Membresía activada",
+                    DirectBodyOverride: $"Tu membresía ha sido activada con vigencia del {membership.StartDate:yyyy-MM-dd} al {membership.EndDate:yyyy-MM-dd}.",
+                    SaveChanges: false),
+                cancellationToken);
+        }
+        catch (Exception)
+        {
+            // El fallo de notificación no revierte la activación de la membresía
+        }
 
         if (_auditService != null)
         {

@@ -181,7 +181,7 @@ public class Payment : BaseEntity, IHasDomainEvents
         Status = RefundedAmount == Amount ? PaymentStatus.Refunded : PaymentStatus.PartiallyRefunded;
         UpdatedAtUtc = now;
 
-        AddDomainEvent(new PaymentRefundedNotificationEvent(Id, PayerPersonId, amount, Currency));
+        AddDomainEvent(new PaymentRefundedNotificationEvent(Id, refund.Id, PayerPersonId, amount, Currency));
         return refund;
     }
 

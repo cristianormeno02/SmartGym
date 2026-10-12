@@ -10,6 +10,7 @@ using SmartGym.Domain.Entities.Memberships;
 using SmartGym.Domain.Entities.Operations;
 using SmartGym.Domain.Entities.Promotions;
 using SmartGym.Domain.Entities.Reservations;
+using SmartGym.Domain.Enums;
 using SmartGym.Infrastructure.Persistence.Interceptors;
 
 namespace SmartGym.Infrastructure.Persistence;
@@ -62,6 +63,9 @@ public class SmartGymDbContext : DbContext, ISmartGymDbContext
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<PaymentRefund> PaymentRefunds => Set<PaymentRefund>();
     public DbSet<NotificationMessage> NotificationMessages => Set<NotificationMessage>();
+    public DbSet<NotificationDelivery> NotificationDeliveries => Set<NotificationDelivery>();
+    public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
+    public DbSet<NotificationTemplate> NotificationTemplates => Set<NotificationTemplate>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     public virtual async Task LockClassSessionForUpdateAsync(Guid classSessionId, CancellationToken cancellationToken = default)
@@ -193,6 +197,66 @@ public class SmartGymDbContext : DbContext, ISmartGymDbContext
 
         // Fuerza la verificación ahora (y no en el COMMIT) para poder traducir las violaciones a 409.
         await Database.ExecuteSqlRawAsync("SET CONSTRAINTS ALL IMMEDIATE", cancellationToken);
+    }
+
+    public virtual async Task<List<NotificationDelivery>> ClaimPendingNotificationDeliveriesAsync(
+        int batchSize,
+        DateTime nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (Database.IsNpgsql())
+        {
+            await using var transaction = await Database.BeginTransactionAsync(cancellationToken);
+
+            var pendingStatus = (int)NotificationDeliveryStatus.Pending;
+            var claimed = await NotificationDeliveries
+                .FromSqlInterpolated($@"
+                    SELECT * FROM ""NotificationDeliveries""
+                    WHERE ""IsActive"" = TRUE
+                      AND ""Status"" = {pendingStatus}
+                      AND (""NextAttemptAtUtc"" IS NULL OR ""NextAttemptAtUtc"" <= {nowUtc})
+                    ORDER BY ""NextAttemptAtUtc"" ASC NULLS FIRST, ""CreatedAtUtc"" ASC
+                    LIMIT {batchSize}
+                    FOR UPDATE SKIP LOCKED")
+                .ToListAsync(cancellationToken);
+
+            if (claimed.Count == 0)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return claimed;
+            }
+
+            foreach (var delivery in claimed)
+            {
+                delivery.MarkProcessing(nowUtc);
+            }
+
+            await SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return claimed;
+        }
+
+        var inMemoryDeliveries = await NotificationDeliveries
+            .Where(d => d.IsActive &&
+                        d.Status == NotificationDeliveryStatus.Pending &&
+                        (d.NextAttemptAtUtc == null || d.NextAttemptAtUtc <= nowUtc))
+            .OrderBy(d => d.NextAttemptAtUtc)
+            .ThenBy(d => d.CreatedAtUtc)
+            .Take(batchSize)
+            .ToListAsync(cancellationToken);
+
+        if (inMemoryDeliveries.Count == 0)
+        {
+            return inMemoryDeliveries;
+        }
+
+        foreach (var delivery in inMemoryDeliveries)
+        {
+            delivery.MarkProcessing(nowUtc);
+        }
+
+        await SaveChangesAsync(cancellationToken);
+        return inMemoryDeliveries;
     }
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

@@ -194,6 +194,7 @@ public class OperationsTests
 
         var evt = Assert.Single(payment.DomainEvents.OfType<PaymentRefundedNotificationEvent>());
         Assert.Equal(10000m, evt.RefundAmount);
+        Assert.Equal(refund.Id, evt.RefundId);
     }
 
     [Fact]

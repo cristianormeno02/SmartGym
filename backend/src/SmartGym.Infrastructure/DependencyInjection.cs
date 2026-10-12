@@ -176,12 +176,42 @@ public static class DependencyInjection
             // Las devoluciones quedan reservadas al administrador
             options.AddPolicy(Policies.PaymentsRefund, policy =>
                 policy.RequireRole(Roles.Administrator));
+
+            options.AddPolicy(Policies.NotificationsReadOwn, policy =>
+                policy.RequireAuthenticatedUser());
+            options.AddPolicy(Policies.NotificationsMarkReadOwn, policy =>
+                policy.RequireAuthenticatedUser());
+            options.AddPolicy(Policies.NotificationsPreferencesManage, policy =>
+                policy.RequireAuthenticatedUser());
+            options.AddPolicy(Policies.NotificationsReadAll, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.NotificationsManage, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.NotificationsDeliveryRead, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.NotificationsRetryFailed, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.NotificationsTemplatesRead, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.NotificationsTemplatesManage, policy =>
+                policy.RequireRole(Roles.Administrator));
         });
+
+        // Notifications Options & Providers
+        services.Configure<SmartGym.Application.Common.NotificationsOptions>(
+            configuration.GetSection(SmartGym.Application.Common.NotificationsOptions.SectionName));
+        services.Configure<SmartGym.Application.Common.EmailNotificationOptions>(
+            configuration.GetSection(SmartGym.Application.Common.EmailNotificationOptions.SectionName));
+        services.AddScoped<SmartGym.Application.Modules.Operations.Services.IEmailNotificationProvider, SmartGym.Infrastructure.Services.Notifications.ConfigurableEmailNotificationProvider>();
+        services.AddScoped<SmartGym.Application.Modules.Operations.Services.INotificationChannelProvider>(sp =>
+            sp.GetRequiredService<SmartGym.Application.Modules.Operations.Services.IEmailNotificationProvider>());
 
         // Background Workers
         services.AddHostedService<SmartGym.Infrastructure.Services.BackgroundJobs.ClassSessionGenerationWorker>();
         services.AddHostedService<SmartGym.Infrastructure.Services.BackgroundJobs.MembershipExpirationWorker>();
         services.AddHostedService<SmartGym.Infrastructure.Services.BackgroundJobs.ReservationWaitlistWorker>();
+        services.AddHostedService<SmartGym.Infrastructure.Services.Notifications.NotificationDeliveryWorker>();
+        services.AddHostedService<SmartGym.Infrastructure.Services.Notifications.ClassReminderWorker>();
 
         return services;
     }

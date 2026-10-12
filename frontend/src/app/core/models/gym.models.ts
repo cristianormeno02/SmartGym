@@ -550,13 +550,163 @@ export interface MedicalCertificateStatus {
   daysUntilExpiration?: number;
 }
 
+export enum NotificationCategory {
+  Reservations = 1,
+  Classes = 2,
+  Memberships = 3,
+  Payments = 4,
+  Promotions = 5,
+  Operational = 6,
+  Security = 7
+}
+
+export enum NotificationChannel {
+  Email = 1,
+  InApp = 2,
+  WhatsApp = 3,
+  Push = 4
+}
+
+export enum NotificationType {
+  ClassSuspended = 1,
+  ClassReminder = 2,
+  MembershipExpiring = 3,
+  PromotionalAlert = 4,
+  PaymentConfirmed = 5,
+  MembershipActivated = 6,
+  MembershipSuspended = 7,
+  MembershipExpired = 8,
+  ReservationConfirmed = 9,
+  ReservationCancelled = 10,
+  ReservationWaitlisted = 11,
+  WaitlistPromoted = 12,
+  WaitlistOfferAvailable = 13,
+  WaitlistOfferExpired = 14,
+  ClassCancelled = 15,
+  ClassRescheduled = 16,
+  ClassRoomChanged = 17,
+  ClassInstructorChanged = 18,
+  MembershipReactivated = 19,
+  CreditsAdjusted = 20,
+  PaymentRejected = 21,
+  RefundConfirmed = 22,
+  OperationalNotice = 23,
+  SecurityAlert = 24
+}
+
+export enum NotificationDeliveryStatus {
+  Pending = 1,
+  Processing = 2,
+  Sent = 3,
+  Delivered = 4,
+  Failed = 5,
+  Cancelled = 6,
+  Skipped = 7
+}
+
+export enum NotificationTemplateStatus {
+  Draft = 1,
+  Active = 2,
+  Inactive = 3
+}
+
 export interface NotificationItem {
   id: string;
+  recipientPersonId?: string;
+  recipientName?: string;
+  type?: NotificationType;
+  category?: NotificationCategory;
+  channel?: NotificationChannel;
   title: string;
+  body?: string;
   message: string;
   isRead: boolean;
+  sentAtUtc?: string;
   createdAtUtc: string;
   readAtUtc?: string;
+  relatedEntityType?: string;
+  relatedEntityId?: string;
+  actionUrl?: string;
+  expiresAtUtc?: string;
+}
+
+export interface UnreadCountResponse {
+  unreadCount: number;
+}
+
+export interface MarkAllNotificationsReadResponse {
+  markedCount: number;
+}
+
+export interface NotificationPreferenceItem {
+  category: NotificationCategory;
+  channel: NotificationChannel;
+  isEnabled: boolean;
+  isLocked: boolean;
+  isTransactional: boolean;
+}
+
+export interface NotificationPreferenceUpdateItem {
+  category: NotificationCategory;
+  channel: NotificationChannel;
+  isEnabled: boolean;
+}
+
+export interface UpdateNotificationPreferencesRequest {
+  preferences: NotificationPreferenceUpdateItem[];
+}
+
+export interface NotificationDeliveryItem {
+  id: string;
+  notificationMessageId: string;
+  channel: NotificationChannel;
+  status: NotificationDeliveryStatus;
+  destination?: string;
+  providerName?: string;
+  providerMessageId?: string;
+  attemptCount: number;
+  maxAttempts: number;
+  lastAttemptAtUtc?: string;
+  nextAttemptAtUtc?: string;
+  deliveredAtUtc?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  isPermanentFailure: boolean;
+  retriedByUserId?: string;
+  createdAtUtc: string;
+}
+
+export interface NotificationTemplateItem {
+  id: string;
+  code: string;
+  type: NotificationType;
+  channel: NotificationChannel;
+  locale: string;
+  subjectTemplate?: string;
+  bodyTemplate: string;
+  allowedVariables: string[];
+  version: number;
+  status: NotificationTemplateStatus;
+  createdAtUtc: string;
+  updatedAtUtc?: string;
+}
+
+export interface CreateNotificationTemplateRequest {
+  code: string;
+  type: NotificationType;
+  channel: NotificationChannel;
+  locale?: string;
+  subjectTemplate?: string;
+  bodyTemplate: string;
+  allowedVariables: string[];
+  activateImmediately?: boolean;
+}
+
+export interface UpdateNotificationTemplateRequest {
+  subjectTemplate?: string;
+  bodyTemplate: string;
+  allowedVariables: string[];
+  expectedVersion?: number;
 }
 
 export interface CreditMovement {

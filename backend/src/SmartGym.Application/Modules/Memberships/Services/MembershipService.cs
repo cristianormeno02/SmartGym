@@ -31,6 +31,7 @@ public class MembershipService : IMembershipService
     private readonly GymOptions _gymOptions;
     private readonly MembershipsOptions _membershipsOptions;
     private readonly IAuditService? _auditService;
+    private readonly INotificationDispatcher _notificationDispatcher;
     private readonly ILogger<MembershipService> _logger;
 
     public MembershipService(
@@ -44,7 +45,8 @@ public class MembershipService : IMembershipService
         IOptions<GymOptions>? gymOptions = null,
         IOptions<MembershipsOptions>? membershipsOptions = null,
         IAuditService? auditService = null,
-        ILogger<MembershipService>? logger = null)
+        ILogger<MembershipService>? logger = null,
+        INotificationDispatcher? notificationDispatcher = null)
     {
         _dbContext = dbContext;
         _logger = logger ?? NullLogger<MembershipService>.Instance;
@@ -52,8 +54,14 @@ public class MembershipService : IMembershipService
         _membershipsOptions = membershipsOptions?.Value ?? new MembershipsOptions();
         _gymCalendar = gymCalendar ?? new GymCalendar(Options.Create(_gymOptions));
         _auditService = auditService;
+        _notificationDispatcher = notificationDispatcher ?? new NotificationDispatcher(
+            dbContext,
+            new NotificationRecipientResolver(dbContext, _gymCalendar),
+            new NotificationTemplateRenderer(dbContext),
+            new NotificationService(dbContext, _gymCalendar),
+            _gymCalendar);
         _creditLedgerService = creditLedgerService ?? new CreditLedgerService(dbContext, _gymCalendar);
-        _activationService = activationService ?? new MembershipActivationService(dbContext, _creditLedgerService, _gymCalendar, _auditService);
+        _activationService = activationService ?? new MembershipActivationService(dbContext, _creditLedgerService, _gymCalendar, _auditService, _notificationDispatcher);
         _eligibilityService = eligibilityService ?? new MembershipEligibilityService(dbContext, _gymCalendar, Options.Create(_gymOptions));
         _paymentService = paymentService ?? new PaymentService(dbContext);
         _promotionService = promotionService ?? new PromotionService(dbContext, _gymCalendar);
@@ -592,21 +600,42 @@ public class MembershipService : IMembershipService
 
         // Las reservas alcanzadas por la ventana las cancela CancelReservationsOnMembershipSuspendedHandler
         // al despacharse MembershipSuspendedEvent dentro de SaveChanges (misma transacción).
-        _dbContext.NotificationMessages.Add(new NotificationMessage
+        var suspensionBody = suspension.EndDate.HasValue
+            ? $"Tu membresía fue suspendida desde el {suspension.StartDate:yyyy-MM-dd} hasta el {suspension.EndDate.Value:yyyy-MM-dd}. Motivo: {suspension.Reason}."
+            : $"Tu membresía fue suspendida a partir del {suspension.StartDate:yyyy-MM-dd}. Motivo: {suspension.Reason}.";
+
+        var suspensionVariables = new Dictionary<string, string?>
         {
-            Id = Guid.NewGuid(),
-            RecipientPersonId = membership.StudentId,
-            Type = NotificationType.MembershipSuspended,
-            Channel = NotificationChannel.InApp,
-            Title = "Membresía suspendida",
-            Body = suspension.EndDate.HasValue
-                ? $"Tu membresía fue suspendida desde el {suspension.StartDate:yyyy-MM-dd} hasta el {suspension.EndDate.Value:yyyy-MM-dd}. Motivo: {suspension.Reason}."
-                : $"Tu membresía fue suspendida a partir del {suspension.StartDate:yyyy-MM-dd}. Motivo: {suspension.Reason}.",
-            IsRead = false,
-            SentAtUtc = nowUtc,
-            CreatedAtUtc = nowUtc,
-            IsActive = true
-        });
+            ["planName"] = "Membresía",
+            ["startDate"] = $"{suspension.StartDate:yyyy-MM-dd}",
+            ["reason"] = suspension.Reason
+        };
+        if (suspension.EndDate.HasValue)
+        {
+            // Sin fecha de fin la plantilla no aplica y los canales externos usan el cuerpo directo.
+            suspensionVariables["endDate"] = $"{suspension.EndDate.Value:yyyy-MM-dd}";
+        }
+
+        try
+        {
+            await _notificationDispatcher.DispatchAsync(
+                new DispatchNotificationCommand(
+                    TargetPersonId: membership.StudentId,
+                    Type: NotificationType.MembershipSuspended,
+                    Variables: suspensionVariables,
+                    IdempotencyKey: $"membership-suspended:{suspension.Id}",
+                    RelatedEntityType: "Membership",
+                    RelatedEntityId: membership.Id,
+                    ActionUrl: "/portal/alumno",
+                    DirectTitleOverride: "Membresía suspendida",
+                    DirectBodyOverride: suspensionBody,
+                    SaveChanges: false),
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Fallo aislado al preparar notificación de suspensión para membresía {MembershipId}.", membership.Id);
+        }
 
         if (_auditService != null)
         {
@@ -673,6 +702,31 @@ public class MembershipService : IMembershipService
         catch (InvalidOperationException ex)
         {
             throw new ConflictException(ex.Message);
+        }
+
+        try
+        {
+            await _notificationDispatcher.DispatchAsync(
+                new DispatchNotificationCommand(
+                    TargetPersonId: membership.StudentId,
+                    Type: NotificationType.MembershipReactivated,
+                    Variables: new Dictionary<string, string?>
+                    {
+                        ["planName"] = "Membresía",
+                        ["endDate"] = $"{membership.EndDate:yyyy-MM-dd}"
+                    },
+                    IdempotencyKey: $"membership-reactivated:{membership.Id}:{nowUtc.Ticks}",
+                    RelatedEntityType: "Membership",
+                    RelatedEntityId: membership.Id,
+                    ActionUrl: "/portal/alumno",
+                    DirectTitleOverride: "Membresía reactivada",
+                    DirectBodyOverride: $"Tu membresía fue reactivada y tiene vigencia hasta el {membership.EndDate:yyyy-MM-dd}.",
+                    SaveChanges: false),
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Fallo aislado al preparar notificación de reactivación para membresía {MembershipId}.", membership.Id);
         }
 
         if (_auditService != null)
@@ -1165,6 +1219,31 @@ public class MembershipService : IMembershipService
                     reactivatedByUserId: null,
                     reason: "Reactivación automática por finalización de período de suspensión");
 
+                try
+                {
+                    await _notificationDispatcher.DispatchAsync(
+                        new DispatchNotificationCommand(
+                            TargetPersonId: membership.StudentId,
+                            Type: NotificationType.MembershipReactivated,
+                            Variables: new Dictionary<string, string?>
+                            {
+                                ["planName"] = "Membresía",
+                                ["endDate"] = $"{membership.EndDate:yyyy-MM-dd}"
+                            },
+                            IdempotencyKey: $"membership-auto-reactivated:{activeSuspension.Id}",
+                            RelatedEntityType: "Membership",
+                            RelatedEntityId: membership.Id,
+                            ActionUrl: "/portal/alumno",
+                            DirectTitleOverride: "Membresía reactivada",
+                            DirectBodyOverride: $"Tu membresía fue reactivada y tiene vigencia hasta el {membership.EndDate:yyyy-MM-dd}.",
+                            SaveChanges: false),
+                        cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogError(ex, "Fallo aislado al preparar notificación de reactivación automática para membresía {MembershipId}.", membership.Id);
+                }
+
                 if (_auditService != null && extensionDays > 0)
                 {
                     await _auditService.LogAsync(
@@ -1236,19 +1315,31 @@ public class MembershipService : IMembershipService
 
                 if (!membership.ExpiredNotificationSentAtUtc.HasValue)
                 {
-                    _dbContext.NotificationMessages.Add(new NotificationMessage
+                    try
                     {
-                        Id = Guid.NewGuid(),
-                        RecipientPersonId = membership.StudentId,
-                        Type = NotificationType.MembershipExpired,
-                        Channel = NotificationChannel.InApp,
-                        Title = "Membresía vencida",
-                        Body = $"Tu membresía finalizó su período de vigencia el {membership.EndDate:yyyy-MM-dd}.",
-                        IsRead = false,
-                        SentAtUtc = nowUtc,
-                        CreatedAtUtc = nowUtc,
-                        IsActive = true
-                    });
+                        await _notificationDispatcher.DispatchAsync(
+                            new DispatchNotificationCommand(
+                                TargetPersonId: membership.StudentId,
+                                Type: NotificationType.MembershipExpired,
+                                Variables: new Dictionary<string, string?>
+                                {
+                                    ["planName"] = "Membresía",
+                                    ["endDate"] = $"{membership.EndDate:yyyy-MM-dd}"
+                                },
+                                IdempotencyKey: $"membership-expired:{membership.Id}",
+                                RelatedEntityType: "Membership",
+                                RelatedEntityId: membership.Id,
+                                ActionUrl: "/portal/alumno",
+                                DirectTitleOverride: "Membresía vencida",
+                                DirectBodyOverride: $"Tu membresía finalizó su período de vigencia el {membership.EndDate:yyyy-MM-dd}.",
+                                SaveChanges: false),
+                            cancellationToken);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        _logger.LogError(ex, "Fallo aislado al preparar notificación de vencimiento para membresía {MembershipId}.", membership.Id);
+                    }
+
                     membership.ExpiredNotificationSentAtUtc = nowUtc;
                 }
 
@@ -1365,19 +1456,30 @@ public class MembershipService : IMembershipService
                     continue;
                 }
 
-                _dbContext.NotificationMessages.Add(new NotificationMessage
+                try
                 {
-                    Id = Guid.NewGuid(),
-                    RecipientPersonId = membership.StudentId,
-                    Type = NotificationType.MembershipExpiring,
-                    Channel = NotificationChannel.InApp,
-                    Title = "Tu membresía está próxima a vencer",
-                    Body = $"Tu membresía vence el {membership.EndDate:yyyy-MM-dd}.",
-                    IsRead = false,
-                    SentAtUtc = nowUtc,
-                    CreatedAtUtc = nowUtc,
-                    IsActive = true
-                });
+                    await _notificationDispatcher.DispatchAsync(
+                        new DispatchNotificationCommand(
+                            TargetPersonId: membership.StudentId,
+                            Type: NotificationType.MembershipExpiring,
+                            Variables: new Dictionary<string, string?>
+                            {
+                                ["planName"] = "Membresía",
+                                ["endDate"] = $"{membership.EndDate:yyyy-MM-dd}"
+                            },
+                            IdempotencyKey: $"membership-expiring:{membership.Id}",
+                            RelatedEntityType: "Membership",
+                            RelatedEntityId: membership.Id,
+                            ActionUrl: "/portal/alumno",
+                            DirectTitleOverride: "Tu membresía está próxima a vencer",
+                            DirectBodyOverride: $"Tu membresía vence el {membership.EndDate:yyyy-MM-dd}.",
+                            SaveChanges: false),
+                        cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogError(ex, "Fallo aislado al preparar notificación de próximo vencimiento para membresía {MembershipId}.", membership.Id);
+                }
 
                 membership.ExpiringNotificationSentAtUtc = nowUtc;
                 membership.UpdatedAtUtc = nowUtc;

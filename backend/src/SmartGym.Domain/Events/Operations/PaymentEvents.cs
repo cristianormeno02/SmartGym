@@ -42,6 +42,7 @@ public record PaymentFailedNotificationEvent(
 
 public record PaymentRefundedNotificationEvent(
     Guid PaymentId,
+    Guid RefundId,
     Guid PayerPersonId,
     decimal RefundAmount,
     string Currency

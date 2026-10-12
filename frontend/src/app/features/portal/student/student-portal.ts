@@ -1,8 +1,10 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { GymApiService } from '../../../core/services/gym-api.service';
+import { NotificationsService } from '../../../core/services/notifications.service';
 import { Observable } from 'rxjs';
 import {
   Membership,
@@ -17,7 +19,7 @@ import {
 @Component({
   selector: 'app-student-portal',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <div class="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8">
       <div class="max-w-7xl mx-auto space-y-8">
@@ -289,7 +291,10 @@ import {
                 <h3 class="text-lg font-bold text-white flex items-center gap-2">
                   <span>🔔</span> Notificaciones
                 </h3>
-                <span class="text-xs bg-slate-800 px-2 py-0.5 rounded text-slate-400">{{ notifications().length }}</span>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs bg-slate-800 px-2 py-0.5 rounded text-slate-400">{{ notifications().length }}</span>
+                  <a routerLink="/portal/notificaciones" class="text-xs text-cyan-400 hover:underline">Ver todas</a>
+                </div>
               </div>
 
               @if (notifications().length === 0) {
@@ -301,9 +306,9 @@ import {
                          [ngClass]="n.isRead ? 'bg-slate-950/40 border-slate-800/60 text-slate-400' : 'bg-cyan-950/30 border-cyan-800/50 text-slate-200'">
                       <div class="flex items-center justify-between font-bold">
                         <span>{{ n.title }}</span>
-                        <span class="text-[10px] text-slate-500">{{ n.createdAtUtc | date:'short' }}</span>
+                        <span class="text-[10px] text-slate-500">{{ (n.sentAtUtc || n.createdAtUtc) | date:'short' }}</span>
                       </div>
-                      <p class="mt-1 text-slate-300">{{ n.message }}</p>
+                      <p class="mt-1 text-slate-300">{{ n.body || n.message }}</p>
                       @if (!n.isRead) {
                         <button (click)="markNotificationRead(n.id)" class="mt-2 text-[11px] text-cyan-400 hover:underline">
                           Marcar como leída
@@ -351,6 +356,7 @@ import {
 export class StudentPortalComponent implements OnInit {
   readonly authService = inject(AuthService);
   private readonly gymApi = inject(GymApiService);
+  private readonly notificationsService = inject(NotificationsService);
 
   activeMembership = signal<Membership | null>(null);
   myReservations = signal<Reservation[]>([]);
@@ -548,6 +554,7 @@ export class StudentPortalComponent implements OnInit {
     this.gymApi.markNotificationAsRead(notificationId).subscribe({
       next: () => {
         this.notifications.update(list => list.map(n => n.id === notificationId ? { ...n, isRead: true } : n));
+        this.notificationsService.refreshUnreadCount().subscribe({ error: () => {} });
       }
     });
   }

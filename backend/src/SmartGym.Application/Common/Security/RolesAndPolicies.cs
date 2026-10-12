@@ -41,6 +41,16 @@ public static class Permissions
     public const string PaymentsCancel = "PAYMENTS_CANCEL";
     public const string PaymentsAllocate = "PAYMENTS_ALLOCATE";
     public const string PaymentsRefund = "PAYMENTS_REFUND";
+
+    public const string NotificationsReadOwn = "NOTIFICATIONS_READ_OWN";
+    public const string NotificationsMarkReadOwn = "NOTIFICATIONS_MARK_READ_OWN";
+    public const string NotificationsPreferencesManage = "NOTIFICATIONS_PREFERENCES_MANAGE";
+    public const string NotificationsReadAll = "NOTIFICATIONS_READ_ALL";
+    public const string NotificationsManage = "NOTIFICATIONS_MANAGE";
+    public const string NotificationsDeliveryRead = "NOTIFICATIONS_DELIVERY_READ";
+    public const string NotificationsRetryFailed = "NOTIFICATIONS_RETRY_FAILED";
+    public const string NotificationsTemplatesRead = "NOTIFICATIONS_TEMPLATES_READ";
+    public const string NotificationsTemplatesManage = "NOTIFICATIONS_TEMPLATES_MANAGE";
 }
 
 public static class Policies
@@ -79,4 +89,14 @@ public static class Policies
     public const string PaymentsCancel = Permissions.PaymentsCancel;
     public const string PaymentsAllocate = Permissions.PaymentsAllocate;
     public const string PaymentsRefund = Permissions.PaymentsRefund;
+
+    public const string NotificationsReadOwn = Permissions.NotificationsReadOwn;
+    public const string NotificationsMarkReadOwn = Permissions.NotificationsMarkReadOwn;
+    public const string NotificationsPreferencesManage = Permissions.NotificationsPreferencesManage;
+    public const string NotificationsReadAll = Permissions.NotificationsReadAll;
+    public const string NotificationsManage = Permissions.NotificationsManage;
+    public const string NotificationsDeliveryRead = Permissions.NotificationsDeliveryRead;
+    public const string NotificationsRetryFailed = Permissions.NotificationsRetryFailed;
+    public const string NotificationsTemplatesRead = Permissions.NotificationsTemplatesRead;
+    public const string NotificationsTemplatesManage = Permissions.NotificationsTemplatesManage;
 }
