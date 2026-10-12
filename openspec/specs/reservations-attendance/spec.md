@@ -4,35 +4,26 @@ Administra el ciclo de vida de las reservas de clases con garantía estricta de 
 
 ## Requirements
 
-### Requirement: Reserva de clases con control estricto de cupos
-El sistema SHALL validar que el alumno posea membresía activa, saldo de créditos suficiente, actividad permitida, y que la clase cuente con cupo disponible, garantizando transaccionalmente que nunca se exceda el cupo máximo aún bajo solicitudes concurrentes.
-
-#### Scenario: Reserva exitosa con saldo y cupo
-- **WHEN** un alumno con membresía activa y créditos disponibles solicita reservar una clase con cupos disponibles
-- **THEN** se crea la reserva en estado RESERVADA y se decrementa el cupo disponible de la clase concreta
-
-#### Scenario: Intento de reserva en clase completa
-- **WHEN** un alumno intenta reservar una clase cuyo cupo ya alcanzó el máximo permitido
-- **THEN** el sistema rechaza la reserva por falta de cupo o propone el ingreso a LISTA_ESPERA si está habilitada
-
 ### Requirement: Independencia entre Reserva y Asistencia
-El sistema SHALL modelar la asistencia como un registro independiente de la reserva, permitiendo que un alumno asista habiendo reservado previamente, o asista sin reserva previa cuando las reglas del gimnasio y el cupo lo permitan.
+El sistema SHALL modelar la asistencia como un hecho operativo independiente de la creación de la reserva, permitiendo que el personal o el instructor asignado registre la presencia efectiva (`ATTENDED`) o la ausencia (`NO_SHOW`) de un alumno con reserva `CONFIRMED`, o registre asistencia sin reserva previa cuando las reglas del gimnasio y el cupo lo permitan. Para un alumno con reserva, el hecho de asistencia SHALL persistirse en la propia reserva (`Status`, `AttendedAtUtc`, `AttendanceSource`, `CheckedInByUserId`), que es su única fuente de verdad; esos datos sólo SHALL modificarse mediante las operaciones de asistencia y nunca mediante las operaciones de reserva.
+- La presencia SHALL poder registrarse desde `CheckInOpensMinutesBeforeStart` (por defecto 30) minutos antes del inicio y hasta `AttendanceRegistrationHoursAfterEnd` (por defecto 24) horas después del fin de la clase.
+- La ausencia SHALL poder registrarse desde el fin de la clase y dentro del mismo plazo posterior.
+- Ambas operaciones SHALL exigir que la clase no esté suspendida, cancelada ni reprogramada, y SHALL ejecutarse bajo el bloqueo de la clase para que no compitan con cancelaciones ni promociones de lista de espera.
+- Un instructor sólo SHALL registrar asistencia en las clases donde es instructor programado o efectivo; para una clase ajena la operación se rechaza como recurso no encontrado.
+- `ATTENDED` y `NO_SHOW` SHALL ser estados terminales.
 
 #### Scenario: Asistencia de alumno con reserva
-- **WHEN** el secretario o instructor registra la presencia del alumno en la clase concreta
-- **THEN** el estado de la reserva se actualiza a ASISTIO y se confirma el movimiento de consumo en su membresía
+- **WHEN** el secretario o el instructor asignado registra la presencia de un alumno con reserva `CONFIRMED` dentro del plazo de registro
+- **THEN** la reserva pasa a `ATTENDED`, se registran `AttendedAtUtc`, `AttendanceSource`, `CheckedInByUserId` y la transición en `ReservationStatusChanges`, y se incrementa `AttendedCount` de la clase
 
 #### Scenario: Registro de No-Show
-- **WHEN** finaliza una clase concreta y un alumno con reserva confirmada no concurrió
-- **THEN** el sistema marca la reserva como NO_SHOW y aplica la política de penalización o pérdida de crédito correspondiente
+- **WHEN** finalizó una clase y el personal o el instructor asignado registra la inasistencia de un alumno con reserva `CONFIRMED`
+- **THEN** la reserva pasa a `NO_SHOW` registrando la transición en `ReservationStatusChanges` y el derecho de acceso consumido no se restituye
 
-### Requirement: Políticas configurables de cancelación y restitución
-El sistema SHALL evaluar el tiempo de antelación respecto a la hora de inicio de la clase para determinar si una cancelación por parte del alumno califica para devolución de crédito o se considera cancelación tardía sin devolución.
+#### Scenario: Registro de asistencia fuera de plazo
+- **WHEN** se intenta registrar la presencia de un alumno 2 horas antes del inicio de la clase, o su ausencia antes de que la clase termine
+- **THEN** el sistema rechaza la operación con `409 Conflict`
 
-#### Scenario: Cancelación anticipada dentro del plazo permitido
-- **WHEN** un alumno cancela su reserva con más de 2 horas de anticipación al inicio de la clase
-- **THEN** la reserva cambia a CANCELADA, se libera el cupo en la clase y se restituye el crédito a su membresía con un movimiento de DEVOLUCION
-
-#### Scenario: Cancelación tardía fuera de término
-- **WHEN** un alumno cancela su reserva faltando 30 minutos para el inicio de la clase
-- **THEN** la reserva cambia a CANCELADA, se libera el cupo pero no se restituye el crédito consumido
+#### Scenario: Instructor registra asistencia en una clase ajena
+- **WHEN** un instructor sin rol de personal intenta registrar asistencia en una clase donde no es instructor programado ni efectivo
+- **THEN** la operación es rechazada como recurso no encontrado

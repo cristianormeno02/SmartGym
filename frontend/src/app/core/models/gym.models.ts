@@ -95,6 +95,14 @@ export interface MembershipPlan {
   isActive: boolean;
 }
 
+export enum MembershipStatus {
+  Pending = 0,
+  Active = 1,
+  Expired = 2,
+  Suspended = 3,
+  Cancelled = 4
+}
+
 export interface Membership {
   id: string;
   studentId: string;
@@ -104,21 +112,195 @@ export interface Membership {
   documentNumber?: string;
   membershipPlanId: string;
   membershipPlanName: string;
+  renewedFromMembershipId?: string;
   startDate: string;
   endDate: string;
   totalCredits: number;
   availableCredits: number;
-  status: number;
+  status: MembershipStatus; // 0=Pending, 1=Active, 2=Expired, 3=Suspended, 4=Cancelled
+  effectiveStatus?: MembershipStatus;
   isValidToday: boolean;
+  purchasedAtUtc?: string;
+  activatedAtUtc?: string;
+  durationDaysSnapshot?: number;
+  initialCredits?: number;
+  extraCreditsGranted?: number;
+  isUnlimited?: boolean;
+  appliesToAllActivities?: boolean;
+  initialCreditsLoaded?: boolean;
+  hasAvailableCredits?: boolean;
+  isDepleted?: boolean;
+  startsInFuture?: boolean;
+  daysRemaining?: number;
+  originalPrice?: number;
+  discountAmount?: number;
+  purchasePrice?: number;
+  currency?: string;
+  totalPaidAmount?: number;
+  pendingBalance?: number;
+  hasOutstandingBalance?: boolean;
+  promotionId?: string;
+  promotionCode?: string;
+  notes?: string;
+  version?: number;
+}
+
+export interface MembershipStatusChange {
+  id: string;
+  previousStatus?: MembershipStatus;
+  newStatus: MembershipStatus;
+  reason: string;
+  notes?: string;
+  changedByUserId?: string;
+  changedAtUtc: string;
+}
+
+export interface MembershipSuspension {
+  id: string;
+  startDate: string;
+  endDate?: string;
+  reactivatedAtDate?: string;
+  extendExpirationDate: boolean;
+  extensionDaysApplied: number;
+  reason: string;
+  notes?: string;
+  suspendedByUserId: string;
+  suspendedAtUtc: string;
+  reactivatedByUserId?: string;
+  reactivatedAtUtc?: string;
+  isActiveSuspension: boolean;
+}
+
+export interface MembershipPayment {
+  id: string;
+  studentId: string;
+  studentName: string;
+  membershipId?: string;
+  amount: number;
+  method: number;
+  status: number;
+  externalTransactionId?: string;
+  notes?: string;
+  paidAtUtc: string;
+}
+
+export interface MembershipDetail extends Membership {
+  promotionName?: string;
+  promotionRedemptionId?: string;
+  createdByUserId?: string;
+  cancelledAtUtc?: string;
+  cancelledByUserId?: string;
+  cancellationReason?: string;
+  allowedActivityIds: string[];
+  payments: MembershipPayment[];
+  suspensions: MembershipSuspension[];
+  statusHistory: MembershipStatusChange[];
+}
+
+export interface MembershipIneligibilityReason {
+  code: string;
+  message: string;
+}
+
+export interface MembershipEligibility {
+  membershipId: string;
+  studentId: string;
+  evaluatedDate: string;
+  evaluatedActivityId?: string;
+  evaluatedClassSessionId?: string;
+  isEligible: boolean;
+  effectiveStatus: MembershipStatus;
+  isUnlimited: boolean;
+  availableCredits: number;
+  hasAvailableCredits: boolean;
+  isDepleted: boolean;
+  ineligibilityReasons: MembershipIneligibilityReason[];
+}
+
+export interface MembershipCreditsSummary {
+  membershipId: string;
+  studentId: string;
+  isUnlimited: boolean;
+  initialCredits: number;
+  consumedCredits: number;
+  refundedCredits: number;
+  bonusCredits: number;
+  compensatoryCredits: number;
+  forfeitedCredits: number;
+  expiredCredits: number;
+  availableCredits: number;
+  hasAvailableCredits: boolean;
+  isDepleted: boolean;
+  movements: CreditMovement[];
+}
+
+export enum ReservationStatus {
+  Confirmed = 1,
+  Cancelled = 3,
+  Attended = 4,
+  NoShow = 5,
+  Waitlisted = 6,
+  Pending = 7
+}
+
+export enum ReservationOrigin {
+  StudentSelfService = 1,
+  StaffDesk = 2,
+  Legacy = 3
+}
+
+export enum ReservationAccessType {
+  MembershipCredit = 1,
+  UnlimitedMembership = 2,
+  CompensatoryCredit = 3,
+  SingleClassTicket = 4,
+  PromotionalBenefit = 5
+}
+
+export enum ReservationCancellationSource {
+  Student = 1,
+  Staff = 2,
+  ClassSessionChange = 3,
+  MembershipChange = 4,
+  WaitlistOfferExpired = 5,
+  WaitlistDeclined = 6,
+  WaitlistExpired = 7
+}
+
+export enum AttendanceSource {
+  SecretaryDesk = 1,
+  InstructorInRoom = 2,
+  SelfCheckIn = 3
+}
+
+/** Estados que cuentan como reserva activa: ocupan cupo o esperan uno. */
+export const ACTIVE_RESERVATION_STATUSES: readonly ReservationStatus[] = [
+  ReservationStatus.Confirmed,
+  ReservationStatus.Waitlisted,
+  ReservationStatus.Pending
+];
+
+export interface ReservationStatusChange {
+  id: string;
+  reservationId: string;
+  previousStatus?: ReservationStatus;
+  newStatus: ReservationStatus;
+  reason: string;
+  changedByUserId?: string;
+  trigger: number;
+  changedAtUtc: string;
 }
 
 export interface Reservation {
   id: string;
   classSessionId: string;
+  activityId?: string;
   activityName: string;
   classDate: string;
   startTime: string;
   endTime: string;
+  startsAtUtc?: string;
+  endsAtUtc?: string;
   roomName: string;
   studentId: string;
   studentName: string;
@@ -126,15 +308,135 @@ export interface Reservation {
   documentType?: DocumentType;
   documentNumber?: string;
   membershipId?: string;
-  status: number; // 0=Reserved, 1=Confirmed, 2=Cancelled, 3=Attended, 4=NoShow, 5=WaitList
+  status: ReservationStatus;
+  origin: ReservationOrigin;
+  accessType: ReservationAccessType;
   reservedAtUtc: string;
   confirmedAtUtc?: string;
   cancelledAtUtc?: string;
   cancellationReason?: string;
+  cancellationSource?: ReservationCancellationSource;
   isLateCancellation: boolean;
+  isPolicyOverride: boolean;
+  policyOverrideReason?: string;
+  affectedBySessionChange: boolean;
+  rescheduledToSessionId?: string;
   attendedAtUtc?: string;
-  attendanceSource?: number;
+  attendanceSource?: AttendanceSource;
   waitListPosition?: number;
+  waitlistEnteredAtUtc?: string;
+  waitlistOfferExpiresAtUtc?: string;
+  creditMovementId?: string;
+  refundCreditMovementId?: string;
+  singleClassTicketMovementId?: string;
+  paymentId?: string;
+  promotionRedemptionId?: string;
+  notes?: string;
+  wasIdempotentReplay?: boolean;
+}
+
+export interface ReservationDetail extends Reservation {
+  activityId: string;
+  startsAtUtc: string;
+  endsAtUtc: string;
+  createdByUserId?: string;
+  cancelledByUserId?: string;
+  checkedInByUserId?: string;
+  statusHistory: ReservationStatusChange[];
+}
+
+export interface ReservableClassSession {
+  classSessionId: string;
+  activityId: string;
+  activityName: string;
+  roomId: string;
+  roomName: string;
+  effectiveInstructorId: string;
+  instructorName: string;
+  classDate: string;
+  startTime: string;
+  endTime: string;
+  startsAtUtc: string;
+  endsAtUtc: string;
+  capacity: number;
+  reservedCount: number;
+  availableSpots: number;
+  waitlistCount: number;
+  isWithinBookingWindow: boolean;
+  hasActiveReservation: boolean;
+  activeReservationId?: string;
+  activeReservationStatus?: ReservationStatus;
+  activeWaitlistPosition?: number;
+  canReserve: boolean;
+  canJoinWaitlist: boolean;
+  suggestedAccessType?: ReservationAccessType;
+  selectedMembershipId?: string;
+  usableCredits?: number;
+  ineligibilityReasons: MembershipIneligibilityReason[];
+}
+
+export interface WaitlistEntry {
+  reservationId: string;
+  classSessionId: string;
+  studentId: string;
+  studentName: string;
+  studentDni: string;
+  status: ReservationStatus;
+  waitListPosition?: number;
+  waitlistEnteredAtUtc?: string;
+  waitlistOfferExpiresAtUtc?: string;
+  accessType: ReservationAccessType;
+  membershipId?: string;
+}
+
+export interface CreateReservationRequest {
+  classSessionId: string;
+  studentId?: string;
+  membershipId?: string;
+  singleClassTicketMovementId?: string;
+  promotionCode?: string;
+  allowWaitlist?: boolean;
+  notes?: string;
+  overrideBookingWindow?: boolean;
+  policyOverrideReason?: string;
+}
+
+export interface CancelReservationRequest {
+  reason?: string;
+  overridePolicy?: boolean;
+  policyOverrideReason?: string;
+}
+
+export interface ReservationFilter {
+  studentId?: string;
+  classSessionId?: string;
+  activityId?: string;
+  status?: ReservationStatus;
+  accessType?: ReservationAccessType;
+  origin?: ReservationOrigin;
+  from?: string;
+  to?: string;
+  isLateCancellation?: boolean;
+  affectedBySessionChange?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface PagedResult<T> {
+  items: T[];
+  pageNumber: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  hasPreviousPage: boolean;
+  hasNextPage: boolean;
+}
+
+/** Cuerpo de error de /api/reservations. */
+export interface ReservationApiError {
+  code: string;
+  message: string;
+  reasons?: MembershipIneligibilityReason[] | Record<string, string[]>;
 }
 
 export interface DashboardMetrics {
@@ -160,20 +462,170 @@ export interface MedicalCertificateStatus {
   daysUntilExpiration?: number;
 }
 
+export enum NotificationCategory {
+  Reservations = 1,
+  Classes = 2,
+  Memberships = 3,
+  Payments = 4,
+  Promotions = 5,
+  Operational = 6,
+  Security = 7
+}
+
+export enum NotificationChannel {
+  Email = 1,
+  InApp = 2,
+  WhatsApp = 3,
+  Push = 4
+}
+
+export enum NotificationType {
+  ClassSuspended = 1,
+  ClassReminder = 2,
+  MembershipExpiring = 3,
+  PromotionalAlert = 4,
+  PaymentConfirmed = 5,
+  MembershipActivated = 6,
+  MembershipSuspended = 7,
+  MembershipExpired = 8,
+  ReservationConfirmed = 9,
+  ReservationCancelled = 10,
+  ReservationWaitlisted = 11,
+  WaitlistPromoted = 12,
+  WaitlistOfferAvailable = 13,
+  WaitlistOfferExpired = 14,
+  ClassCancelled = 15,
+  ClassRescheduled = 16,
+  ClassRoomChanged = 17,
+  ClassInstructorChanged = 18,
+  MembershipReactivated = 19,
+  CreditsAdjusted = 20,
+  PaymentRejected = 21,
+  RefundConfirmed = 22,
+  OperationalNotice = 23,
+  SecurityAlert = 24
+}
+
+export enum NotificationDeliveryStatus {
+  Pending = 1,
+  Processing = 2,
+  Sent = 3,
+  Delivered = 4,
+  Failed = 5,
+  Cancelled = 6,
+  Skipped = 7
+}
+
+export enum NotificationTemplateStatus {
+  Draft = 1,
+  Active = 2,
+  Inactive = 3
+}
+
 export interface NotificationItem {
   id: string;
+  recipientPersonId?: string;
+  recipientName?: string;
+  type?: NotificationType;
+  category?: NotificationCategory;
+  channel?: NotificationChannel;
   title: string;
+  body?: string;
   message: string;
   isRead: boolean;
+  sentAtUtc?: string;
   createdAtUtc: string;
   readAtUtc?: string;
+  relatedEntityType?: string;
+  relatedEntityId?: string;
+  actionUrl?: string;
+  expiresAtUtc?: string;
+}
+
+export interface UnreadCountResponse {
+  unreadCount: number;
+}
+
+export interface MarkAllNotificationsReadResponse {
+  markedCount: number;
+}
+
+export interface NotificationPreferenceItem {
+  category: NotificationCategory;
+  channel: NotificationChannel;
+  isEnabled: boolean;
+  isLocked: boolean;
+  isTransactional: boolean;
+}
+
+export interface NotificationPreferenceUpdateItem {
+  category: NotificationCategory;
+  channel: NotificationChannel;
+  isEnabled: boolean;
+}
+
+export interface UpdateNotificationPreferencesRequest {
+  preferences: NotificationPreferenceUpdateItem[];
+}
+
+export interface NotificationDeliveryItem {
+  id: string;
+  notificationMessageId: string;
+  channel: NotificationChannel;
+  status: NotificationDeliveryStatus;
+  destination?: string;
+  providerName?: string;
+  providerMessageId?: string;
+  attemptCount: number;
+  maxAttempts: number;
+  lastAttemptAtUtc?: string;
+  nextAttemptAtUtc?: string;
+  deliveredAtUtc?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  isPermanentFailure: boolean;
+  retriedByUserId?: string;
+  createdAtUtc: string;
+}
+
+export interface NotificationTemplateItem {
+  id: string;
+  code: string;
+  type: NotificationType;
+  channel: NotificationChannel;
+  locale: string;
+  subjectTemplate?: string;
+  bodyTemplate: string;
+  allowedVariables: string[];
+  version: number;
+  status: NotificationTemplateStatus;
+  createdAtUtc: string;
+  updatedAtUtc?: string;
+}
+
+export interface CreateNotificationTemplateRequest {
+  code: string;
+  type: NotificationType;
+  channel: NotificationChannel;
+  locale?: string;
+  subjectTemplate?: string;
+  bodyTemplate: string;
+  allowedVariables: string[];
+  activateImmediately?: boolean;
+}
+
+export interface UpdateNotificationTemplateRequest {
+  subjectTemplate?: string;
+  bodyTemplate: string;
+  allowedVariables: string[];
+  expectedVersion?: number;
 }
 
 export interface CreditMovement {
   id: string;
-  membershipId: string;
+  membershipId?: string;
   studentId: string;
-  movementType: number; // 0=InitialCredit, 1=ReservationDebit, 2=EarlyCancellationRefund, 3=CompensatoryCredit, 4=SingleTicket
+  movementType: number; // 0=InitialCredit, 1=ReservationDebit, 2=EarlyCancellationRefund, 3=CompensatoryCredit, 4=SingleTicket, 5=PromotionBonus, 6=CancellationForfeit, 7=Expiration
   amount: number;
   balanceAfter: number;
   concept: string;
@@ -181,20 +633,36 @@ export interface CreditMovement {
   createdAtUtc: string;
 }
 
+export enum PromotionStatus {
+  Active = 1,
+  Paused = 2,
+  Archived = 3
+}
+
+export enum PromotionBenefitType {
+  PercentageDiscount = 1,
+  FixedAmountDiscount = 2,
+  ExtraCredits = 3
+}
+
 export interface Promotion {
   id: string;
+  code: string;
   name: string;
-  code?: string;
-  conditionType: number;
-  benefitType: number;
-  discountPercentage?: number;
-  fixedDiscountAmount?: number;
-  extraCredits?: number;
-  startDate: string;
-  endDate?: string;
-  maxRedemptionsTotal?: number;
-  currentRedemptionsCount: number;
+  description?: string;
+  conditionType: number; // 1=NewStudent, 2=FamilyGroup, 3=Referral, 4=TwoForOne, 5=CouponCode
+  benefitType: PromotionBenefitType;
+  benefitValue: number;
+  validFrom: string;
+  validTo?: string;
+  maxUsesTotal?: number;
+  currentUsesTotal: number;
+  maxUsesPerPerson: number;
+  applicablePlanId?: string;
+  applicablePlanName?: string;
   isActive: boolean;
+  status: PromotionStatus;
+  version: number; // concurrencia optimista: se reenvía al editar
 }
 
 export interface AuditLog {

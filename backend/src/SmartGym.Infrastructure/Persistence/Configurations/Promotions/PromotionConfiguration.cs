@@ -39,6 +39,24 @@ public class PromotionConfiguration : IEntityTypeConfiguration<Promotion>
         builder.Property(p => p.ValidFrom)
             .IsRequired();
 
+        builder.Property(p => p.Status)
+            .IsRequired()
+            .HasDefaultValue(SmartGym.Domain.Enums.PromotionStatus.Active);
+
+        // Concurrencia optimista con PostgreSQL xmin
+        builder.Property(p => p.Version)
+            .IsRowVersion();
+
+        builder.ToTable(t =>
+        {
+            t.HasCheckConstraint("CK_Promotions_Status",
+                "\"Status\" IN (1, 2, 3)");
+
+            // Última barrera del tope general si algún camino omitiera el bloqueo de la promoción
+            t.HasCheckConstraint("CK_Promotions_CurrentUsesTotal",
+                "\"CurrentUsesTotal\" >= 0 AND (\"MaxUsesTotal\" IS NULL OR \"CurrentUsesTotal\" <= \"MaxUsesTotal\")");
+        });
+
         builder.HasOne(p => p.ApplicablePlan)
             .WithMany()
             .HasForeignKey(p => p.ApplicablePlanId)

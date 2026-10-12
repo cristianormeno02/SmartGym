@@ -37,22 +37,19 @@ public class ReservationActivityRulesTests
         var room = new Room { Id = Guid.NewGuid(), Name = "Indoor", Capacity = 20 };
         var activity = new Activity("INFANTIL", "Gimnasia Infantil", defaultCapacity: 10, minAge: 6, maxAge: 12);
         _activityId = activity.Id;
-        var classDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(3));
+        var starts = DateTime.UtcNow.AddDays(3).Date.AddHours(17);
+        var ends = starts.AddHours(1);
 
-        var session = new ClassSession
-        {
-            Id = _sessionId,
-            ActivityId = activity.Id,
-            Activity = activity,
-            RoomId = room.Id,
-            Room = room,
-            InstructorId = instructor.Id,
-            Instructor = instructor,
-            Date = classDate,
-            StartTime = new TimeOnly(17, 0),
-            EndTime = new TimeOnly(18, 0),
-            MaxCapacity = 10
-        };
+        var session = ClassSession.CreateExtraordinary(
+            activity.Id,
+            room.Id,
+            starts,
+            ends,
+            10,
+            instructor.Id,
+            secretaryId: null);
+        typeof(ClassSession).GetProperty("Id")!.SetValue(session, _sessionId);
+        session.Open(DateTime.UtcNow);
 
         var plan = new MembershipPlan { Id = Guid.NewGuid(), Name = "Mensual 8", Credits = 8, Price = 1000 };
         seed.AddRange(instructor, room, activity, session, plan);
@@ -72,13 +69,16 @@ public class ReservationActivityRulesTests
         student.Id = _studentId;
         student.AddRole(studentRole);
 
+        var startDate = DateOnly.FromDateTime(session.StartsAtUtc).AddDays(-10);
+        var endDate = DateOnly.FromDateTime(session.StartsAtUtc).AddDays(10);
+
         db.AddRange(student, new Membership
         {
             Id = Guid.NewGuid(),
             StudentId = _studentId,
             MembershipPlanId = plan.Id,
-            StartDate = session.Date.AddDays(-10),
-            EndDate = session.Date.AddDays(10),
+            StartDate = startDate,
+            EndDate = endDate,
             TotalCredits = 8,
             AvailableCredits = 8
         });
@@ -97,7 +97,10 @@ public class ReservationActivityRulesTests
     private Task<ReservationDto> Reserve()
     {
         var db = new SmartGymDbContext(_options);
-        return new ReservationService(db).CreateReservationAsync(new CreateReservationRequest(_sessionId, _studentId), Guid.NewGuid());
+        var calendar = new SmartGym.Application.Common.GymCalendar(
+            Microsoft.Extensions.Options.Options.Create(new SmartGym.Application.Common.GymOptions { TimeZoneId = "UTC" }),
+            TimeProvider.System);
+        return new ReservationService(db, calendar).CreateReservationAsync(new CreateReservationRequest(_sessionId, _studentId), Guid.NewGuid());
     }
 
     private static DateTime BirthDateForAge(int age) => DateTime.UtcNow.Date.AddYears(-age).AddDays(-1);
@@ -117,7 +120,7 @@ public class ReservationActivityRulesTests
     {
         AddStudent(BirthDateForAge(15));
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(Reserve);
+        var ex = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(Reserve);
         Assert.Contains("no admite", ex.Message);
     }
 
@@ -139,7 +142,7 @@ public class ReservationActivityRulesTests
         AddStudent(BirthDateForAge(8));
         SetActivityStatus(status);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(Reserve);
+        var ex = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(Reserve);
         Assert.Contains("no está disponible", ex.Message);
     }
 }

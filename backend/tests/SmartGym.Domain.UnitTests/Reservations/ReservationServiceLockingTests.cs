@@ -60,20 +60,19 @@ public class ReservationServiceLockingTests
         var activity = new Activity("FUNCIONAL", "Funcional", defaultCapacity: 10);
         var classDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(3));
 
-        var session = new ClassSession
-        {
-            Id = _sessionId,
-            ActivityId = activity.Id,
-            Activity = activity,
-            RoomId = room.Id,
-            Room = room,
-            InstructorId = instructor.Id,
-            Instructor = instructor,
-            Date = classDate,
-            StartTime = new TimeOnly(8, 30),
-            EndTime = new TimeOnly(9, 30),
-            MaxCapacity = 10
-        };
+        var starts = DateTime.UtcNow.AddDays(3).Date.AddHours(8).AddMinutes(30);
+        var ends = starts.AddHours(1);
+
+        var session = ClassSession.CreateExtraordinary(
+            activity.Id,
+            room.Id,
+            starts,
+            ends,
+            10,
+            instructor.Id,
+            secretaryId: null);
+        typeof(ClassSession).GetProperty("Id")!.SetValue(session, _sessionId);
+        session.Open(DateTime.UtcNow);
 
         var plan = new MembershipPlan { Id = Guid.NewGuid(), Name = "Mensual 8", Credits = 8, Price = 1000 };
         var membership = new Membership
@@ -83,8 +82,8 @@ public class ReservationServiceLockingTests
             Student = student,
             MembershipPlanId = plan.Id,
             MembershipPlan = plan,
-            StartDate = classDate.AddDays(-10),
-            EndDate = classDate.AddDays(10),
+            StartDate = DateOnly.FromDateTime(starts).AddDays(-10),
+            EndDate = DateOnly.FromDateTime(starts).AddDays(10),
             TotalCredits = 8,
             AvailableCredits = 8
         };
@@ -93,7 +92,10 @@ public class ReservationServiceLockingTests
         seed.SaveChanges();
 
         _dbContext = new LockSpyDbContext(options);
-        _service = new ReservationService(_dbContext);
+        var calendar = new SmartGym.Application.Common.GymCalendar(
+            Microsoft.Extensions.Options.Options.Create(new SmartGym.Application.Common.GymOptions { TimeZoneId = "UTC" }),
+            TimeProvider.System);
+        _service = new ReservationService(_dbContext, calendar);
     }
 
     [Fact]
@@ -127,14 +129,14 @@ public class ReservationServiceLockingTests
         student!.ChangeStatus(PersonStatus.Blocked, "Sanción disciplinaria", Guid.NewGuid(), isAdmin: true);
         await _dbContext.SaveChangesAsync();
 
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+        var ex = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() =>
             _service.CreateReservationAsync(new CreateReservationRequest(_sessionId, _studentId), Guid.NewGuid()));
 
-        Assert.Equal("El alumno especificado no existe o no tiene el rol de Alumno activo.", ex.Message);
+        Assert.Contains("El alumno especificado no existe o no tiene el rol de Alumno activo.", ex.Message);
     }
 
     [Fact]
-    public async Task RecordAttendanceAsync_WhenStudentIsBlocked_ShouldThrowInvalidOperationException()
+    public async Task RecordAttendanceAsync_WhenStudentIsBlocked_ShouldThrowConflictException()
     {
         var reservation = await _service.CreateReservationAsync(new CreateReservationRequest(_sessionId, _studentId), Guid.NewGuid());
 
@@ -142,9 +144,56 @@ public class ReservationServiceLockingTests
         student!.ChangeStatus(PersonStatus.Blocked, "Sanción disciplinaria", Guid.NewGuid(), isAdmin: true);
         await _dbContext.SaveChangesAsync();
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() =>
             _service.RecordAttendanceAsync(new RecordAttendanceRequest(reservation.Id, AttendanceSource.InstructorInRoom), Guid.NewGuid()));
 
         Assert.Contains("no se encuentra activo", ex.Message);
     }
+
+    private sealed class FakePostgresDeadlockException : Exception
+    {
+        public string SqlState { get; } = "40P01";
+        public FakePostgresDeadlockException() : base("deadlock detected") { }
+    }
+
+    private sealed class DeadlockSimulatingDbContext : SmartGymDbContext
+    {
+        public Exception? ExceptionToThrowOnLock { get; set; }
+        public DeadlockSimulatingDbContext(DbContextOptions<SmartGymDbContext> options) : base(options) { }
+
+        public override Task LockClassSessionForUpdateAsync(Guid classSessionId, CancellationToken cancellationToken = default)
+        {
+            if (ExceptionToThrowOnLock != null)
+            {
+                throw ExceptionToThrowOnLock;
+            }
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task CreateReservationAsync_TranslatesPostgres40P01AndDbUpdateConcurrencyException_ToConcurrencyConflict()
+    {
+        var options = new DbContextOptionsBuilder<SmartGymDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options;
+
+        await using var db = new DeadlockSimulatingDbContext(options);
+        var calendar = new SmartGym.Application.Common.GymCalendar(
+            Microsoft.Extensions.Options.Options.Create(new SmartGym.Application.Common.GymOptions { TimeZoneId = "UTC" }),
+            TimeProvider.System);
+        var service = new ReservationService(db, calendar);
+
+        db.ExceptionToThrowOnLock = new DbUpdateException("Error", new FakePostgresDeadlockException());
+        var exDeadlock = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() =>
+            service.CreateReservationAsync(new CreateReservationRequest(_sessionId, _studentId), Guid.NewGuid()));
+        Assert.Equal(ReservationErrorCodes.ConcurrencyConflict, exDeadlock.Code);
+
+        db.ExceptionToThrowOnLock = new DbUpdateConcurrencyException("Concurrency error");
+        var exConcurrency = await Assert.ThrowsAsync<SmartGym.Application.Common.Exceptions.ConflictException>(() =>
+            service.CreateReservationAsync(new CreateReservationRequest(_sessionId, _studentId), Guid.NewGuid()));
+        Assert.Equal(ReservationErrorCodes.ConcurrencyConflict, exConcurrency.Code);
+    }
 }
+

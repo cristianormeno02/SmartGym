@@ -38,5 +38,10 @@ public class RecurringScheduleConfiguration : IEntityTypeConfiguration<Recurring
             .WithMany()
             .HasForeignKey(s => s.InstructorId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(s => s.Secretary)
+            .WithMany()
+            .HasForeignKey(s => s.SecretaryId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

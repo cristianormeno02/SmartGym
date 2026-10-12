@@ -7,6 +7,7 @@ public class NotFoundException : Exception
 
 public class ConflictException : Exception
 {
+    public string? Code { get; init; }
     public object? Details { get; }
 
     public ConflictException(string message, object? details = null) : base(message)
@@ -18,6 +19,9 @@ public class ConflictException : Exception
     {
         Details = details;
     }
+
+    public static ConflictException WithCode(string code, string message, object? details = null) =>
+        new(message, details) { Code = code };
 }
 
 public class ForbiddenException : Exception

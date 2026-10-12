@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
+import { Observable, map } from 'rxjs';
 import {
   Activity,
   PublicActivity,
@@ -9,7 +9,18 @@ import {
   ClassSession,
   MembershipPlan,
   Membership,
+  MembershipDetail,
+  MembershipEligibility,
+  MembershipCreditsSummary,
   Reservation,
+  ReservationDetail,
+  ReservableClassSession,
+  WaitlistEntry,
+  CreateReservationRequest,
+  CancelReservationRequest,
+  ReservationFilter,
+  PagedResult,
+  AttendanceSource,
   DashboardMetrics,
   MedicalCertificateStatus,
   NotificationItem,
@@ -95,32 +106,117 @@ export class GymApiService {
     return this.http.get<Membership[]>(`${this.apiUrl}/memberships/student/${studentId}`);
   }
 
+  getCurrentMemberships(studentId: string): Observable<Membership[]> {
+    return this.http.get<Membership[]>(`${this.apiUrl}/memberships/student/${studentId}/current`);
+  }
+
   getActiveMembership(studentId: string): Observable<Membership> {
     return this.http.get<Membership>(`${this.apiUrl}/memberships/student/${studentId}/active`);
   }
 
-  // --- Reservas y Asistencia ---
-  createReservation(classSessionId: string, studentId: string): Observable<Reservation> {
-    return this.http.post<Reservation>(`${this.apiUrl}/reservations`, { classSessionId, studentId });
+  getMembershipById(membershipId: string): Observable<MembershipDetail> {
+    return this.http.get<MembershipDetail>(`${this.apiUrl}/memberships/${membershipId}`);
   }
 
-  cancelReservation(reservationId: string, reason: string): Observable<Reservation> {
-    return this.http.post<Reservation>(`${this.apiUrl}/reservations/${reservationId}/cancel`, { reason });
+  getMembershipEligibility(
+    membershipId: string,
+    paramsObj?: { date?: string; activityId?: string; classSessionId?: string }
+  ): Observable<MembershipEligibility> {
+    let params = new HttpParams();
+    if (paramsObj?.date) params = params.set('date', paramsObj.date);
+    if (paramsObj?.activityId) params = params.set('activityId', paramsObj.activityId);
+    if (paramsObj?.classSessionId) params = params.set('classSessionId', paramsObj.classSessionId);
+    return this.http.get<MembershipEligibility>(`${this.apiUrl}/memberships/${membershipId}/eligibility`, { params });
+  }
+
+  getMembershipCredits(membershipId: string): Observable<MembershipCreditsSummary> {
+    return this.http.get<MembershipCreditsSummary>(`${this.apiUrl}/memberships/${membershipId}/credits`);
+  }
+
+  // --- Reservas y lista de espera ---
+
+  /**
+   * Crea la reserva (o inscribe en lista de espera si la clase está completa y allowWaitlist no es false).
+   * La clave de idempotencia identifica el intento: reutilizarla en un reintento devuelve la misma reserva.
+   */
+  createReservation(request: CreateReservationRequest, idempotencyKey: string = crypto.randomUUID()): Observable<Reservation> {
+    const headers = new HttpHeaders({ 'Idempotency-Key': idempotencyKey });
+    return this.http.post<Reservation>(`${this.apiUrl}/reservations`, request, { headers });
+  }
+
+  cancelReservation(reservationId: string, request: CancelReservationRequest = {}): Observable<Reservation> {
+    return this.http.post<Reservation>(`${this.apiUrl}/reservations/${reservationId}/cancel`, request);
+  }
+
+  getReservations(filter: ReservationFilter = {}): Observable<PagedResult<Reservation>> {
+    let params = new HttpParams();
+    for (const [key, value] of Object.entries(filter)) {
+      if (value !== undefined && value !== null && value !== '') {
+        params = params.set(key, String(value));
+      }
+    }
+    return this.http.get<PagedResult<Reservation>>(`${this.apiUrl}/reservations`, { params });
+  }
+
+  getReservation(reservationId: string): Observable<ReservationDetail> {
+    return this.http.get<ReservationDetail>(`${this.apiUrl}/reservations/${reservationId}`);
   }
 
   getStudentReservations(studentId: string): Observable<Reservation[]> {
     return this.http.get<Reservation[]>(`${this.apiUrl}/reservations/student/${studentId}`);
   }
 
+  getMyReservations(): Observable<Reservation[]> {
+    return this.http.get<Reservation[]>(`${this.apiUrl}/reservations/my`);
+  }
+
+  getMyUpcomingReservations(): Observable<Reservation[]> {
+    return this.http.get<Reservation[]>(`${this.apiUrl}/reservations/my/upcoming`);
+  }
+
+  /** Clases reservables con cupos y elegibilidad evaluada en el servidor. El personal indica studentId. */
+  getAvailableClasses(filter: {
+    from: string;
+    to: string;
+    studentId?: string;
+    activityId?: string;
+    roomId?: string;
+    instructorId?: string;
+  }): Observable<ReservableClassSession[]> {
+    let params = new HttpParams().set('from', filter.from).set('to', filter.to);
+    if (filter.studentId) params = params.set('studentId', filter.studentId);
+    if (filter.activityId) params = params.set('activityId', filter.activityId);
+    if (filter.roomId) params = params.set('roomId', filter.roomId);
+    if (filter.instructorId) params = params.set('instructorId', filter.instructorId);
+    return this.http.get<ReservableClassSession[]>(`${this.apiUrl}/reservations/available-classes`, { params });
+  }
+
   getSessionReservations(classSessionId: string): Observable<Reservation[]> {
-    return this.http.get<Reservation[]>(`${this.apiUrl}/reservations/session/${classSessionId}`);
+    return this.http.get<Reservation[]>(`${this.apiUrl}/reservations/class-session/${classSessionId}`);
   }
 
+  getSessionWaitlist(classSessionId: string): Observable<WaitlistEntry[]> {
+    return this.http.get<WaitlistEntry[]>(`${this.apiUrl}/reservations/class-session/${classSessionId}/waitlist`);
+  }
+
+  leaveWaitlist(classSessionId: string): Observable<Reservation> {
+    return this.http.delete<Reservation>(`${this.apiUrl}/reservations/class-session/${classSessionId}/waitlist/me`);
+  }
+
+  acceptWaitlistOffer(reservationId: string): Observable<Reservation> {
+    return this.http.post<Reservation>(`${this.apiUrl}/reservations/${reservationId}/accept-waitlist-offer`, {});
+  }
+
+  declineWaitlistOffer(reservationId: string): Observable<Reservation> {
+    return this.http.post<Reservation>(`${this.apiUrl}/reservations/${reservationId}/decline-waitlist-offer`, {});
+  }
+
+  // --- Asistencia ---
   getSessionAttendanceSummary(classSessionId: string): Observable<any> {
-    return this.http.get(`${this.apiUrl}/reservations/session/${classSessionId}/attendance-summary`);
+    return this.http.get(`${this.apiUrl}/reservations/class-session/${classSessionId}/attendance-summary`);
   }
 
-  recordAttendance(reservationId: string, source: number = 0): Observable<Reservation> {
+  recordAttendance(reservationId: string, source: AttendanceSource = AttendanceSource.SecretaryDesk): Observable<Reservation> {
     return this.http.post<Reservation>(`${this.apiUrl}/reservations/attendance`, { reservationId, source });
   }
 
@@ -156,7 +252,17 @@ export class GymApiService {
   // --- Notificaciones ---
   getMyNotifications(onlyUnread = false): Observable<NotificationItem[]> {
     const params = new HttpParams().set('onlyUnread', onlyUnread);
-    return this.http.get<NotificationItem[]>(`${this.apiUrl}/notifications/my`, { params });
+    return this.http.get<NotificationItem[]>(`${this.apiUrl}/notifications/my`, { params }).pipe(
+      map((items) =>
+        (items ?? []).map((raw) => ({
+          ...raw,
+          body: raw.body ?? raw.message ?? '',
+          message: raw.body ?? raw.message ?? '',
+          sentAtUtc: raw.sentAtUtc ?? raw.createdAtUtc ?? '',
+          createdAtUtc: raw.sentAtUtc ?? raw.createdAtUtc ?? ''
+        }))
+      )
+    );
   }
 
   markNotificationAsRead(id: string): Observable<any> {

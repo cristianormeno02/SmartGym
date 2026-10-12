@@ -3,11 +3,18 @@ using SmartGym.Domain.Entities.Activities;
 using SmartGym.Domain.Entities.Identity;
 using SmartGym.Domain.Entities.Memberships;
 using SmartGym.Domain.Enums;
+using SmartGym.Domain.Events.Operations;
 
 namespace SmartGym.Domain.Entities.Operations;
 
-public class Payment : BaseEntity
+public class Payment : BaseEntity, IHasDomainEvents
 {
+    private readonly List<IDomainEvent> _domainEvents = new();
+    public IReadOnlyCollection<IDomainEvent> DomainEvents => _domainEvents.AsReadOnly();
+
+    public void ClearDomainEvents() => _domainEvents.Clear();
+    protected void AddDomainEvent(IDomainEvent domainEvent) => _domainEvents.Add(domainEvent);
+
     public Guid PayerPersonId { get; set; }
     public Person PayerPerson { get; set; } = null!;
 
@@ -29,10 +36,46 @@ public class Payment : BaseEntity
 
     public void Complete(string? externalTransactionId = null)
     {
+        if (Status == PaymentStatus.Failed || Status == PaymentStatus.Refunded)
+        {
+            throw new InvalidOperationException($"No se puede confirmar un pago en estado {Status}.");
+        }
+
+        var wasCompleted = Status == PaymentStatus.Completed;
+
         Status = PaymentStatus.Completed;
         if (!string.IsNullOrWhiteSpace(externalTransactionId))
         {
             ExternalTransactionId = externalTransactionId.Trim();
+        }
+
+        var now = DateTime.UtcNow;
+        UpdatedAtUtc = now;
+
+        if (!wasCompleted)
+        {
+            AddDomainEvent(new PaymentCompletedEvent(
+                Id,
+                PayerPersonId,
+                MembershipId,
+                ClassSessionId,
+                Amount,
+                RegisteredByUserId,
+                now));
+        }
+    }
+
+    public void Fail(string? reason = null)
+    {
+        if (Status != PaymentStatus.Pending)
+        {
+            throw new InvalidOperationException($"Sólo se puede rechazar un pago en estado Pending (estado actual: {Status}).");
+        }
+
+        Status = PaymentStatus.Failed;
+        if (!string.IsNullOrWhiteSpace(reason))
+        {
+            Notes = string.IsNullOrWhiteSpace(Notes) ? reason.Trim() : $"{Notes} | Rechazo: {reason.Trim()}";
         }
         UpdatedAtUtc = DateTime.UtcNow;
     }

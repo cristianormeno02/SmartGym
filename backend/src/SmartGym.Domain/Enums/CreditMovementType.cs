@@ -7,5 +7,8 @@ public enum CreditMovementType
     ClassCancellationRefund = 3,
     ClassSuspensionCompensation = 4,
     ManualAdjustment = 5,
-    SingleClassTicket = 6
+    SingleClassTicket = 6,
+    PromotionBonus = 7,
+    CancellationForfeiture = 8,
+    Expiration = 9
 }

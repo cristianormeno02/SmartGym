@@ -1,6 +1,7 @@
 using SmartGym.Domain.Common;
 using SmartGym.Domain.Entities.Identity;
 using SmartGym.Domain.Entities.Memberships;
+using SmartGym.Domain.Entities.Reservations;
 
 namespace SmartGym.Domain.Entities.Promotions;
 
@@ -14,6 +15,9 @@ public class PromotionRedemption : BaseEntity
 
     public Guid? MembershipId { get; set; }
     public Membership? Membership { get; set; }
+
+    public Guid? ReservationId { get; set; }
+    public Reservation? Reservation { get; set; }
 
     public decimal OriginalAmount { get; set; }
     public decimal DiscountAmount { get; set; }

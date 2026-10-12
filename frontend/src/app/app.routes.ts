@@ -52,5 +52,15 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./features/people/my-profile').then(m => m.MyProfileComponent)
   },
+  {
+    path: 'portal/notificaciones',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/portal/notifications/notifications-center').then(m => m.NotificationsCenterComponent)
+  },
+  {
+    path: 'portal/notificaciones/preferencias',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/portal/notifications/notification-preferences').then(m => m.NotificationPreferencesComponent)
+  },
   { path: '**', redirectTo: '' }
 ];

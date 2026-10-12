@@ -122,7 +122,82 @@ public static class DependencyInjection
 
             options.AddPolicy(Policies.RequireTeachingAndStaff, policy =>
                 policy.RequireRole(Roles.Administrator, Roles.Secretary, Roles.Instructor));
+
+            options.AddPolicy(Policies.RequireAllAuthenticated, policy =>
+                policy.RequireAuthenticatedUser());
+
+            options.AddPolicy(Policies.MembershipsRead, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.MembershipsCreate, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.MembershipsActivate, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.MembershipsSuspend, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.MembershipsReactivate, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.MembershipsCancel, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.MembershipsRenew, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.MembershipsManage, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+
+            options.AddPolicy(Policies.ReservationsRead, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.ReservationsCreate, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary, Roles.Student));
+            options.AddPolicy(Policies.ReservationsCancel, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary, Roles.Student));
+            options.AddPolicy(Policies.ReservationsManage, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.ReservationsWaitlistRead, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary, Roles.Instructor));
+            options.AddPolicy(Policies.ReservationsOverridePolicy, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+
+            options.AddPolicy(Policies.PromotionsRead, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.PromotionsManage, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.PromotionsRedemptionsRead, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+
+            options.AddPolicy(Policies.NotificationsReadOwn, policy =>
+                policy.RequireAuthenticatedUser());
+            options.AddPolicy(Policies.NotificationsMarkReadOwn, policy =>
+                policy.RequireAuthenticatedUser());
+            options.AddPolicy(Policies.NotificationsPreferencesManage, policy =>
+                policy.RequireAuthenticatedUser());
+            options.AddPolicy(Policies.NotificationsReadAll, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.NotificationsManage, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.NotificationsDeliveryRead, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.NotificationsRetryFailed, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.NotificationsTemplatesRead, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.NotificationsTemplatesManage, policy =>
+                policy.RequireRole(Roles.Administrator));
         });
+
+        // Notifications Options & Providers
+        services.Configure<SmartGym.Application.Common.NotificationsOptions>(
+            configuration.GetSection(SmartGym.Application.Common.NotificationsOptions.SectionName));
+        services.Configure<SmartGym.Application.Common.EmailNotificationOptions>(
+            configuration.GetSection(SmartGym.Application.Common.EmailNotificationOptions.SectionName));
+        services.AddScoped<SmartGym.Application.Modules.Operations.Services.IEmailNotificationProvider, SmartGym.Infrastructure.Services.Notifications.ConfigurableEmailNotificationProvider>();
+        services.AddScoped<SmartGym.Application.Modules.Operations.Services.INotificationChannelProvider>(sp =>
+            sp.GetRequiredService<SmartGym.Application.Modules.Operations.Services.IEmailNotificationProvider>());
+
+        // Background Workers
+        services.AddHostedService<SmartGym.Infrastructure.Services.BackgroundJobs.ClassSessionGenerationWorker>();
+        services.AddHostedService<SmartGym.Infrastructure.Services.BackgroundJobs.MembershipExpirationWorker>();
+        services.AddHostedService<SmartGym.Infrastructure.Services.BackgroundJobs.ReservationWaitlistWorker>();
+        services.AddHostedService<SmartGym.Infrastructure.Services.Notifications.NotificationDeliveryWorker>();
+        services.AddHostedService<SmartGym.Infrastructure.Services.Notifications.ClassReminderWorker>();
 
         return services;
     }

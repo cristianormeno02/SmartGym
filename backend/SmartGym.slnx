@@ -7,5 +7,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SmartGym.Domain.UnitTests/SmartGym.Domain.UnitTests.csproj" />
+    <Project Path="tests/SmartGym.IntegrationTests/SmartGym.IntegrationTests.csproj" />
   </Folder>
 </Solution>

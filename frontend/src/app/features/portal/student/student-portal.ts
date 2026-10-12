@@ -1,12 +1,16 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { GymApiService } from '../../../core/services/gym-api.service';
+import { NotificationsService } from '../../../core/services/notifications.service';
+import { Observable } from 'rxjs';
 import {
   Membership,
   Reservation,
-  ClassSession,
+  ReservationStatus,
+  ReservableClassSession,
   MedicalCertificateStatus,
   NotificationItem,
   CreditMovement
@@ -15,7 +19,7 @@ import {
 @Component({
   selector: 'app-student-portal',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <div class="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8">
       <div class="max-w-7xl mx-auto space-y-8">
@@ -40,7 +44,9 @@ import {
           <div class="flex items-center gap-4 bg-slate-950/60 border border-slate-800/80 px-5 py-3 rounded-xl">
             <div class="text-center">
               <span class="text-xs text-slate-400 uppercase font-medium">Créditos Disp.</span>
-              <div class="text-2xl font-black text-cyan-400">{{ activeMembership()?.availableCredits ?? 0 }}</div>
+              <div class="text-2xl font-black text-cyan-400">
+                {{ activeMembership()?.isUnlimited ? '∞' : (activeMembership()?.availableCredits ?? 0) }}
+              </div>
             </div>
             <div class="h-8 w-px bg-slate-800"></div>
             <div class="text-center">
@@ -104,7 +110,7 @@ import {
                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
                   <span class="text-cyan-400">📅</span> Mis Reservas Próximas
                 </h2>
-                <span class="text-xs text-slate-400">Cancelación anticipada: hasta 2hs antes con devolución</span>
+                <span class="text-xs text-slate-400">Cancelación sin penalización: hasta {{ freeCancellationHours }}hs antes</span>
               </div>
 
               @if (myReservations().length === 0) {
@@ -114,25 +120,46 @@ import {
               } @else {
                 <div class="space-y-3">
                   @for (r of myReservations(); track r.id) {
-                    <div class="bg-slate-950/70 border border-slate-800/80 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div class="bg-slate-950/70 border rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                         [ngClass]="r.status === ReservationStatus.Pending ? 'border-emerald-600/70' : 'border-slate-800/80'">
                       <div>
                         <div class="flex items-center gap-2">
                           <span class="font-bold text-base text-slate-100">{{ r.activityName }}</span>
-                          <span class="text-xs px-2 py-0.5 rounded font-semibold"
-                                [ngClass]="r.status === 0 ? 'bg-cyan-500/20 text-cyan-300' : (r.status === 5 ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-700 text-slate-300')">
-                            {{ r.status === 0 ? 'Reservada' : (r.status === 5 ? 'Lista de Espera #' + r.waitListPosition : 'Confirmada') }}
+                          <span class="text-xs px-2 py-0.5 rounded font-semibold" [ngClass]="getReservationBadgeClass(r)">
+                            {{ getReservationStatusText(r) }}
                           </span>
                         </div>
                         <div class="text-xs text-slate-400 mt-1">
                           📆 {{ r.classDate | date:'mediumDate' }} | ⏰ {{ r.startTime }} - {{ r.endTime }} | 📍 {{ r.roomName }}
                         </div>
+                        @if (r.status === ReservationStatus.Pending) {
+                          <div class="text-xs text-emerald-300 mt-1">
+                            Se liberó un cupo para vos. Aceptalo antes del {{ r.waitlistOfferExpiresAtUtc | date:'short' }}.
+                          </div>
+                        } @else if (isLateCancellation(r)) {
+                          <div class="text-xs text-amber-400 mt-1">
+                            Faltan menos de {{ freeCancellationHours }}hs: si cancelás, el crédito no se devuelve.
+                          </div>
+                        }
                       </div>
 
-                      @if (r.status === 0 || r.status === 1 || r.status === 5) {
-                        <button (click)="cancelReservation(r.id)" class="text-xs font-bold bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800/60 px-3 py-1.5 rounded-lg transition self-start sm:self-center">
-                          Cancelar Turno
-                        </button>
-                      }
+                      <div class="flex items-center gap-2 self-start sm:self-center">
+                        @if (r.status === ReservationStatus.Pending) {
+                          <button (click)="acceptOffer(r)" [disabled]="isSubmittingReservation()"
+                                  class="text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-3 py-1.5 rounded-lg transition">
+                            Aceptar Cupo
+                          </button>
+                          <button (click)="declineOffer(r)" [disabled]="isSubmittingReservation()"
+                                  class="text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-lg transition">
+                            Rechazar
+                          </button>
+                        } @else {
+                          <button (click)="cancelReservation(r)" [disabled]="isSubmittingReservation()"
+                                  class="text-xs font-bold bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800/60 px-3 py-1.5 rounded-lg transition">
+                            {{ r.status === ReservationStatus.Waitlisted ? 'Salir de la Espera' : 'Cancelar Turno' }}
+                          </button>
+                        }
+                      </div>
                     </div>
                   }
                 </div>
@@ -148,37 +175,55 @@ import {
                 <button (click)="loadAvailableSessions()" class="text-xs text-cyan-400 hover:text-cyan-300">Actualizar</button>
               </div>
 
-              @if (availableSessions().length === 0) {
+              @if (availableClasses().length === 0) {
                 <div class="text-center py-8 text-slate-500 text-sm">
-                  No hay clases programadas disponibles para reservar hoy.
+                  No hay clases abiertas para reservar en los próximos 7 días.
                 </div>
               } @else {
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  @for (s of availableSessions(); track s.id) {
+                  @for (c of availableClasses(); track c.classSessionId) {
                     <div class="bg-slate-950/70 border border-slate-800/80 rounded-xl p-4 flex flex-col justify-between hover:border-slate-700 transition">
                       <div>
                         <div class="flex items-center justify-between">
-                          <span class="font-bold text-white">{{ s.activityName }}</span>
+                          <span class="font-bold text-white">{{ c.activityName }}</span>
                           <span class="text-xs px-2 py-0.5 rounded font-bold"
-                                [ngClass]="s.availableSpots > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'">
-                            {{ s.availableSpots > 0 ? s.availableSpots + ' lugares' : 'Agotada (Espera)' }}
+                                [ngClass]="c.availableSpots > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'">
+                            {{ c.availableSpots > 0 ? c.availableSpots + ' lugares' : 'Completa · ' + c.waitlistCount + ' en espera' }}
                           </span>
                         </div>
                         <div class="text-xs text-slate-400 mt-2 space-y-0.5">
-                          <p>⏰ {{ s.startTime }} - {{ s.endTime }} | 📆 {{ s.date | date:'shortDate' }}</p>
-                          <p>📍 {{ s.roomName }}</p>
-                          <p>👤 {{ s.instructorName }}</p>
+                          <p>⏰ {{ c.startTime }} - {{ c.endTime }} | 📆 {{ c.classDate | date:'shortDate' }}</p>
+                          <p>📍 {{ c.roomName }}</p>
+                          <p>👤 {{ c.instructorName }}</p>
                         </div>
+
+                        @if (!c.hasActiveReservation && !c.canReserve && !c.canJoinWaitlist) {
+                          <ul class="mt-2 text-xs text-rose-300 space-y-0.5">
+                            @for (reason of c.ineligibilityReasons; track reason.code) {
+                              <li>• {{ reason.message }}</li>
+                            } @empty {
+                              <li>• {{ c.isWithinBookingWindow ? 'No podés reservar esta clase.' : 'Fuera de la ventana de reserva.' }}</li>
+                            }
+                          </ul>
+                        }
                       </div>
 
                       <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between">
-                        <span class="text-xs text-slate-500">Cupo: {{ s.reservedCount }}/{{ s.maxCapacity }}</span>
-                        <button (click)="reserveClass(s.id)"
-                                [disabled]="isSubmittingReservation()"
-                                class="text-xs font-bold px-3 py-1.5 rounded-lg transition"
-                                [ngClass]="s.availableSpots > 0 ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950' : 'bg-amber-600 hover:bg-amber-500 text-slate-950'">
-                          {{ s.availableSpots > 0 ? 'Reservar' : 'Anotarme en Espera' }}
-                        </button>
+                        <span class="text-xs text-slate-500">Cupo: {{ c.reservedCount }}/{{ c.capacity }}</span>
+                        @if (c.hasActiveReservation) {
+                          <span class="text-xs font-semibold text-cyan-300">
+                            {{ c.activeReservationStatus === ReservationStatus.Waitlisted
+                                ? 'En espera #' + c.activeWaitlistPosition
+                                : (c.activeReservationStatus === ReservationStatus.Pending ? 'Cupo ofrecido' : 'Ya reservada') }}
+                          </span>
+                        } @else {
+                          <button (click)="reserveClass(c)"
+                                  [disabled]="isSubmittingReservation() || (!c.canReserve && !c.canJoinWaitlist)"
+                                  class="text-xs font-bold px-3 py-1.5 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed"
+                                  [ngClass]="c.canReserve ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950' : 'bg-amber-600 hover:bg-amber-500 text-slate-950'">
+                            {{ c.canReserve ? 'Reservar' : (c.canJoinWaitlist ? 'Anotarme en Espera' : 'No disponible') }}
+                          </button>
+                        }
                       </div>
                     </div>
                   }
@@ -193,7 +238,21 @@ import {
 
             <!-- Membership Details Card -->
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
-              <h3 class="text-lg font-bold text-white mb-3">Detalle de Membresía</h3>
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-lg font-bold text-white">Detalle de Membresía</h3>
+                @if (activeMembership(); as mem) {
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-xs px-2 py-0.5 rounded font-bold" [ngClass]="getMembershipStatusBadgeClass(mem)">
+                      {{ getMembershipStatusText(mem) }}
+                    </span>
+                    @if (mem.isDepleted) {
+                      <span class="text-xs px-2 py-0.5 rounded font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        Sin créditos
+                      </span>
+                    }
+                  </div>
+                }
+              </div>
               @if (activeMembership(); as mem) {
                 <div class="space-y-3 text-sm">
                   <div class="flex justify-between py-1 border-b border-slate-800">
@@ -201,17 +260,25 @@ import {
                     <span class="font-semibold text-slate-200">{{ mem.membershipPlanName }}</span>
                   </div>
                   <div class="flex justify-between py-1 border-b border-slate-800">
-                    <span class="text-slate-400">Vigencia hasta:</span>
-                    <span class="font-semibold text-slate-200">{{ mem.endDate | date:'mediumDate' }}</span>
+                    <span class="text-slate-400">Vigencia:</span>
+                    <span class="font-semibold text-slate-200">{{ mem.startDate | date:'shortDate' }} - {{ mem.endDate | date:'mediumDate' }}</span>
                   </div>
                   <div class="flex justify-between py-1 border-b border-slate-800">
                     <span class="text-slate-400">Créditos totales:</span>
-                    <span class="font-semibold text-slate-200">{{ mem.totalCredits }}</span>
+                    <span class="font-semibold text-slate-200">{{ mem.isUnlimited ? 'Ilimitado' : mem.totalCredits }}</span>
                   </div>
-                  <div class="flex justify-between py-1">
+                  <div class="flex justify-between py-1" [ngClass]="mem.hasOutstandingBalance ? 'border-b border-slate-800' : ''">
                     <span class="text-slate-400">Créditos disponibles:</span>
-                    <span class="font-bold text-cyan-400 text-base">{{ mem.availableCredits }}</span>
+                    <span class="font-bold text-base" [ngClass]="mem.isDepleted ? 'text-amber-400' : 'text-cyan-400'">
+                      {{ mem.isUnlimited ? 'Ilimitado' : mem.availableCredits }}
+                    </span>
                   </div>
+                  @if (mem.hasOutstandingBalance || (mem.pendingBalance ?? 0) > 0) {
+                    <div class="flex justify-between py-1 text-amber-300">
+                      <span>Saldo pendiente:</span>
+                      <span class="font-bold">\${{ mem.pendingBalance | number:'1.2-2' }}</span>
+                    </div>
+                  }
                 </div>
               } @else {
                 <p class="text-xs text-slate-500">No cuentas con una membresía activa actualmente.</p>
@@ -224,7 +291,10 @@ import {
                 <h3 class="text-lg font-bold text-white flex items-center gap-2">
                   <span>🔔</span> Notificaciones
                 </h3>
-                <span class="text-xs bg-slate-800 px-2 py-0.5 rounded text-slate-400">{{ notifications().length }}</span>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs bg-slate-800 px-2 py-0.5 rounded text-slate-400">{{ notifications().length }}</span>
+                  <a routerLink="/portal/notificaciones" class="text-xs text-cyan-400 hover:underline">Ver todas</a>
+                </div>
               </div>
 
               @if (notifications().length === 0) {
@@ -236,9 +306,9 @@ import {
                          [ngClass]="n.isRead ? 'bg-slate-950/40 border-slate-800/60 text-slate-400' : 'bg-cyan-950/30 border-cyan-800/50 text-slate-200'">
                       <div class="flex items-center justify-between font-bold">
                         <span>{{ n.title }}</span>
-                        <span class="text-[10px] text-slate-500">{{ n.createdAtUtc | date:'short' }}</span>
+                        <span class="text-[10px] text-slate-500">{{ (n.sentAtUtc || n.createdAtUtc) | date:'short' }}</span>
                       </div>
-                      <p class="mt-1 text-slate-300">{{ n.message }}</p>
+                      <p class="mt-1 text-slate-300">{{ n.body || n.message }}</p>
                       @if (!n.isRead) {
                         <button (click)="markNotificationRead(n.id)" class="mt-2 text-[11px] text-cyan-400 hover:underline">
                           Marcar como leída
@@ -286,10 +356,15 @@ import {
 export class StudentPortalComponent implements OnInit {
   readonly authService = inject(AuthService);
   private readonly gymApi = inject(GymApiService);
+  private readonly notificationsService = inject(NotificationsService);
 
   activeMembership = signal<Membership | null>(null);
   myReservations = signal<Reservation[]>([]);
-  availableSessions = signal<ClassSession[]>([]);
+  availableClasses = signal<ReservableClassSession[]>([]);
+
+  readonly ReservationStatus = ReservationStatus;
+  /** Debe coincidir con Reservations:FreeCancellationHoursBeforeStart del backend; sólo se usa para avisar. */
+  readonly freeCancellationHours = 2;
   medicalStatus = signal<MedicalCertificateStatus | null>(null);
   notifications = signal<NotificationItem[]>([]);
   creditMovements = signal<CreditMovement[]>([]);
@@ -310,11 +385,16 @@ export class StudentPortalComponent implements OnInit {
   loadStudentData(studentId: string): void {
     this.gymApi.getActiveMembership(studentId).subscribe({
       next: (mem) => this.activeMembership.set(mem),
-      error: () => this.activeMembership.set(null)
+      error: () => {
+        this.gymApi.getCurrentMemberships(studentId).subscribe({
+          next: (list) => this.activeMembership.set(list.length > 0 ? list[0] : null),
+          error: () => this.activeMembership.set(null)
+        });
+      }
     });
 
-    this.gymApi.getStudentReservations(studentId).subscribe({
-      next: (res) => this.myReservations.set(res.filter(r => r.status === 0 || r.status === 1 || r.status === 5)),
+    this.gymApi.getMyUpcomingReservations().subscribe({
+      next: (res) => this.myReservations.set(res),
       error: () => this.myReservations.set([])
     });
 
@@ -339,43 +419,108 @@ export class StudentPortalComponent implements OnInit {
   loadAvailableSessions(): void {
     const today = new Date().toISOString().split('T')[0];
     const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
-    this.gymApi.getClassSessions({ fromDate: today, toDate: nextWeek, status: 0 }).subscribe({
-      next: (sessions) => this.availableSessions.set(sessions),
-      error: () => this.availableSessions.set([])
+    // El servidor evalúa cupos y elegibilidad del alumno autenticado para cada clase.
+    this.gymApi.getAvailableClasses({ from: today, to: nextWeek }).subscribe({
+      next: (classes) => this.availableClasses.set(classes),
+      error: () => this.availableClasses.set([])
     });
   }
 
-  reserveClass(sessionId: string): void {
+  reserveClass(classSession: ReservableClassSession): void {
     const studentId = this.authService.currentUser()?.personId;
     if (!studentId) return;
 
     this.isSubmittingReservation.set(true);
-    this.gymApi.createReservation(sessionId, studentId).subscribe({
+    this.gymApi.createReservation({ classSessionId: classSession.classSessionId }).subscribe({
       next: (res) => {
         this.isSubmittingReservation.set(false);
-        this.showFeedback('¡Reserva confirmada con éxito!', true);
+        this.showFeedback(
+          res.status === ReservationStatus.Waitlisted
+            ? `La clase está completa: quedaste en lista de espera, posición ${res.waitListPosition}.`
+            : '¡Reserva confirmada con éxito!',
+          true);
         this.loadStudentData(studentId);
       },
       error: (err) => {
         this.isSubmittingReservation.set(false);
-        const msg = err.error?.message || 'Error al procesar la reserva.';
-        this.showFeedback(msg, false);
+        this.showFeedback(err.error?.message || 'Error al procesar la reserva.', false);
+        this.loadAvailableSessions();
       }
     });
   }
 
-  cancelReservation(reservationId: string): void {
+  cancelReservation(reservation: Reservation): void {
+    if (this.isLateCancellation(reservation) &&
+        !confirm(`Faltan menos de ${this.freeCancellationHours} horas para la clase. Si cancelás ahora, el crédito no se devuelve. ¿Cancelar igual?`)) {
+      return;
+    }
+
+    this.runReservationAction(
+      this.gymApi.cancelReservation(reservation.id),
+      (res) => res.isLateCancellation
+        ? 'Reserva cancelada fuera de término: el crédito no se devuelve.'
+        : 'Reserva cancelada correctamente.',
+      'Error al cancelar la reserva.');
+  }
+
+  acceptOffer(reservation: Reservation): void {
+    this.runReservationAction(
+      this.gymApi.acceptWaitlistOffer(reservation.id),
+      () => '¡Cupo aceptado! Tu reserva quedó confirmada.',
+      'No se pudo aceptar el cupo.');
+  }
+
+  declineOffer(reservation: Reservation): void {
+    this.runReservationAction(
+      this.gymApi.declineWaitlistOffer(reservation.id),
+      () => 'Rechazaste el cupo ofrecido.',
+      'No se pudo rechazar el cupo.');
+  }
+
+  /** Cancelar una reserva confirmada a menos de `freeCancellationHours` del inicio no devuelve el crédito. */
+  isLateCancellation(reservation: Reservation): boolean {
+    if (reservation.status !== ReservationStatus.Confirmed || !reservation.startsAtUtc) return false;
+    const hoursLeft = (new Date(reservation.startsAtUtc).getTime() - Date.now()) / 3_600_000;
+    return hoursLeft < this.freeCancellationHours;
+  }
+
+  getReservationStatusText(reservation: Reservation): string {
+    switch (reservation.status) {
+      case ReservationStatus.Confirmed: return 'Confirmada';
+      case ReservationStatus.Waitlisted: return `Lista de Espera #${reservation.waitListPosition}`;
+      case ReservationStatus.Pending: return 'Cupo Ofrecido';
+      default: return 'Finalizada';
+    }
+  }
+
+  getReservationBadgeClass(reservation: Reservation): string {
+    switch (reservation.status) {
+      case ReservationStatus.Confirmed: return 'bg-cyan-500/20 text-cyan-300';
+      case ReservationStatus.Waitlisted: return 'bg-amber-500/20 text-amber-300';
+      case ReservationStatus.Pending: return 'bg-emerald-500/20 text-emerald-300';
+      default: return 'bg-slate-700 text-slate-300';
+    }
+  }
+
+  private runReservationAction(
+    action: Observable<Reservation>,
+    successMessage: (result: Reservation) => string,
+    fallbackError: string
+  ): void {
     const studentId = this.authService.currentUser()?.personId;
     if (!studentId) return;
 
-    this.gymApi.cancelReservation(reservationId, 'Cancelada por el alumno desde el portal').subscribe({
-      next: () => {
-        this.showFeedback('Reserva cancelada correctamente.', true);
+    this.isSubmittingReservation.set(true);
+    action.subscribe({
+      next: (res) => {
+        this.isSubmittingReservation.set(false);
+        this.showFeedback(successMessage(res), true);
         this.loadStudentData(studentId);
       },
       error: (err) => {
-        const msg = err.error?.message || 'Error al cancelar la reserva.';
-        this.showFeedback(msg, false);
+        this.isSubmittingReservation.set(false);
+        this.showFeedback(err.error?.message || fallbackError, false);
+        this.loadStudentData(studentId);
       }
     });
   }
@@ -409,8 +554,33 @@ export class StudentPortalComponent implements OnInit {
     this.gymApi.markNotificationAsRead(notificationId).subscribe({
       next: () => {
         this.notifications.update(list => list.map(n => n.id === notificationId ? { ...n, isRead: true } : n));
+        this.notificationsService.refreshUnreadCount().subscribe({ error: () => {} });
       }
     });
+  }
+
+  getMembershipStatusText(mem: Membership): string {
+    const effective = mem.effectiveStatus ?? mem.status;
+    switch (effective) {
+      case 0: return 'Pendiente';
+      case 1: return 'Activa';
+      case 2: return 'Vencida';
+      case 3: return 'Suspendida';
+      case 4: return 'Cancelada';
+      default: return 'Desconocido';
+    }
+  }
+
+  getMembershipStatusBadgeClass(mem: Membership): string {
+    const effective = mem.effectiveStatus ?? mem.status;
+    switch (effective) {
+      case 0: return 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
+      case 1: return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+      case 2: return 'bg-slate-700 text-slate-300';
+      case 3: return 'bg-orange-500/20 text-orange-300 border border-orange-500/30';
+      case 4: return 'bg-rose-500/20 text-rose-300 border border-rose-500/30';
+      default: return 'bg-slate-800 text-slate-400';
+    }
   }
 
   private showFeedback(msg: string, success: boolean): void {

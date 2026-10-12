@@ -2,10 +2,10 @@ namespace SmartGym.Domain.Enums;
 
 public enum ReservationStatus
 {
-    Reserved = 1,
-    Confirmed = 2,
+    Confirmed = 1,
     Cancelled = 3,
     Attended = 4,
     NoShow = 5,
-    WaitList = 6
+    Waitlisted = 6,
+    Pending = 7
 }
