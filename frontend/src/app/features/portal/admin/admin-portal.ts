@@ -240,7 +240,16 @@ import {
                   <h2 class="text-xl font-bold text-white">Entregas Fallidas</h2>
                   <p class="text-xs text-slate-400">Comunicaciones externas con error que permiten reintento manual auditado</p>
                 </div>
-                <button (click)="loadFailedDeliveries()" class="text-xs text-amber-400 hover:text-amber-300">Actualizar</button>
+                <div class="flex items-center gap-4">
+                  <label class="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
+                    <input type="checkbox"
+                           data-testid="show-unconfigured-deliveries"
+                           [checked]="showUnconfiguredDeliveries()"
+                           (change)="toggleUnconfiguredDeliveries()" />
+                    Mostrar canales sin proveedor configurado
+                  </label>
+                  <button (click)="loadFailedDeliveries()" class="text-xs text-amber-400 hover:text-amber-300">Actualizar</button>
+                </div>
               </div>
 
               @if (failedDeliveries().length === 0) {
@@ -400,6 +409,7 @@ export class AdminPortalComponent implements OnInit {
   promotions = signal<Promotion[]>([]);
   auditLogs = signal<AuditLog[]>([]);
   failedDeliveries = signal<NotificationDeliveryItem[]>([]);
+  showUnconfiguredDeliveries = signal(false);
   notificationTemplates = signal<NotificationTemplateItem[]>([]);
   notificationFeedback = signal<string | null>(null);
 
@@ -454,8 +464,13 @@ export class AdminPortalComponent implements OnInit {
     });
   }
 
+  toggleUnconfiguredDeliveries(): void {
+    this.showUnconfiguredDeliveries.update((show) => !show);
+    this.loadFailedDeliveries();
+  }
+
   loadFailedDeliveries(): void {
-    this.notificationsService.getFailedDeliveries().subscribe({
+    this.notificationsService.getFailedDeliveries(1, 20, this.showUnconfiguredDeliveries()).subscribe({
       next: (res) => this.failedDeliveries.set(res.items ?? []),
       error: () => this.failedDeliveries.set([])
     });

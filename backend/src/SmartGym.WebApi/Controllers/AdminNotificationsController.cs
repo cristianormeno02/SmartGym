@@ -75,10 +75,16 @@ public class AdminNotificationsController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] NotificationChannel? channel = null,
+        [FromQuery] bool excludeProviderNotConfigured = false,
         CancellationToken cancellationToken = default) =>
         ExecuteAsync(async () =>
         {
-            var paged = await _notificationService.GetFailedDeliveriesPagedAsync(page, pageSize, channel, cancellationToken);
+            var paged = await _notificationService.GetFailedDeliveriesPagedAsync(
+                page,
+                pageSize,
+                channel,
+                excludeProviderNotConfigured,
+                cancellationToken);
             return Ok(paged);
         });
 

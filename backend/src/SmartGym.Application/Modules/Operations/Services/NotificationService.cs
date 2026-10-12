@@ -511,6 +511,7 @@ public class NotificationService : INotificationService
         int page = 1,
         int pageSize = 20,
         NotificationChannel? channel = null,
+        bool excludeProviderNotConfigured = false,
         CancellationToken cancellationToken = default)
     {
         var safePage = Math.Max(1, page);
@@ -525,6 +526,12 @@ public class NotificationService : INotificationService
         if (channel.HasValue)
         {
             query = query.Where(d => d.Channel == channel.Value);
+        }
+
+        if (excludeProviderNotConfigured)
+        {
+            // Fallos esperables en entornos sin proveedor: no requieren revisión entrega por entrega.
+            query = query.Where(d => d.LastErrorCode != NotificationErrorCodes.ProviderNotConfigured);
         }
 
         var totalCount = await query.CountAsync(cancellationToken);

@@ -216,6 +216,30 @@ describe('NotificationsService', () => {
     ]);
   });
 
+  it('hides provider-not-configured failures by default when listing failed deliveries', () => {
+    const emptyPage = {
+      items: [],
+      pageNumber: 1,
+      pageSize: 20,
+      totalCount: 0,
+      totalPages: 0,
+      hasPreviousPage: false,
+      hasNextPage: false
+    };
+    const isFailedList = (r: { url: string }) =>
+      r.url === 'http://localhost:5000/api/admin/notifications/deliveries/failed';
+
+    service.getFailedDeliveries().subscribe();
+    const hiddenReq = httpMock.expectOne(isFailedList);
+    expect(hiddenReq.request.params.get('excludeProviderNotConfigured')).toBe('true');
+    hiddenReq.flush(emptyPage);
+
+    service.getFailedDeliveries(1, 20, true).subscribe();
+    const allReq = httpMock.expectOne(isFailedList);
+    expect(allReq.request.params.get('excludeProviderNotConfigured')).toBe('false');
+    allReq.flush(emptyPage);
+  });
+
   it('reset clears the unread count and cached notifications of the previous session', () => {
     service.unreadCount.set(5);
     service.recentNotifications.set([
