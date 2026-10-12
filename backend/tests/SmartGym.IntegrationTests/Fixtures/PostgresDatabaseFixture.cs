@@ -29,36 +29,45 @@ public sealed class PostgresDatabaseFixture : IAsyncLifetime
             return;
         }
 
-        if (TryGetFallbackAdminConnectionString(out var localConn))
+        try
         {
-            _adminConnectionString = localConn;
-            ConnectionString = localConn;
-            await ClearStaleMigrationLocksAsync(localConn);
-            await using var fallbackContext = CreateDbContext();
-            await fallbackContext.Database.MigrateAsync();
-            return;
+            _container = new PostgreSqlBuilder()
+                .WithImage("postgres:16-alpine")
+                .WithDatabase("smartgym_test")
+                .WithUsername("postgres")
+                .WithPassword("postgres")
+                .Build();
+
+            await _container.StartAsync();
+            _adminConnectionString = _container.GetConnectionString();
+            ConnectionString = _adminConnectionString;
+
+            await using var context = CreateDbContext();
+            await context.Database.MigrateAsync();
         }
-
-        _container = new PostgreSqlBuilder()
-            .WithImage("postgres:16-alpine")
-            .WithDatabase("smartgym_test")
-            .WithUsername("postgres")
-            .WithPassword("postgres")
-            .Build();
-
-        await _container.StartAsync();
-        _adminConnectionString = _container.GetConnectionString();
-        ConnectionString = _adminConnectionString;
-
-        await using var context = CreateDbContext();
-        await context.Database.MigrateAsync();
+        catch (Exception ex) when (TryGetFallbackAdminConnectionString(out var fallbackConn))
+        {
+            // The fallback server also hosts the development database: it is only used as an
+            // admin connection to create isolated smartgym_it_* databases, never migrated or written to.
+            _container = null;
+            _adminConnectionString = fallbackConn;
+            try
+            {
+                ConnectionString = await CreateIsolatedDatabaseAsync(applyAllMigrations: true);
+            }
+            catch (Exception innerEx)
+            {
+                throw new InvalidOperationException(
+                    $"Could not start Testcontainers PostgreSQL ({ex.Message}) nor create an isolated test database on fallback PostgreSQL ({innerEx.Message}).",
+                    innerEx);
+            }
+        }
     }
 
     public SmartGymDbContext CreateDbContext(IServiceProvider? serviceProvider = null, string? connectionString = null)
     {
         var options = new DbContextOptionsBuilder<SmartGymDbContext>()
             .UseNpgsql(connectionString ?? ConnectionString)
-            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning))
             .Options;
 
         return new SmartGymDbContext(options, serviceProvider);
@@ -86,19 +95,6 @@ public sealed class PostgresDatabaseFixture : IAsyncLifetime
         await using (var adminConn = new NpgsqlConnection(adminBuilder.ConnectionString))
         {
             await adminConn.OpenAsync();
-            await using (var cleanupCmd = adminConn.CreateCommand())
-            {
-                cleanupCmd.CommandText = @"
-                    SELECT pg_terminate_backend(pid)
-                    FROM pg_stat_activity
-                    WHERE pid <> pg_backend_pid()
-                      AND (
-                          state = 'idle in transaction'
-                          OR pid IN (SELECT pid FROM pg_locks WHERE locktype = 'advisory')
-                      );";
-                await cleanupCmd.ExecuteNonQueryAsync();
-            }
-
             await using var cmd = adminConn.CreateCommand();
             cmd.CommandText = $"CREATE DATABASE \"{dbName}\"";
             await cmd.ExecuteNonQueryAsync();
@@ -121,51 +117,6 @@ public sealed class PostgresDatabaseFixture : IAsyncLifetime
         }
 
         return isolatedConnString;
-    }
-
-    private static async Task ClearStaleMigrationLocksAsync(string connString)
-    {
-        try
-        {
-            var builder = new NpgsqlConnectionStringBuilder(connString)
-            {
-                Timeout = 15,
-                CommandTimeout = 15,
-                Pooling = false
-            };
-
-            await using var conn = new NpgsqlConnection(builder.ConnectionString);
-            await conn.OpenAsync();
-
-            await using (var termCmd = conn.CreateCommand())
-            {
-                termCmd.CommandText = @"
-                    SELECT pg_terminate_backend(pid)
-                    FROM pg_stat_activity
-                    WHERE pid <> pg_backend_pid()
-                      AND (
-                          state = 'idle in transaction'
-                          OR pid IN (SELECT pid FROM pg_locks WHERE locktype = 'advisory')
-                      );";
-                await termCmd.ExecuteNonQueryAsync();
-            }
-
-            await using (var lockCmd = conn.CreateCommand())
-            {
-                lockCmd.CommandText = @"
-                    DO $$
-                    BEGIN
-                        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '__EFMigrationsLock') THEN
-                            DELETE FROM ""__EFMigrationsLock"";
-                        END IF;
-                    END $$;";
-                await lockCmd.ExecuteNonQueryAsync();
-            }
-        }
-        catch
-        {
-            // Ignore lock cleanup errors
-        }
     }
 
     public async Task DisposeAsync()
