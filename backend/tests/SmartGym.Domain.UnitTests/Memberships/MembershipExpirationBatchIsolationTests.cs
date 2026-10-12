@@ -30,7 +30,13 @@ public class MembershipExpirationBatchIsolationTests
                 ? throw new InvalidOperationException("Fallo simulado al anular el canje.")
                 : Task.CompletedTask;
 
-        public Task<List<PromotionDto>> GetAllAsync(bool onlyActive = false, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<List<PromotionDto>> GetAllAsync(bool onlyActive = false, SmartGym.Domain.Enums.PromotionStatus? status = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PromotionDto> UpdateAsync(Guid id, UpdatePromotionRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PromotionDto> PauseAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PromotionDto> ActivateAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PromotionDto> ArchiveAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PromotionApplicationResultDto> PreviewForMembershipAsync(EvaluatePromotionRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<SmartGym.Application.Common.Models.PagedResult<PromotionRedemptionDto>> GetRedemptionsByPromotionAsync(Guid promotionId, int page = 1, int pageSize = 20, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PromotionDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PromotionDto?> GetByCodeAsync(string code, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PromotionDto> CreateAsync(CreatePromotionRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();

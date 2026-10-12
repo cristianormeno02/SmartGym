@@ -483,20 +483,36 @@ export interface CreditMovement {
   createdAtUtc: string;
 }
 
+export enum PromotionStatus {
+  Active = 1,
+  Paused = 2,
+  Archived = 3
+}
+
+export enum PromotionBenefitType {
+  PercentageDiscount = 1,
+  FixedAmountDiscount = 2,
+  ExtraCredits = 3
+}
+
 export interface Promotion {
   id: string;
+  code: string;
   name: string;
-  code?: string;
-  conditionType: number;
-  benefitType: number;
-  discountPercentage?: number;
-  fixedDiscountAmount?: number;
-  extraCredits?: number;
-  startDate: string;
-  endDate?: string;
-  maxRedemptionsTotal?: number;
-  currentRedemptionsCount: number;
+  description?: string;
+  conditionType: number; // 1=NewStudent, 2=FamilyGroup, 3=Referral, 4=TwoForOne, 5=CouponCode
+  benefitType: PromotionBenefitType;
+  benefitValue: number;
+  validFrom: string;
+  validTo?: string;
+  maxUsesTotal?: number;
+  currentUsesTotal: number;
+  maxUsesPerPerson: number;
+  applicablePlanId?: string;
+  applicablePlanName?: string;
   isActive: boolean;
+  status: PromotionStatus;
+  version: number; // concurrencia optimista: se reenvía al editar
 }
 
 export interface AuditLog {

@@ -64,6 +64,13 @@ public interface ISmartGymDbContext
     Task LockStudentMembershipsForUpdateAsync(Guid studentId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Bloquea la fila de la promoción hasta el fin de la transacción actual para serializar los canjes y
+    /// anulaciones que verifican y actualizan sus topes de uso. Es el último bloqueo del orden común
+    /// (clases, membresías, promoción): no debe tomarse ningún otro después.
+    /// </summary>
+    Task LockPromotionForUpdateAsync(Guid promotionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Difiere las exclusiones de solapamiento de sala e instructor hasta el fin de la transacción actual.
     /// Necesario cuando un mismo guardado inserta una clase y libera el horario de otra (reprogramación).
     /// </summary>

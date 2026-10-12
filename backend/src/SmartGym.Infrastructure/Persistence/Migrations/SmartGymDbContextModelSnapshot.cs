@@ -1453,6 +1453,11 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)");
 
+                    b.Property<int>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1);
+
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -1462,6 +1467,12 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.Property<DateOnly?>("ValidTo")
                         .HasColumnType("date");
 
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ApplicablePlanId");
@@ -1469,7 +1480,12 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
-                    b.ToTable("Promotions", (string)null);
+                    b.ToTable("Promotions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Promotions_CurrentUsesTotal", "\"CurrentUsesTotal\" >= 0 AND (\"MaxUsesTotal\" IS NULL OR \"CurrentUsesTotal\" <= \"MaxUsesTotal\")");
+
+                            t.HasCheckConstraint("CK_Promotions_Status", "\"Status\" IN (1, 2, 3)");
+                        });
                 });
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Promotions.PromotionRedemption", b =>
@@ -1519,7 +1535,10 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("MembershipId");
+                    b.HasIndex("MembershipId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PromotionRedemptions_Membership")
+                        .HasFilter("\"MembershipId\" IS NOT NULL AND \"IsActive\"");
 
                     b.HasIndex("PersonId");
 

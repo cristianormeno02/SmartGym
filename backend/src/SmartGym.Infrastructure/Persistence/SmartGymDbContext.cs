@@ -115,6 +115,23 @@ public class SmartGymDbContext : DbContext, ISmartGymDbContext
             cancellationToken);
     }
 
+    public virtual async Task LockPromotionForUpdateAsync(Guid promotionId, CancellationToken cancellationToken = default)
+    {
+        if (!Database.IsNpgsql())
+        {
+            return;
+        }
+
+        if (Database.CurrentTransaction == null)
+        {
+            throw new InvalidOperationException("El bloqueo de la promoción requiere una transacción activa.");
+        }
+
+        await Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT 1 FROM \"Promotions\" WHERE \"Id\" = {promotionId} FOR UPDATE",
+            cancellationToken);
+    }
+
     public virtual async Task LockStudentMembershipsForUpdateAsync(Guid studentId, CancellationToken cancellationToken = default)
     {
         if (!Database.IsNpgsql())

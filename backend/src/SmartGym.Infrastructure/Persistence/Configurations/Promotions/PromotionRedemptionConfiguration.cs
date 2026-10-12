@@ -36,6 +36,12 @@ public class PromotionRedemptionConfiguration : IEntityTypeConfiguration<Promoti
             .IsUnique()
             .HasFilter("\"ReservationId\" IS NOT NULL");
 
+        // Una membresía tiene como máximo un canje vigente
+        builder.HasIndex(r => r.MembershipId)
+            .HasDatabaseName("UX_PromotionRedemptions_Membership")
+            .IsUnique()
+            .HasFilter("\"MembershipId\" IS NOT NULL AND \"IsActive\"");
+
         builder.HasOne(r => r.Person)
             .WithMany()
             .HasForeignKey(r => r.PersonId)

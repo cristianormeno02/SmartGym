@@ -30,6 +30,10 @@ public static class Permissions
     public const string ReservationsManage = "RESERVATIONS_MANAGE";
     public const string ReservationsWaitlistRead = "RESERVATIONS_WAITLIST_READ";
     public const string ReservationsOverridePolicy = "RESERVATIONS_OVERRIDE_POLICY";
+
+    public const string PromotionsRead = "PROMOTIONS_READ";
+    public const string PromotionsManage = "PROMOTIONS_MANAGE";
+    public const string PromotionsRedemptionsRead = "PROMOTIONS_REDEMPTIONS_READ";
 }
 
 public static class Policies
@@ -57,4 +61,8 @@ public static class Policies
     public const string ReservationsManage = Permissions.ReservationsManage;
     public const string ReservationsWaitlistRead = Permissions.ReservationsWaitlistRead;
     public const string ReservationsOverridePolicy = Permissions.ReservationsOverridePolicy;
+
+    public const string PromotionsRead = Permissions.PromotionsRead;
+    public const string PromotionsManage = Permissions.PromotionsManage;
+    public const string PromotionsRedemptionsRead = Permissions.PromotionsRedemptionsRead;
 }

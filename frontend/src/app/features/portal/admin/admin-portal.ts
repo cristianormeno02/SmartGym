@@ -7,6 +7,8 @@ import {
   DashboardMetrics,
   AdminUserOverview,
   Promotion,
+  PromotionBenefitType,
+  PromotionStatus,
   AuditLog
 } from '../../../core/models/gym.models';
 
@@ -188,8 +190,8 @@ import {
                     <div class="flex items-center justify-between">
                       <span class="font-bold text-white text-base">{{ p.name }}</span>
                       <span class="text-xs px-2 py-0.5 rounded font-bold"
-                            [ngClass]="p.isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'">
-                        {{ p.isActive ? 'Activa' : 'Pausada' }}
+                            [ngClass]="p.status === PromotionStatus.Active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'">
+                        {{ promotionStatusLabel(p.status) }}
                       </span>
                     </div>
 
@@ -200,9 +202,9 @@ import {
                     }
 
                     <div class="text-xs text-slate-400 space-y-1">
-                      <p>Descuento: <strong class="text-slate-200">{{ p.discountPercentage ? p.discountPercentage + '%' : (p.fixedDiscountAmount ? '\$' + p.fixedDiscountAmount : 'Créditos Extra') }}</strong></p>
-                      <p>Canjes realizados: <strong class="text-slate-200">{{ p.currentRedemptionsCount }}</strong> {{ p.maxRedemptionsTotal ? '/ ' + p.maxRedemptionsTotal : '' }}</p>
-                      <p>Vigencia desde: {{ p.startDate | date:'shortDate' }}</p>
+                      <p>Beneficio: <strong class="text-slate-200">{{ promotionBenefitLabel(p) }}</strong></p>
+                      <p>Canjes realizados: <strong class="text-slate-200">{{ p.currentUsesTotal }}</strong> {{ p.maxUsesTotal ? '/ ' + p.maxUsesTotal : '' }}</p>
+                      <p>Vigencia: {{ p.validFrom | date:'shortDate' }}{{ p.validTo ? ' al ' + (p.validTo | date:'shortDate') : '' }}</p>
                     </div>
                   </div>
                 }
@@ -266,6 +268,24 @@ export class AdminPortalComponent implements OnInit {
   users = signal<AdminUserOverview[]>([]);
   promotions = signal<Promotion[]>([]);
   auditLogs = signal<AuditLog[]>([]);
+
+  readonly PromotionStatus = PromotionStatus;
+
+  promotionStatusLabel(status: PromotionStatus): string {
+    switch (status) {
+      case PromotionStatus.Active: return 'Activa';
+      case PromotionStatus.Paused: return 'Pausada';
+      default: return 'Archivada';
+    }
+  }
+
+  promotionBenefitLabel(p: Promotion): string {
+    switch (p.benefitType) {
+      case PromotionBenefitType.PercentageDiscount: return `${p.benefitValue}% de descuento`;
+      case PromotionBenefitType.FixedAmountDiscount: return `$${p.benefitValue} de descuento`;
+      default: return `${p.benefitValue} créditos extra`;
+    }
+  }
 
   ngOnInit(): void {
     this.loadMetrics();

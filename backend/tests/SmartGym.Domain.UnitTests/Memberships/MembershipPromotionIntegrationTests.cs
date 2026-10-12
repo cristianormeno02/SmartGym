@@ -2,9 +2,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
 using SmartGym.Application.Common;
+using SmartGym.Application.Common.Exceptions;
 using SmartGym.Application.Modules.Memberships.Dtos;
 using SmartGym.Application.Modules.Memberships.Services;
 using SmartGym.Application.Modules.Operations.Services;
+using SmartGym.Application.Modules.Promotions;
 using SmartGym.Application.Modules.Promotions.Services;
 using SmartGym.Domain.Entities.Identity;
 using SmartGym.Domain.Entities.Memberships;
@@ -209,5 +211,55 @@ public class MembershipPromotionIntegrationTests
         Assert.Equal(2, movements.Count);
         Assert.Contains(movements, m => m.Type == CreditMovementType.InitialPurchase && m.Amount == 8);
         Assert.Contains(movements, m => m.Type == CreditMovementType.PromotionBonus && m.Amount == 2);
+    }
+
+    [Theory]
+    [InlineData("NOEXISTE", PromotionErrorCodes.NotApplicable)]
+    [InlineData("PAUSADA", PromotionErrorCodes.NotApplicable)]
+    [InlineData("AGOTADA", PromotionErrorCodes.LimitReached)]
+    public async Task CreateAsync_WithRejectedPromotion_PropagatesPromotionErrorCodeAndCreatesNothing(
+        string promotionCode,
+        string expectedCode)
+    {
+        await using var db = CreateDbContext();
+        var today = new DateOnly(2026, 5, 1);
+        var calendar = new StubGymCalendar(today);
+        var (student, plan) = await SeedStudentAndPlanAsync(db);
+        var service = CreateService(db, calendar);
+
+        Promotion NewPromotion(string code) => new()
+        {
+            Id = Guid.NewGuid(),
+            Code = code,
+            Name = code,
+            ConditionType = PromotionConditionType.CouponCode,
+            BenefitType = PromotionBenefitType.PercentageDiscount,
+            BenefitValue = 20m,
+            ValidFrom = today.AddDays(-5),
+            ValidTo = today.AddDays(30),
+            MaxUsesPerPerson = 1,
+            IsActive = true
+        };
+
+        var paused = NewPromotion("PAUSADA");
+        paused.Status = PromotionStatus.Paused;
+        var exhausted = NewPromotion("AGOTADA");
+        exhausted.MaxUsesTotal = 2;
+        exhausted.CurrentUsesTotal = 2;
+        db.Promotions.AddRange(paused, exhausted);
+        await db.SaveChangesAsync();
+
+        var request = new CreateMembershipRequest(
+            StudentId: student.Id,
+            MembershipPlanId: plan.Id,
+            StartDate: today,
+            PromotionCode: promotionCode);
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            service.CreateAsync(request, Guid.NewGuid(), isCallerAdministrator: false));
+
+        Assert.Equal(expectedCode, ex.Code);
+        Assert.Equal(0, await db.Memberships.CountAsync());
+        Assert.Equal(0, await db.PromotionRedemptions.CountAsync());
     }
 }

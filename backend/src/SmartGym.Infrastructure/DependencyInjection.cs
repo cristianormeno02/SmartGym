@@ -155,6 +155,13 @@ public static class DependencyInjection
                 policy.RequireRole(Roles.Administrator, Roles.Secretary, Roles.Instructor));
             options.AddPolicy(Policies.ReservationsOverridePolicy, policy =>
                 policy.RequireRole(Roles.Administrator, Roles.Secretary));
+
+            options.AddPolicy(Policies.PromotionsRead, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.PromotionsManage, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
+            options.AddPolicy(Policies.PromotionsRedemptionsRead, policy =>
+                policy.RequireRole(Roles.Administrator, Roles.Secretary));
         });
 
         // Background Workers

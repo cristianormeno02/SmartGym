@@ -316,28 +316,18 @@ public class MembershipService : IMembershipService
 
         if (!string.IsNullOrWhiteSpace(promotionCode))
         {
-            try
-            {
-                var redemption = await _promotionService.RedeemPromotionAsync(
-                    new ApplyPromotionRequest(promotionCode.Trim(), student.Id, plan.Id, plan.Price),
-                    membershipId: null,
-                    cancellationToken);
+            // Los rechazos llegan como ConflictException con su código (PromotionErrorCodes)
+            var redemption = await _promotionService.RedeemPromotionAsync(
+                new ApplyPromotionRequest(promotionCode.Trim(), student.Id, plan.Id, plan.Price),
+                membershipId: null,
+                cancellationToken);
 
-                originalPrice = redemption.OriginalAmount;
-                discountAmount = redemption.DiscountAmount;
-                purchasePrice = redemption.FinalAmount;
-                extraCreditsGranted = redemption.ExtraCreditsGranted;
-                promotionId = redemption.PromotionId;
-                promotionRedemptionId = redemption.Id;
-            }
-            catch (ArgumentException ex)
-            {
-                throw new ValidationException(ex.Message);
-            }
-            catch (InvalidOperationException ex)
-            {
-                throw new ConflictException(ex.Message);
-            }
+            originalPrice = redemption.OriginalAmount;
+            discountAmount = redemption.DiscountAmount;
+            purchasePrice = redemption.FinalAmount;
+            extraCreditsGranted = redemption.ExtraCreditsGranted;
+            promotionId = redemption.PromotionId;
+            promotionRedemptionId = redemption.Id;
         }
 
         Membership? createdMembership = null;

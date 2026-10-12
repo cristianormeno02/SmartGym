@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SmartGym.Application.Common;
+using SmartGym.Application.Common.Exceptions;
+using SmartGym.Application.Modules.Promotions;
 using SmartGym.Application.Modules.Promotions.Dtos;
 using SmartGym.Application.Modules.Promotions.Services;
 using SmartGym.Domain.Entities.Identity;
@@ -29,6 +31,7 @@ public class PromotionRedemptionLifecycleTests
     {
         var options = new DbContextOptionsBuilder<SmartGymDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         return new SmartGymDbContext(options);
     }
@@ -86,8 +89,9 @@ public class PromotionRedemptionLifecycleTests
         Assert.Equal(2000m, eval.DiscountAmount);
         Assert.Equal(18000m, eval.FinalAmount);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var expired = await Assert.ThrowsAsync<ConflictException>(() =>
             service.EvaluatePromotionAsync(new ApplyPromotionRequest("JULIO10", student.Id, null, 20000m)));
+        Assert.Equal(PromotionErrorCodes.NotApplicable, expired.Code);
     }
 
     [Fact]
@@ -189,8 +193,9 @@ public class PromotionRedemptionLifecycleTests
         Assert.Equal(1, promoAfterRedeem.CurrentUsesTotal);
 
         // Cannot redeem again while active
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var reused = await Assert.ThrowsAsync<ConflictException>(() =>
             service.EvaluatePromotionAsync(new ApplyPromotionRequest("UNICOUSO", student.Id, null, 15000m)));
+        Assert.Equal(PromotionErrorCodes.LimitReached, reused.Code);
 
         // Void redemption (e.g. when a Pending membership is cancelled before ever activating)
         await service.VoidRedemptionAsync(firstRedemption.Id);
@@ -358,5 +363,152 @@ public class PromotionRedemptionLifecycleTests
             service.EvaluatePromotionForReservationAsync(student.Id, sessionId, activityId, "SOLOPLAN"));
         Assert.Equal("PROMOTION_NOT_APPLICABLE", ex3.Code);
     }
-}
 
+    private static Promotion FullAccessPromotion(string code, Action<Promotion>? configure = null)
+    {
+        var promo = new Promotion
+        {
+            Id = Guid.NewGuid(),
+            Code = code,
+            Name = code,
+            ConditionType = PromotionConditionType.CouponCode,
+            BenefitType = PromotionBenefitType.PercentageDiscount,
+            BenefitValue = 100m,
+            ValidFrom = new DateOnly(2026, 6, 1),
+            ValidTo = new DateOnly(2026, 6, 30),
+            MaxUsesPerPerson = 1,
+            IsActive = true
+        };
+        configure?.Invoke(promo);
+        return promo;
+    }
+
+    private static async Task AssertRejectedInBothPathsAsync(
+        IPromotionService service,
+        Guid personId,
+        string code,
+        string expectedCode)
+    {
+        var request = new ApplyPromotionRequest(code, personId, null, 10000m);
+
+        var evaluate = await Assert.ThrowsAsync<ConflictException>(() => service.EvaluatePromotionAsync(request));
+        Assert.Equal(expectedCode, evaluate.Code);
+
+        var redeem = await Assert.ThrowsAsync<ConflictException>(() => service.RedeemPromotionAsync(request, membershipId: null));
+        Assert.Equal(expectedCode, redeem.Code);
+
+        var evaluateReservation = await Assert.ThrowsAsync<ConflictException>(() =>
+            service.EvaluatePromotionForReservationAsync(personId, Guid.NewGuid(), Guid.NewGuid(), code));
+        Assert.Equal(expectedCode, evaluateReservation.Code);
+
+        var redeemReservation = await Assert.ThrowsAsync<ConflictException>(() =>
+            service.RedeemPromotionForReservationAsync(personId, Guid.NewGuid(), Guid.NewGuid(), code, Guid.NewGuid()));
+        Assert.Equal(expectedCode, redeemReservation.Code);
+    }
+
+    [Fact]
+    public async Task EvaluateAndRedeem_RejectionsInBothPaths_ReturnStableErrorCodes()
+    {
+        await using var db = CreateDbContext();
+        var calendar = new StubGymCalendar { Today = new DateOnly(2026, 6, 15) };
+        IPromotionService service = new PromotionService(db, calendar);
+
+        var student = Person.Create("Julia", "Vera", "35111222");
+        db.People.Add(student);
+
+        db.Promotions.AddRange(
+            FullAccessPromotion("VENCIDA", p => p.ValidTo = new DateOnly(2026, 6, 10)),
+            FullAccessPromotion("FUTURA", p => p.ValidFrom = new DateOnly(2026, 6, 20)),
+            FullAccessPromotion("PAUSADA", p => p.Status = PromotionStatus.Paused),
+            FullAccessPromotion("ARCHIVADA", p => p.Status = PromotionStatus.Archived),
+            FullAccessPromotion("REFERIDO", p => p.ConditionType = PromotionConditionType.Referral),
+            FullAccessPromotion("DOSXUNO", p => p.ConditionType = PromotionConditionType.TwoForOne),
+            FullAccessPromotion("FAMILIA", p => p.ConditionType = PromotionConditionType.FamilyGroup),
+            FullAccessPromotion("AGOTADA", p =>
+            {
+                p.MaxUsesTotal = 3;
+                p.CurrentUsesTotal = 3;
+            }));
+        await db.SaveChangesAsync();
+
+        await AssertRejectedInBothPathsAsync(service, student.Id, "NOEXISTE", PromotionErrorCodes.NotApplicable);
+        await AssertRejectedInBothPathsAsync(service, student.Id, "VENCIDA", PromotionErrorCodes.NotApplicable);
+        await AssertRejectedInBothPathsAsync(service, student.Id, "FUTURA", PromotionErrorCodes.NotApplicable);
+        await AssertRejectedInBothPathsAsync(service, student.Id, "PAUSADA", PromotionErrorCodes.NotApplicable);
+        await AssertRejectedInBothPathsAsync(service, student.Id, "ARCHIVADA", PromotionErrorCodes.NotApplicable);
+        await AssertRejectedInBothPathsAsync(service, student.Id, "REFERIDO", PromotionErrorCodes.NotApplicable);
+        await AssertRejectedInBothPathsAsync(service, student.Id, "DOSXUNO", PromotionErrorCodes.NotApplicable);
+        await AssertRejectedInBothPathsAsync(service, student.Id, "FAMILIA", PromotionErrorCodes.NotApplicable);
+        await AssertRejectedInBothPathsAsync(service, Guid.NewGuid(), "AGOTADA", PromotionErrorCodes.NotApplicable);
+        await AssertRejectedInBothPathsAsync(service, student.Id, "AGOTADA", PromotionErrorCodes.LimitReached);
+
+        Assert.Equal(0, await db.PromotionRedemptions.CountAsync());
+        Assert.Equal(3, (await db.Promotions.SingleAsync(p => p.Code == "AGOTADA")).CurrentUsesTotal);
+    }
+
+    [Fact]
+    public async Task EvaluatePromotion_PlanMismatch_ThrowsNotApplicable()
+    {
+        await using var db = CreateDbContext();
+        var calendar = new StubGymCalendar { Today = new DateOnly(2026, 6, 15) };
+        IPromotionService service = new PromotionService(db, calendar);
+
+        var student = Person.Create("Tomás", "Ríos", "36111222");
+        db.People.Add(student);
+        db.Promotions.Add(FullAccessPromotion("SOLOPLANA", p => p.ApplicablePlanId = Guid.NewGuid()));
+        await db.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            service.EvaluatePromotionAsync(new ApplyPromotionRequest("SOLOPLANA", student.Id, Guid.NewGuid(), 10000m)));
+        Assert.Equal(PromotionErrorCodes.NotApplicable, ex.Code);
+    }
+
+    [Fact]
+    public async Task RedeemPromotionForReservation_PerPersonLimitReached_ThrowsLimitReached()
+    {
+        await using var db = CreateDbContext();
+        var calendar = new StubGymCalendar { Today = new DateOnly(2026, 6, 15) };
+        IPromotionService service = new PromotionService(db, calendar);
+
+        var student = Person.Create("Nora", "Luna", "37111222");
+        db.People.Add(student);
+        db.Promotions.Add(FullAccessPromotion("CLASEGRATIS"));
+        await db.SaveChangesAsync();
+
+        await service.RedeemPromotionForReservationAsync(
+            student.Id, Guid.NewGuid(), Guid.NewGuid(), "CLASEGRATIS", Guid.NewGuid());
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            service.RedeemPromotionForReservationAsync(
+                student.Id, Guid.NewGuid(), Guid.NewGuid(), "CLASEGRATIS", Guid.NewGuid()));
+        Assert.Equal(PromotionErrorCodes.LimitReached, ex.Code);
+        Assert.Equal(1, await db.PromotionRedemptions.CountAsync());
+    }
+
+    [Fact]
+    public async Task CreateAsync_DuplicateCodeIgnoringCase_ThrowsCodeTaken()
+    {
+        await using var db = CreateDbContext();
+        IPromotionService service = new PromotionService(db, new StubGymCalendar());
+
+        var request = new CreatePromotionRequest(
+            "Bienvenida", "Bienvenida", null,
+            PromotionConditionType.CouponCode, PromotionBenefitType.PercentageDiscount, 10m,
+            new DateOnly(2026, 1, 1), null, null, 1, null);
+        await service.CreateAsync(request);
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            service.CreateAsync(request with { Code = "BIENVENIDA" }));
+        Assert.Equal(PromotionErrorCodes.CodeTaken, ex.Code);
+    }
+
+    [Fact]
+    public async Task AttachAndVoidRedemption_UnknownRedemption_ThrowNotFound()
+    {
+        await using var db = CreateDbContext();
+        IPromotionService service = new PromotionService(db, new StubGymCalendar());
+
+        await Assert.ThrowsAsync<NotFoundException>(() => service.VoidRedemptionAsync(Guid.NewGuid()));
+        await Assert.ThrowsAsync<NotFoundException>(() => service.AttachRedemptionToMembershipAsync(Guid.NewGuid(), Guid.NewGuid()));
+    }
+}
