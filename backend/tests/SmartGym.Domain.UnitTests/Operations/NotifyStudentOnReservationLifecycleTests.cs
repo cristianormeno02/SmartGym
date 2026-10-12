@@ -192,4 +192,29 @@ public class NotifyStudentOnReservationLifecycleTests
         Assert.Equal(ReservationStatus.Confirmed, persisted!.Status);
         Assert.Empty(await verifyDb.NotificationMessages.ToListAsync());
     }
+
+    [Fact]
+    public async Task DuplicateLifecycleEvent_IsDeduplicatedByIdempotencyKey_AndEnqueuesEmailDelivery()
+    {
+        var reservationId = Guid.NewGuid();
+        var evt = new ReservationConfirmedEvent(reservationId, _sessionId, _studentId, ReservationAccessType.MembershipCredit, DateTime.UtcNow);
+
+        using (var db = new SmartGymDbContext(_options))
+        {
+            var handler = CreateHandler(db);
+            await handler.HandleAsync(evt);
+            await handler.HandleAsync(evt);
+        }
+
+        using var verifyDb = new SmartGymDbContext(_options);
+        var message = Assert.Single(await verifyDb.NotificationMessages.ToListAsync());
+        Assert.False(string.IsNullOrWhiteSpace(message.IdempotencyKey));
+        Assert.Equal(NotificationCategory.Reservations, message.Category);
+
+        var deliveries = await verifyDb.NotificationDeliveries
+            .Where(d => d.NotificationId == message.Id)
+            .ToListAsync();
+        Assert.Contains(deliveries, d => d.Channel == NotificationChannel.InApp && d.Status == NotificationDeliveryStatus.Delivered);
+        Assert.Contains(deliveries, d => d.Channel == NotificationChannel.Email && d.Status == NotificationDeliveryStatus.Pending);
+    }
 }

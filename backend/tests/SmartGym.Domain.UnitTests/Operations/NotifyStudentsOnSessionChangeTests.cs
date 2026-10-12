@@ -255,6 +255,57 @@ public class NotifyStudentsOnSessionChangeTests
     }
 
     [Fact]
+    public async Task RoomChanged_BackToAPreviousRoom_NotifiesEveryChange()
+    {
+        var startsUtc = DateTime.UtcNow.AddDays(2);
+
+        using (var setupDb = new SmartGymDbContext(_options))
+        {
+            var session = ClassSession.CreateExtraordinary(_activityId, _roomId, startsUtc, startsUtc.AddHours(1), 20, _instructorId, null);
+            session.Open(DateTime.UtcNow);
+            setupDb.ClassSessions.Add(session);
+
+            setupDb.Reservations.Add(new Reservation
+            {
+                Id = Guid.NewGuid(),
+                ClassSessionId = session.Id,
+                StudentId = _student1Id,
+                Status = ReservationStatus.Confirmed,
+                ReservedAtUtc = DateTime.UtcNow,
+                IsActive = true
+            });
+
+            await setupDb.SaveChangesAsync();
+        }
+
+        var services = new ServiceCollection();
+        SmartGymDbContext? db = null;
+        services.AddScoped<ISmartGymDbContext>(_ => db!);
+        services.AddSingleton(_gymCalendar);
+        services.AddScoped<NotifyStudentsOnSessionChangeHandler>();
+        services.AddScoped<IDomainEventHandler<ClassSessionRoomChanged>>(sp => sp.GetRequiredService<NotifyStudentsOnSessionChangeHandler>());
+        var sp = services.BuildServiceProvider();
+
+        db = new SmartGymDbContext(_options, sp);
+
+        var baseUtc = DateTime.UtcNow;
+        var sessionToChange = await db.ClassSessions.FirstAsync();
+        sessionToChange.ChangeRoom(_room2Id, Guid.NewGuid(), baseUtc);
+        await db.SaveChangesAsync();
+        sessionToChange.ChangeRoom(_roomId, Guid.NewGuid(), baseUtc.AddMinutes(1));
+        await db.SaveChangesAsync();
+        sessionToChange.ChangeRoom(_room2Id, Guid.NewGuid(), baseUtc.AddMinutes(2));
+        await db.SaveChangesAsync();
+
+        using var verifyDb = new SmartGymDbContext(_options);
+        var notifications = await verifyDb.NotificationMessages
+            .Where(n => n.RecipientPersonId == _student1Id)
+            .ToListAsync();
+        Assert.Equal(3, notifications.Count);
+        Assert.Equal(2, notifications.Count(n => n.Body.Contains("Sala Principal")));
+    }
+
+    [Fact]
     public async Task RoomChanged_GeneratesNotificationWithNewRoomNameAndLocalTime()
     {
         var startsUtc = new DateTime(2026, 10, 15, 21, 0, 0, DateTimeKind.Utc);
@@ -299,7 +350,64 @@ public class NotifyStudentsOnSessionChangeTests
 
         Assert.NotNull(notification);
         Assert.Equal(_student1Id, notification.RecipientPersonId);
+        Assert.Equal(NotificationType.ClassRoomChanged, notification.Type);
+        Assert.False(string.IsNullOrWhiteSpace(notification.IdempotencyKey));
         Assert.Contains("Sala Principal", notification.Body);
         Assert.Contains("18:00", notification.Body);
+    }
+
+    [Fact]
+    public async Task CancelAndRescheduleSession_EmitSpecificNotificationTypesWithIdempotencyKey()
+    {
+        var startsUtc = new DateTime(2026, 10, 20, 21, 0, 0, DateTimeKind.Utc);
+        var endsUtc = startsUtc.AddHours(1);
+        Guid cancelledSessionId;
+        Guid rescheduledSessionId;
+
+        using (var setupDb = new SmartGymDbContext(_options))
+        {
+            var sCancel = ClassSession.CreateExtraordinary(_activityId, _roomId, startsUtc, endsUtc, 20, _instructorId, null);
+            sCancel.Open(DateTime.UtcNow);
+            cancelledSessionId = sCancel.Id;
+
+            var sResched = ClassSession.CreateExtraordinary(_activityId, _roomId, startsUtc.AddDays(1), endsUtc.AddDays(1), 20, _instructorId, null);
+            sResched.Open(DateTime.UtcNow);
+            rescheduledSessionId = sResched.Id;
+
+            setupDb.ClassSessions.AddRange(sCancel, sResched);
+            setupDb.Reservations.AddRange(
+                new Reservation
+                {
+                    Id = Guid.NewGuid(),
+                    ClassSessionId = cancelledSessionId,
+                    StudentId = _student1Id,
+                    Status = ReservationStatus.Confirmed,
+                    ReservedAtUtc = DateTime.UtcNow,
+                    IsActive = true
+                },
+                new Reservation
+                {
+                    Id = Guid.NewGuid(),
+                    ClassSessionId = rescheduledSessionId,
+                    StudentId = _student1Id,
+                    Status = ReservationStatus.Confirmed,
+                    ReservedAtUtc = DateTime.UtcNow,
+                    IsActive = true
+                });
+            await setupDb.SaveChangesAsync();
+        }
+
+        using (var db = new SmartGymDbContext(_options))
+        {
+            var handler = new NotifyStudentsOnSessionChangeHandler(db, _gymCalendar);
+            await handler.HandleAsync(new ClassSessionCancelled(cancelledSessionId, ClassSessionCancellationReason.LowDemand, "Pocos inscriptos", Guid.NewGuid(), DateTime.UtcNow));
+            await handler.HandleAsync(new ClassSessionRescheduled(rescheduledSessionId, Guid.NewGuid(), startsUtc.AddDays(2), endsUtc.AddDays(2), Guid.NewGuid()));
+            await db.SaveChangesAsync();
+        }
+
+        using var verifyDb = new SmartGymDbContext(_options);
+        var messages = await verifyDb.NotificationMessages.ToListAsync();
+        Assert.Contains(messages, m => m.Type == NotificationType.ClassCancelled && !string.IsNullOrWhiteSpace(m.IdempotencyKey));
+        Assert.Contains(messages, m => m.Type == NotificationType.ClassRescheduled && !string.IsNullOrWhiteSpace(m.IdempotencyKey));
     }
 }

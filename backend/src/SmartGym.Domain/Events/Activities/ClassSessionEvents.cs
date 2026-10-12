@@ -32,7 +32,8 @@ public record ClassSessionRoomChanged(
     Guid SessionId,
     Guid PreviousRoomId,
     Guid NewRoomId,
-    Guid? ByUserId
+    Guid? ByUserId,
+    DateTime AtUtc
 ) : IDomainEvent;
 
 public record ClassSessionCapacityIncreased(

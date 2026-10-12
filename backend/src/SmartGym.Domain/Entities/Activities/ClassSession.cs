@@ -368,7 +368,7 @@ public class ClassSession : BaseEntity, IHasDomainEvents
         IsDetachedFromSchedule = true;
         UpdatedAtUtc = nowUtc;
 
-        AddDomainEvent(new ClassSessionRoomChanged(Id, previousRoomId, newRoomId, byUserId));
+        AddDomainEvent(new ClassSessionRoomChanged(Id, previousRoomId, newRoomId, byUserId, nowUtc));
     }
 
     public void UpdateNotes(string? notes, DateTime nowUtc)

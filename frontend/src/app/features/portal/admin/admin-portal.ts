@@ -3,13 +3,19 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../../core/services/auth.service';
 import { GymApiService } from '../../../core/services/gym-api.service';
+import { NotificationsService } from '../../../core/services/notifications.service';
 import {
   DashboardMetrics,
   AdminUserOverview,
   Promotion,
   PromotionBenefitType,
   PromotionStatus,
-  AuditLog
+  AuditLog,
+  NotificationDeliveryItem,
+  NotificationTemplateItem,
+  NotificationTemplateStatus,
+  NotificationChannel,
+  NotificationType
 } from '../../../core/models/gym.models';
 
 @Component({
@@ -28,7 +34,7 @@ import {
               <span class="text-xs uppercase tracking-widest font-semibold text-amber-400">Panel de Control General</span>
             </div>
             <h1 class="text-3xl font-extrabold text-white mt-1">Administración SmartGym</h1>
-            <p class="text-sm text-slate-400">KPIs en tiempo real, gestión de usuarios, auditoría y promociones</p>
+            <p class="text-sm text-slate-400">KPIs en tiempo real, gestión de usuarios, auditoría, promociones y notificaciones</p>
           </div>
 
           <!-- Navigation Tabs -->
@@ -47,6 +53,11 @@ import {
                     class="px-4 py-2 rounded-lg text-xs font-bold transition"
                     [ngClass]="activeTab() === 'promotions' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'">
               🏷️ Promociones ({{ promotions().length }})
+            </button>
+            <button (click)="activeTab.set('notifications')"
+                    class="px-4 py-2 rounded-lg text-xs font-bold transition"
+                    [ngClass]="activeTab() === 'notifications' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'">
+              🔔 Notificaciones ({{ failedDeliveries().length }})
             </button>
             <button (click)="activeTab.set('audit')"
                     class="px-4 py-2 rounded-lg text-xs font-bold transition"
@@ -213,7 +224,126 @@ import {
           </div>
         }
 
-        <!-- TAB 4: AUDIT LOGS -->
+        <!-- TAB 4: NOTIFICATIONS & TEMPLATES -->
+        @if (activeTab() === 'notifications') {
+          <div class="space-y-6">
+            @if (notificationFeedback()) {
+              <div class="p-4 rounded-xl text-xs font-semibold bg-amber-950/60 border border-amber-800 text-amber-300">
+                {{ notificationFeedback() }}
+              </div>
+            }
+
+            <!-- Failed Deliveries -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h2 class="text-xl font-bold text-white">Entregas Fallidas</h2>
+                  <p class="text-xs text-slate-400">Comunicaciones externas con error que permiten reintento manual auditado</p>
+                </div>
+                <button (click)="loadFailedDeliveries()" class="text-xs text-amber-400 hover:text-amber-300">Actualizar</button>
+              </div>
+
+              @if (failedDeliveries().length === 0) {
+                <div class="text-center py-6 text-slate-500 text-sm">
+                  No hay entregas fallidas pendientes de revisión.
+                </div>
+              } @else {
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-xs">
+                    <thead class="text-slate-400 bg-slate-950/70 border-b border-slate-800 uppercase">
+                      <tr>
+                        <th class="py-3 px-4">Canal / Proveedor</th>
+                        <th class="py-3 px-4">Destinatario</th>
+                        <th class="py-3 px-4">Intentos</th>
+                        <th class="py-3 px-4">Error</th>
+                        <th class="py-3 px-4 text-right">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800/80">
+                      @for (d of failedDeliveries(); track d.id) {
+                        <tr class="hover:bg-slate-800/30 transition">
+                          <td class="py-2.5 px-4 text-slate-200 font-semibold">{{ d.providerName || '-' }} ({{ getChannelLabel(d.channel) }})</td>
+                          <td class="py-2.5 px-4 text-slate-400">{{ d.destination || '-' }}</td>
+                          <td class="py-2.5 px-4 text-slate-400">{{ d.attemptCount }} / {{ d.maxAttempts }}</td>
+                          <td class="py-2.5 px-4 text-rose-300">{{ d.errorCode }}: {{ d.errorMessage }}</td>
+                          <td class="py-2.5 px-4 text-right">
+                            <button (click)="retryFailedDelivery(d)"
+                                    class="text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 px-3 py-1 rounded-lg transition">
+                              Reintentar
+                            </button>
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            </div>
+
+            <!-- Notification Templates -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h2 class="text-xl font-bold text-white">Plantillas de Notificación ({{ notificationTemplates().length }})</h2>
+                  <p class="text-xs text-slate-400">Gestión versionada de plantillas In-App y Email</p>
+                </div>
+                <button (click)="loadNotificationTemplates()" class="text-xs text-amber-400 hover:text-amber-300">Recargar Plantillas</button>
+              </div>
+
+              @if (notificationTemplates().length === 0) {
+                <div class="text-center py-6 text-slate-500 text-sm">
+                  No hay plantillas cargadas.
+                </div>
+              } @else {
+                <div class="overflow-x-auto max-h-96">
+                  <table class="w-full text-left text-xs">
+                    <thead class="text-slate-400 bg-slate-950/70 border-b border-slate-800 uppercase sticky top-0">
+                      <tr>
+                        <th class="py-3 px-4">Código</th>
+                        <th class="py-3 px-4">Canal</th>
+                        <th class="py-3 px-4">Versión</th>
+                        <th class="py-3 px-4">Asunto / Vista Previa</th>
+                        <th class="py-3 px-4">Estado</th>
+                        <th class="py-3 px-4 text-right">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800/80">
+                      @for (tpl of notificationTemplates(); track tpl.id) {
+                        <tr class="hover:bg-slate-800/30 transition">
+                          <td class="py-2.5 px-4 font-mono text-amber-300 font-semibold">{{ tpl.code }}</td>
+                          <td class="py-2.5 px-4 text-slate-300">{{ getChannelLabel(tpl.channel) }}</td>
+                          <td class="py-2.5 px-4 text-slate-400">v{{ tpl.version }} ({{ tpl.locale }})</td>
+                          <td class="py-2.5 px-4 text-slate-300 max-w-xs truncate">{{ tpl.subjectTemplate || tpl.bodyTemplate }}</td>
+                          <td class="py-2.5 px-4">
+                            <span class="px-2 py-0.5 rounded font-bold"
+                                  [ngClass]="tpl.status === NotificationTemplateStatus.Active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'">
+                              {{ tpl.status === NotificationTemplateStatus.Active ? 'Activa' : (tpl.status === NotificationTemplateStatus.Draft ? 'Borrador' : 'Inactiva') }}
+                            </span>
+                          </td>
+                          <td class="py-2.5 px-4 text-right">
+                            @if (tpl.status === NotificationTemplateStatus.Active) {
+                              <button (click)="toggleTemplateStatus(tpl, false)"
+                                      class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded border border-slate-700">
+                                Desactivar
+                              </button>
+                            } @else {
+                              <button (click)="toggleTemplateStatus(tpl, true)"
+                                      class="text-xs bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 px-2.5 py-1 rounded border border-emerald-500/30">
+                                Activar
+                              </button>
+                            }
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- TAB 5: AUDIT LOGS -->
         @if (activeTab() === 'audit') {
           <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
             <div class="flex items-center justify-between">
@@ -261,15 +391,22 @@ import {
 export class AdminPortalComponent implements OnInit {
   readonly authService = inject(AuthService);
   private readonly gymApi = inject(GymApiService);
+  private readonly notificationsService = inject(NotificationsService);
 
-  activeTab = signal<'kpis' | 'users' | 'promotions' | 'audit'>('kpis');
+  activeTab = signal<'kpis' | 'users' | 'promotions' | 'notifications' | 'audit'>('kpis');
 
   metrics = signal<DashboardMetrics | null>(null);
   users = signal<AdminUserOverview[]>([]);
   promotions = signal<Promotion[]>([]);
   auditLogs = signal<AuditLog[]>([]);
+  failedDeliveries = signal<NotificationDeliveryItem[]>([]);
+  notificationTemplates = signal<NotificationTemplateItem[]>([]);
+  notificationFeedback = signal<string | null>(null);
 
   readonly PromotionStatus = PromotionStatus;
+  readonly NotificationTemplateStatus = NotificationTemplateStatus;
+  readonly NotificationChannel = NotificationChannel;
+  readonly NotificationType = NotificationType;
 
   promotionStatusLabel(status: PromotionStatus): string {
     switch (status) {
@@ -291,6 +428,8 @@ export class AdminPortalComponent implements OnInit {
     this.loadMetrics();
     this.loadUsers();
     this.loadPromotions();
+    this.loadFailedDeliveries();
+    this.loadNotificationTemplates();
     this.loadAuditLogs();
   }
 
@@ -312,6 +451,60 @@ export class AdminPortalComponent implements OnInit {
     this.gymApi.getPromotions(false).subscribe({
       next: (data) => this.promotions.set(data),
       error: () => this.promotions.set([])
+    });
+  }
+
+  loadFailedDeliveries(): void {
+    this.notificationsService.getFailedDeliveries().subscribe({
+      next: (res) => this.failedDeliveries.set(res.items ?? []),
+      error: () => this.failedDeliveries.set([])
+    });
+  }
+
+  loadNotificationTemplates(): void {
+    this.notificationsService.getTemplates().subscribe({
+      next: (items) => this.notificationTemplates.set(items ?? []),
+      error: () => this.notificationTemplates.set([])
+    });
+  }
+
+  getChannelLabel(channel: NotificationChannel): string {
+    switch (channel) {
+      case NotificationChannel.Email: return 'Email';
+      case NotificationChannel.InApp: return 'InApp';
+      case NotificationChannel.WhatsApp: return 'WhatsApp';
+      case NotificationChannel.Push: return 'Push';
+      default: return 'Canal';
+    }
+  }
+
+  retryFailedDelivery(delivery: NotificationDeliveryItem): void {
+    this.notificationsService.retryDelivery(delivery.id, 'Reintento manual desde panel de administración').subscribe({
+      next: () => {
+        this.notificationFeedback.set('Entrega reprogramada en estado Pending.');
+        this.loadFailedDeliveries();
+        this.loadAuditLogs();
+      },
+      error: (err) => {
+        this.notificationFeedback.set(err.error?.message || 'No se pudo reintentar la entrega.');
+      }
+    });
+  }
+
+  toggleTemplateStatus(template: NotificationTemplateItem, activate: boolean): void {
+    const obs = activate
+      ? this.notificationsService.activateTemplate(template.id)
+      : this.notificationsService.deactivateTemplate(template.id);
+
+    obs.subscribe({
+      next: () => {
+        this.notificationFeedback.set(activate ? 'Plantilla activada.' : 'Plantilla desactivada.');
+        this.loadNotificationTemplates();
+        this.loadAuditLogs();
+      },
+      error: (err) => {
+        this.notificationFeedback.set(err.error?.message || 'Error al cambiar el estado de la plantilla.');
+      }
     });
   }
 

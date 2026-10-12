@@ -34,6 +34,9 @@ public interface ISmartGymDbContext
     DbSet<PromotionRedemption> PromotionRedemptions { get; }
     DbSet<SmartGym.Domain.Entities.Operations.Payment> Payments { get; }
     DbSet<SmartGym.Domain.Entities.Operations.NotificationMessage> NotificationMessages { get; }
+    DbSet<SmartGym.Domain.Entities.Operations.NotificationDelivery> NotificationDeliveries { get; }
+    DbSet<SmartGym.Domain.Entities.Operations.NotificationPreference> NotificationPreferences { get; }
+    DbSet<SmartGym.Domain.Entities.Operations.NotificationTemplate> NotificationTemplates { get; }
     DbSet<SmartGym.Domain.Entities.Operations.AuditLog> AuditLogs { get; }
 
     Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade Database { get; }
@@ -80,6 +83,15 @@ public interface ISmartGymDbContext
     /// Verifica de inmediato las restricciones diferidas, para que una violación surja antes del COMMIT.
     /// </summary>
     Task EnforceDeferredConstraintsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reclama un lote de entregas de notificaciones pendientes listas para envío utilizando FOR UPDATE SKIP LOCKED
+    /// en PostgreSQL y marcándolas en estado Processing de forma atómica.
+    /// </summary>
+    Task<List<SmartGym.Domain.Entities.Operations.NotificationDelivery>> ClaimPendingNotificationDeliveriesAsync(
+        int batchSize,
+        DateTime nowUtc,
+        CancellationToken cancellationToken = default);
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

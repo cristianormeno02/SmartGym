@@ -44,7 +44,12 @@ public static class DependencyInjection
 
         services.AddScoped<IPaymentService, PaymentService>();
         services.AddScoped<IMedicalCertificateService, MedicalCertificateService>();
+        services.AddScoped<INotificationRecipientResolver, NotificationRecipientResolver>();
+        services.AddScoped<INotificationTemplateRenderer, NotificationTemplateRenderer>();
         services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<INotificationDispatcher, NotificationDispatcher>();
+        services.AddScoped<INotificationDeliveryProcessor, NotificationDeliveryProcessor>();
+        services.AddScoped<IClassReminderService, ClassReminderService>();
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IDashboardService, DashboardService>();
 
