@@ -232,6 +232,8 @@ public static class DependencyInjection
                     sp.GetService<TimeProvider>()));
         }
 
+        services.AddHostedService<SmartGym.Infrastructure.Services.Auth.AdminUserSeedHostedService>();
+
         // Background Workers
         services.AddHostedService<SmartGym.Infrastructure.Services.BackgroundJobs.PaymentExpirationWorker>();
         services.AddHostedService<SmartGym.Infrastructure.Services.BackgroundJobs.ClassSessionGenerationWorker>();
