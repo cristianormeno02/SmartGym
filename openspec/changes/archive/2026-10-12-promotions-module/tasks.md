@@ -1,7 +1,5 @@
 Las rutas son relativas a `backend/src/` salvo indicación; `tests/...` abrevia `backend/tests/SmartGym.Domain.UnitTests`. Las tareas marcadas 🔴 escriben primero la prueba que falla (TDD); la tarea siguiente la pone en verde. "Decision N" refiere a `design.md`.
 
-> Pendiente de ejecución: las pruebas de `SmartGym.IntegrationTests/Promotions` (tareas 2.5, 4.1 y la parte de integración de 4.3) están escritas y compilan, pero requieren PostgreSQL (Docker o `SMARTGYM_TEST_POSTGRES_CONNECTION`). Esas tareas y la 8.2 quedan sin marcar hasta ejecutarlas.
-
 ## 1. Dominio: estados y edición
 
 - [x] 1.1 🔴 Ampliar `tests/.../Promotions/PromotionTests.cs`: transiciones válidas e inválidas de Decision 3, `IsValidOn` falso para `Paused` y `Archived`, `Update` con y sin canjes (campos bloqueados de Decision 4) y rechazo de topes por debajo de lo consumido.
@@ -13,7 +11,7 @@ Las rutas son relativas a `backend/src/` salvo indicación; `tests/...` abrevia 
 - [x] 2.2 Actualizar `PromotionConfiguration.cs` y `PromotionRedemptionConfiguration.cs` según Decision 2.
 - [x] 2.3 Agregar `LockPromotionForUpdateAsync` a `ISmartGymDbContext` y `SmartGymDbContext`, con la misma forma que `LockMembershipForUpdateAsync`.
 - [x] 2.4 Generar la migración `HardenPromotionsModule` y completar a mano los pasos de datos del "Migration Plan" y el `Down`.
-- [ ] 2.5 🔴→🟢 Crear `backend/tests/SmartGym.IntegrationTests/Promotions/HardenPromotionsMigrationIntegrationTests.cs`: sembrar con el esquema anterior una promoción desactivada, una con contador desviado y una membresía con dos canjes vigentes; aplicar la migración y verificar cada paso.
+- [x] 2.5 🔴→🟢 Crear `backend/tests/SmartGym.IntegrationTests/Promotions/HardenPromotionsMigrationIntegrationTests.cs`: sembrar con el esquema anterior una promoción desactivada, una con contador desviado y una membresía con dos canjes vigentes; aplicar la migración y verificar cada paso.
 - [x] 2.6 Actualizar los datos de demostración si el seed crea promociones.
 
 ## 3. Errores con código y refactor de la evaluación
@@ -24,9 +22,9 @@ Las rutas son relativas a `backend/src/` salvo indicación; `tests/...` abrevia 
 
 ## 4. Topes bajo concurrencia
 
-- [ ] 4.1 🔴 Crear `backend/tests/SmartGym.IntegrationTests/Promotions/PromotionConcurrencyIntegrationTests.cs` (patrón de `ReservationConcurrencyIntegrationTests`): último uso general disputado por dos alumnos; tope por persona disputado por el mismo alumno; canje y anulación simultáneos dejan `CurrentUsesTotal` igual a la cantidad de canjes vigentes.
+- [x] 4.1 🔴 Crear `backend/tests/SmartGym.IntegrationTests/Promotions/PromotionConcurrencyIntegrationTests.cs` (patrón de `ReservationConcurrencyIntegrationTests`): último uso general disputado por dos alumnos; tope por persona disputado por el mismo alumno; canje y anulación simultáneos dejan `CurrentUsesTotal` igual a la cantidad de canjes vigentes.
 - [x] 4.2 Tomar `LockPromotionForUpdateAsync` y recargar la promoción en `RedeemPromotionAsync`, `RedeemPromotionForReservationAsync` y `VoidRedemptionAsync`; rechazar con `PROMOTION_LIMIT_REACHED` (Decision 1).
-- [ ] 4.3 🔴→🟢 Tests de integración del `CHECK` de `CurrentUsesTotal` y del índice `UX_PromotionRedemptions_Membership`; test unitario de que `VoidRedemptionAsync` repetido no decrementa dos veces.
+- [x] 4.3 🔴→🟢 Tests de integración del `CHECK` de `CurrentUsesTotal` y del índice `UX_PromotionRedemptions_Membership`; test unitario de que `VoidRedemptionAsync` repetido no decrementa dos veces.
 
 ## 5. Administración
 
@@ -52,4 +50,4 @@ Las rutas son relativas a `backend/src/` salvo indicación; `tests/...` abrevia 
 ## 8. Frontend y cierre
 
 - [x] 8.1 Revisar `frontend/src/app` (`gym-api.service.ts`, `gym.models.ts`, pestaña de promociones de `admin-portal.ts`) y adaptar los usos de `/redeem`, `/evaluate`, `/code/{code}` y del modelo de promoción (`status`, `version`).
-- [ ] 8.2 Ejecutar `dotnet test backend/SmartGym.slnx` (unitarias e integración) y `openspec validate promotions-module --strict`; verificar cada escenario del delta de `promotions-family` contra una prueba.
+- [x] 8.2 Ejecutar `dotnet test backend/SmartGym.slnx` (unitarias e integración) y `openspec validate promotions-module --strict`; verificar cada escenario del delta de `promotions-family` contra una prueba.
