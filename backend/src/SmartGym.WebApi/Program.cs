@@ -45,6 +45,10 @@ builder.Services.AddOptions<SmartGym.Application.Common.PaymentsOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+// Opcional: sólo se configura (user-secrets o variables de entorno) para crear el administrador inicial.
+builder.Services.AddOptions<SmartGym.Application.Common.AdminSeedOptions>()
+    .Bind(builder.Configuration.GetSection(SmartGym.Application.Common.AdminSeedOptions.SectionName));
+
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddControllers();
