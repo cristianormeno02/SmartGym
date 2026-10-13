@@ -34,7 +34,7 @@ export class AuthService {
   login(credentials: { email: string; password: string }): Observable<AuthResponse> {
     const request: LoginRequest = {
       email: credentials.email,
-      passwordHash: credentials.password
+      password: credentials.password
     };
 
     return this.http.post<AuthResponse>(`${this.apiUrl}/auth/login`, request).pipe(

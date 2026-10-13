@@ -24,7 +24,7 @@ export interface AuthResponse {
 
 export interface LoginRequest {
   email: string;
-  passwordHash: string;
+  password: string;
 }
 
 export interface RegisterRequest {
