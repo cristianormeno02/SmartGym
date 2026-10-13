@@ -12,13 +12,14 @@ import {
   PersonStatus,
   DocumentType
 } from '../models/person.model';
+import { environment } from '../../../environments/environment';
 
 @Injectable({
   providedIn: 'root'
 })
 export class PeopleService {
   private readonly http = inject(HttpClient);
-  private readonly apiUrl = 'http://localhost:5000/api/people';
+  private readonly apiUrl = `${environment.apiUrl}/people`;
 
   readonly isBusy = signal<boolean>(false);
   readonly selectedPerson = signal<PersonDetail | null>(null);

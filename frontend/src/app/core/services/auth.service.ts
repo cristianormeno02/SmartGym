@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { Observable, tap, catchError, of } from 'rxjs';
 import { AuthResponse, LoginRequest, RegisterRequest, GoogleAuthRequest, User } from '../models/auth.models';
+import { environment } from '../../../environments/environment';
 
 @Injectable({
   providedIn: 'root'
@@ -10,7 +11,7 @@ import { AuthResponse, LoginRequest, RegisterRequest, GoogleAuthRequest, User } 
 export class AuthService {
   private readonly http = inject(HttpClient);
   private readonly router = inject(Router);
-  private readonly apiUrl = 'http://localhost:5000/api';
+  private readonly apiUrl = environment.apiUrl;
 
   readonly token = signal<string | null>(this.getStoredToken());
   readonly currentUser = signal<User | null>(null);

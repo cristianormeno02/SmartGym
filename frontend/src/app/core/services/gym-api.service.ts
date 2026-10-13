@@ -38,13 +38,14 @@ import {
   PaymentDiscrepancy,
   PaymentDiscrepancyStatus
 } from '../models/gym.models';
+import { environment } from '../../../environments/environment';
 
 @Injectable({
   providedIn: 'root'
 })
 export class GymApiService {
   private readonly http = inject(HttpClient);
-  private readonly apiUrl = 'http://localhost:5000/api';
+  private readonly apiUrl = environment.apiUrl;
 
   // --- Actividades y Salas ---
   getPublicActivities(age?: number): Observable<PublicActivity[]> {

@@ -17,6 +17,7 @@ import {
   UpdateNotificationPreferencesRequest,
   UpdateNotificationTemplateRequest
 } from '../models/gym.models';
+import { environment } from '../../../environments/environment';
 
 export interface NotificationFilter {
   isRead?: boolean;
@@ -32,7 +33,7 @@ export interface NotificationFilter {
 })
 export class NotificationsService {
   private readonly http = inject(HttpClient);
-  private readonly apiUrl = 'http://localhost:5000/api';
+  private readonly apiUrl = environment.apiUrl;
 
   readonly unreadCount = signal<number>(0);
   readonly recentNotifications = signal<NotificationItem[]>([]);
