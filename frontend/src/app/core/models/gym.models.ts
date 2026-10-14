@@ -21,6 +21,103 @@ export interface PublicActivity {
   galleryImageUrls: string[];
 }
 
+export enum ActivityStatus {
+  Active = 1,
+  Inactive = 2,
+  Archived = 3
+}
+
+export interface CreateRoomRequest {
+  name: string;
+  description?: string;
+  capacity: number;
+}
+
+export interface UpdateRoomRequest {
+  name: string;
+  description?: string;
+  capacity: number;
+  isActive: boolean;
+}
+
+export interface CreateActivityRequest {
+  code: string;
+  name: string;
+  shortDescription?: string;
+  description?: string;
+  equipmentNotes?: string;
+  colorHex?: string;
+  defaultCapacity?: number;
+  minAge?: number;
+  maxAge?: number;
+}
+
+export interface UpdateActivityRequest {
+  name: string;
+  shortDescription?: string;
+  description?: string;
+  equipmentNotes?: string;
+  colorHex?: string;
+  defaultCapacity?: number;
+  minAge?: number;
+  maxAge?: number;
+  version: number;
+}
+
+export interface ChangeActivityStatusRequest {
+  status: ActivityStatus | number;
+  version: number;
+}
+
+export interface CreateRecurringScheduleRequest {
+  activityId: string;
+  roomId: string;
+  instructorId: string;
+  secretaryId?: string | null;
+  dayOfWeek: number;
+  startTime: string; // "HH:mm:ss" or "HH:mm"
+  endTime: string;
+  validFrom: string; // "yyyy-MM-dd"
+  validTo?: string | null;
+  maxCapacity?: number | null;
+}
+
+export interface UpdateRecurringScheduleRequest {
+  roomId: string;
+  instructorId: string;
+  secretaryId?: string | null;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  validFrom: string;
+  validTo?: string | null;
+  maxCapacity?: number | null;
+  isActive: boolean;
+}
+
+export interface CreateMembershipPlanRequest {
+  name: string;
+  description?: string;
+  durationDays: number;
+  price: number;
+  credits: number;
+  isUnlimited: boolean;
+  appliesToAllActivities: boolean;
+  allowedActivityIds?: string[];
+}
+
+export interface UpdateMembershipPlanRequest {
+  name: string;
+  description?: string;
+  durationDays: number;
+  price: number;
+  credits: number;
+  isUnlimited: boolean;
+  appliesToAllActivities: boolean;
+  allowedActivityIds?: string[];
+  isActive: boolean;
+}
+
 export interface Activity {
   id: string;
   code: string;
@@ -33,6 +130,7 @@ export interface Activity {
   minAge?: number;
   maxAge?: number;
   status: number;
+  version?: number;
   logoUrl?: string;
   primaryImageUrl?: string;
   createdAtUtc?: string;

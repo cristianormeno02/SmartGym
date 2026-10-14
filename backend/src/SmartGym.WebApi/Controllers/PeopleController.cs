@@ -36,6 +36,7 @@ public class PeopleController : ControllerBase
         [FromQuery] string? search,
         [FromQuery] string? status,
         [FromQuery] string? documentType,
+        [FromQuery] string? role = null,
         [FromQuery] int pageNumber = 1,
         [FromQuery] int pageSize = 20,
         CancellationToken cancellationToken = default)
@@ -62,9 +63,20 @@ public class PeopleController : ControllerBase
             documentTypeFilter = parsedDocumentType;
         }
 
+        RoleType? roleFilter = null;
+        if (!string.IsNullOrWhiteSpace(role))
+        {
+            if (!Enum.TryParse<RoleType>(role.Trim(), ignoreCase: true, out var parsedRole) || !Enum.IsDefined(typeof(RoleType), parsedRole))
+            {
+                return BadRequest(new { message = $"Rol desconocido: '{role}'. Valores admitidos: Administrator, Secretary, Instructor, Student, Public." });
+            }
+
+            roleFilter = parsedRole;
+        }
+
         try
         {
-            var result = await _peopleService.SearchAsync(search, statusFilter, documentTypeFilter, pageNumber, pageSize, cancellationToken);
+            var result = await _peopleService.SearchAsync(search, statusFilter, documentTypeFilter, roleFilter, pageNumber, pageSize, cancellationToken);
             return Ok(result);
         }
         catch (Exception ex) when (TryMapException(ex, out var error))

@@ -55,6 +55,7 @@ public class PeopleService : IPeopleService
         string? search,
         PersonStatus? status,
         DocumentType? documentType,
+        RoleType? role = null,
         int pageNumber = 1,
         int pageSize = 20,
         CancellationToken cancellationToken = default)
@@ -72,6 +73,11 @@ public class PeopleService : IPeopleService
         if (documentType.HasValue)
         {
             query = query.Where(p => p.Document != null && p.Document.Type == documentType.Value);
+        }
+
+        if (role.HasValue)
+        {
+            query = query.Where(p => p.PersonRoles.Any(pr => pr.RoleId == (int)role.Value && pr.IsActive));
         }
 
         if (!string.IsNullOrWhiteSpace(search))

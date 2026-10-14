@@ -18,10 +18,15 @@ import {
   NotificationType
 } from '../../../core/models/gym.models';
 
+import { RoomsManagementComponent } from '../../catalog/rooms-management/rooms-management';
+import { ActivitiesManagementComponent } from '../../catalog/activities-management/activities-management';
+import { SchedulesManagementComponent } from '../../catalog/schedules-management/schedules-management';
+import { PlansManagementComponent } from '../../catalog/plans-management/plans-management';
+
 @Component({
   selector: 'app-admin-portal',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RoomsManagementComponent, ActivitiesManagementComponent, SchedulesManagementComponent, PlansManagementComponent],
   template: `
     <div class="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8">
       <div class="max-w-7xl mx-auto space-y-8">
@@ -34,36 +39,48 @@ import {
               <span class="text-xs uppercase tracking-widest font-semibold text-amber-400">Panel de Control General</span>
             </div>
             <h1 class="text-3xl font-extrabold text-white mt-1">Administración SmartGym</h1>
-            <p class="text-sm text-slate-400">KPIs en tiempo real, gestión de usuarios, auditoría, promociones y notificaciones</p>
+            <p class="text-sm text-slate-400">KPIs en tiempo real, gestión de catálogo, salas, usuarios, auditoría, promociones y notificaciones</p>
           </div>
 
           <!-- Navigation Tabs -->
           <div class="flex flex-wrap gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800">
-            <button (click)="activeTab.set('kpis')"
-                    class="px-4 py-2 rounded-lg text-xs font-bold transition"
+            <button (click)="setActiveTab('kpis')"
+                    class="nav-tab-btn px-4 py-2 rounded-lg text-xs font-bold transition"
                     [ngClass]="activeTab() === 'kpis' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'">
               📊 Métricas
             </button>
-            <button (click)="activeTab.set('users')"
-                    class="px-4 py-2 rounded-lg text-xs font-bold transition"
-                    [ngClass]="activeTab() === 'users' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'">
-              👥 Usuarios ({{ users().length }})
+            <button (click)="setActiveTab('rooms')"
+                    class="nav-tab-btn px-4 py-2 rounded-lg text-xs font-bold transition"
+                    [ngClass]="activeTab() === 'rooms' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'">
+              🏢 Salas y Espacios
             </button>
-            <button (click)="activeTab.set('promotions')"
-                    class="px-4 py-2 rounded-lg text-xs font-bold transition"
+            <button (click)="setActiveTab('catalog')"
+                    class="nav-tab-btn px-4 py-2 rounded-lg text-xs font-bold transition"
+                    [ngClass]="activeTab() === 'catalog' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'">
+              📚 Gestión de Catálogo
+            </button>
+            <button (click)="setActiveTab('promotions')"
+                    class="nav-tab-btn px-4 py-2 rounded-lg text-xs font-bold transition"
                     [ngClass]="activeTab() === 'promotions' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'">
               🏷️ Promociones ({{ promotions().length }})
             </button>
-            <button (click)="activeTab.set('notifications')"
-                    class="px-4 py-2 rounded-lg text-xs font-bold transition"
+            <button (click)="setActiveTab('notifications')"
+                    class="nav-tab-btn px-4 py-2 rounded-lg text-xs font-bold transition"
                     [ngClass]="activeTab() === 'notifications' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'">
               🔔 Notificaciones ({{ failedDeliveries().length }})
             </button>
-            <button (click)="activeTab.set('audit')"
-                    class="px-4 py-2 rounded-lg text-xs font-bold transition"
-                    [ngClass]="activeTab() === 'audit' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'">
-              🛡️ Auditoría
-            </button>
+            @if (authService.isAdmin()) {
+              <button (click)="setActiveTab('users')"
+                      class="nav-tab-btn px-4 py-2 rounded-lg text-xs font-bold transition"
+                      [ngClass]="activeTab() === 'users' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'">
+                👥 Usuarios ({{ users().length }})
+              </button>
+              <button (click)="setActiveTab('audit')"
+                      class="nav-tab-btn px-4 py-2 rounded-lg text-xs font-bold transition"
+                      [ngClass]="activeTab() === 'audit' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'">
+                🛡️ Auditoría
+              </button>
+            }
           </div>
         </div>
 
@@ -330,14 +347,17 @@ import {
                             </span>
                           </td>
                           <td class="py-2.5 px-4 text-right">
-                            @if (tpl.status === NotificationTemplateStatus.Active) {
+                            <!-- Activar/desactivar exige NotificationsTemplatesManage (solo Administrator) -->
+                            @if (!authService.isAdmin()) {
+                              <span class="text-xs text-slate-500">Solo lectura</span>
+                            } @else if (tpl.status === NotificationTemplateStatus.Active) {
                               <button (click)="toggleTemplateStatus(tpl, false)"
-                                      class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded border border-slate-700">
+                                      class="template-action text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded border border-slate-700">
                                 Desactivar
                               </button>
                             } @else {
                               <button (click)="toggleTemplateStatus(tpl, true)"
-                                      class="text-xs bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 px-2.5 py-1 rounded border border-emerald-500/30">
+                                      class="template-action text-xs bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 px-2.5 py-1 rounded border border-emerald-500/30">
                                 Activar
                               </button>
                             }
@@ -393,6 +413,47 @@ import {
           </div>
         }
 
+        <!-- TAB: ROOMS -->
+        @if (activeTab() === 'rooms') {
+          <app-rooms-management></app-rooms-management>
+        }
+
+        <!-- TAB: CATALOG MANAGEMENT -->
+        @if (activeTab() === 'catalog') {
+          <div class="space-y-6">
+            <div class="flex items-center gap-2 border-b border-slate-800 pb-3">
+              <button
+                (click)="catalogSubTab.set('activities')"
+                class="px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2"
+                [ngClass]="catalogSubTab() === 'activities' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40' : 'text-slate-400 hover:text-white'">
+                ⚡ Actividades
+              </button>
+              <button
+                (click)="catalogSubTab.set('schedules')"
+                class="px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2"
+                [ngClass]="catalogSubTab() === 'schedules' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40' : 'text-slate-400 hover:text-white'">
+                📅 Horarios Semanales
+              </button>
+              <button
+                (click)="catalogSubTab.set('plans')"
+                class="px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2"
+                [ngClass]="catalogSubTab() === 'plans' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40' : 'text-slate-400 hover:text-white'">
+                💳 Planes de Membresía
+              </button>
+            </div>
+
+            @if (catalogSubTab() === 'activities') {
+              <app-activities-management></app-activities-management>
+            }
+            @if (catalogSubTab() === 'schedules') {
+              <app-schedules-management></app-schedules-management>
+            }
+            @if (catalogSubTab() === 'plans') {
+              <app-plans-management></app-plans-management>
+            }
+          </div>
+        }
+
       </div>
     </div>
   `
@@ -402,7 +463,8 @@ export class AdminPortalComponent implements OnInit {
   private readonly gymApi = inject(GymApiService);
   private readonly notificationsService = inject(NotificationsService);
 
-  activeTab = signal<'kpis' | 'users' | 'promotions' | 'notifications' | 'audit'>('kpis');
+  activeTab = signal<'kpis' | 'rooms' | 'catalog' | 'users' | 'promotions' | 'notifications' | 'audit'>('kpis');
+  catalogSubTab = signal<'activities' | 'schedules' | 'plans'>('activities');
 
   metrics = signal<DashboardMetrics | null>(null);
   users = signal<AdminUserOverview[]>([]);
@@ -417,6 +479,13 @@ export class AdminPortalComponent implements OnInit {
   readonly NotificationTemplateStatus = NotificationTemplateStatus;
   readonly NotificationChannel = NotificationChannel;
   readonly NotificationType = NotificationType;
+
+  setActiveTab(tab: 'kpis' | 'rooms' | 'catalog' | 'users' | 'promotions' | 'notifications' | 'audit'): void {
+    if (!this.authService.isAdmin() && (tab === 'users' || tab === 'audit')) {
+      return;
+    }
+    this.activeTab.set(tab);
+  }
 
   promotionStatusLabel(status: PromotionStatus): string {
     switch (status) {
@@ -435,12 +504,18 @@ export class AdminPortalComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    if (!this.authService.isAdmin() && (this.activeTab() === 'users' || this.activeTab() === 'audit')) {
+      this.activeTab.set('kpis');
+    }
+
     this.loadMetrics();
-    this.loadUsers();
+    if (this.authService.isAdmin()) {
+      this.loadUsers();
+      this.loadAuditLogs();
+    }
     this.loadPromotions();
     this.loadFailedDeliveries();
     this.loadNotificationTemplates();
-    this.loadAuditLogs();
   }
 
   loadMetrics(): void {
