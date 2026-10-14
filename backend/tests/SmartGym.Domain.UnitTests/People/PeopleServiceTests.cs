@@ -456,4 +456,55 @@ public class PeopleServiceTests
         Assert.False(page3.HasNextPage);
         Assert.True(page3.HasPreviousPage);
     }
+
+    [Fact]
+    public async Task SearchAsync_RoleFilter_ReturnsOnlyPersonsWithActiveRole()
+    {
+        var p1 = Person.Create("Laura", "Instructor");
+        p1.PersonRoles.Add(new PersonRole { PersonId = p1.Id, RoleId = (int)RoleType.Instructor, IsActive = true });
+
+        var p2 = Person.Create("Esteban", "Student");
+        p2.PersonRoles.Add(new PersonRole { PersonId = p2.Id, RoleId = (int)RoleType.Student, IsActive = true });
+
+        _dbContext.People.AddRange(p1, p2);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.SearchAsync(null, null, null, role: RoleType.Instructor);
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal(p1.Id, result.Items[0].Id);
+    }
+
+    [Fact]
+    public async Task SearchAsync_RoleFilter_ExcludesRevokedRole()
+    {
+        var p = Person.Create("Ex", "Instructor");
+        p.PersonRoles.Add(new PersonRole { PersonId = p.Id, RoleId = (int)RoleType.Instructor, IsActive = false });
+
+        _dbContext.People.Add(p);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.SearchAsync(null, null, null, role: RoleType.Instructor);
+
+        Assert.Equal(0, result.TotalCount);
+    }
+
+    [Fact]
+    public async Task SearchAsync_RoleAndStatusFilter_CombinesCorrectly()
+    {
+        var p1 = Person.Create("Activo", "Instructor");
+        p1.PersonRoles.Add(new PersonRole { PersonId = p1.Id, RoleId = (int)RoleType.Instructor, IsActive = true });
+
+        var p2 = Person.Create("Bloqueado", "Instructor");
+        p2.PersonRoles.Add(new PersonRole { PersonId = p2.Id, RoleId = (int)RoleType.Instructor, IsActive = true });
+        p2.ChangeStatus(PersonStatus.Blocked, "Motivo", Guid.NewGuid(), isAdmin: true);
+
+        _dbContext.People.AddRange(p1, p2);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.SearchAsync(null, PersonStatus.Active, null, role: RoleType.Instructor);
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal(p1.Id, result.Items[0].Id);
+    }
 }

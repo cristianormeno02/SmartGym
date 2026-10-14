@@ -36,7 +36,16 @@ import {
   ApplyPaymentRequest,
   CreatePaymentRefundRequest,
   PaymentDiscrepancy,
-  PaymentDiscrepancyStatus
+  PaymentDiscrepancyStatus,
+  CreateRoomRequest,
+  UpdateRoomRequest,
+  CreateActivityRequest,
+  UpdateActivityRequest,
+  ChangeActivityStatusRequest,
+  CreateRecurringScheduleRequest,
+  UpdateRecurringScheduleRequest,
+  CreateMembershipPlanRequest,
+  UpdateMembershipPlanRequest
 } from '../models/gym.models';
 import { environment } from '../../../environments/environment';
 
@@ -60,20 +69,42 @@ export class GymApiService {
     return this.http.get<PublicActivity>(`${this.apiUrl}/public/activities/${encodeURIComponent(code)}`);
   }
 
-  getActivities(search?: string, status?: number, age?: number): Observable<any> {
+  getActivities(search?: string, status?: number, age?: number, page: number = 1, pageSize: number = 10): Observable<PagedResult<Activity>> {
     let params = new HttpParams();
     if (search) params = params.set('search', search);
     if (status !== undefined) params = params.set('status', status.toString());
     if (age !== undefined) params = params.set('age', age.toString());
-    return this.http.get<any>(`${this.apiUrl}/activities`, { params });
+    if (page) params = params.set('page', page.toString());
+    if (pageSize) params = params.set('pageSize', pageSize.toString());
+    return this.http.get<PagedResult<Activity>>(`${this.apiUrl}/activities`, { params });
   }
 
   getActivity(id: string): Observable<Activity> {
     return this.http.get<Activity>(`${this.apiUrl}/activities/${id}`);
   }
 
+  createActivity(request: CreateActivityRequest): Observable<Activity> {
+    return this.http.post<Activity>(`${this.apiUrl}/activities`, request);
+  }
+
+  updateActivity(id: string, request: UpdateActivityRequest): Observable<Activity> {
+    return this.http.put<Activity>(`${this.apiUrl}/activities/${id}`, request);
+  }
+
+  changeActivityStatus(id: string, request: ChangeActivityStatusRequest): Observable<{ changed: boolean }> {
+    return this.http.patch<{ changed: boolean }>(`${this.apiUrl}/activities/${id}/status`, request);
+  }
+
   getRooms(): Observable<Room[]> {
     return this.http.get<Room[]>(`${this.apiUrl}/rooms`);
+  }
+
+  createRoom(request: CreateRoomRequest): Observable<Room> {
+    return this.http.post<Room>(`${this.apiUrl}/rooms`, request);
+  }
+
+  updateRoom(id: string, request: UpdateRoomRequest): Observable<Room> {
+    return this.http.put<Room>(`${this.apiUrl}/rooms/${id}`, request);
   }
 
   // --- Horarios y Clases ---
@@ -82,6 +113,18 @@ export class GymApiService {
     if (activityId) params = params.set('activityId', activityId);
     if (instructorId) params = params.set('instructorId', instructorId);
     return this.http.get<RecurringSchedule[]>(`${this.apiUrl}/schedules`, { params });
+  }
+
+  createSchedule(request: CreateRecurringScheduleRequest): Observable<RecurringSchedule> {
+    return this.http.post<RecurringSchedule>(`${this.apiUrl}/schedules`, request);
+  }
+
+  updateSchedule(id: string, request: UpdateRecurringScheduleRequest): Observable<RecurringSchedule> {
+    return this.http.put<RecurringSchedule>(`${this.apiUrl}/schedules/${id}`, request);
+  }
+
+  deleteSchedule(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.apiUrl}/schedules/${id}`);
   }
 
   getClassSessions(filters?: { fromDate?: string; toDate?: string; activityId?: string; instructorId?: string; status?: number }): Observable<ClassSession[]> {
@@ -110,6 +153,18 @@ export class GymApiService {
   getMembershipPlans(onlyActive = true): Observable<MembershipPlan[]> {
     const params = new HttpParams().set('onlyActive', onlyActive);
     return this.http.get<MembershipPlan[]>(`${this.apiUrl}/membershipplans`, { params });
+  }
+
+  createMembershipPlan(request: CreateMembershipPlanRequest): Observable<MembershipPlan> {
+    return this.http.post<MembershipPlan>(`${this.apiUrl}/membershipplans`, request);
+  }
+
+  updateMembershipPlan(id: string, request: UpdateMembershipPlanRequest): Observable<MembershipPlan> {
+    return this.http.put<MembershipPlan>(`${this.apiUrl}/membershipplans/${id}`, request);
+  }
+
+  deleteMembershipPlan(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.apiUrl}/membershipplans/${id}`);
   }
 
   getStudentMemberships(studentId: string): Observable<Membership[]> {

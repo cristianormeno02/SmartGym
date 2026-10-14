@@ -86,6 +86,16 @@ describe('PeopleService', () => {
     req.flush(mockPagedResult);
   });
 
+  it('search with role should pass role param to GET /api/people', () => {
+    service.search({ role: 'Instructor' }).subscribe();
+
+    const req = httpMock.expectOne(r =>
+      r.url === apiUrl && r.params.get('role') === 'Instructor'
+    );
+    expect(req.request.method).toBe('GET');
+    req.flush({ items: [], pageNumber: 1, pageSize: 20, totalCount: 0, totalPages: 0, hasPreviousPage: false, hasNextPage: false });
+  });
+
   it('getById should request GET /api/people/:id and update selectedPerson signal', () => {
     service.getById(mockPersonDetail.id).subscribe(res => {
       expect(res).toEqual(mockPersonDetail);

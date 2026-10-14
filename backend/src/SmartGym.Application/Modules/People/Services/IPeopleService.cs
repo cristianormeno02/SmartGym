@@ -10,6 +10,7 @@ public interface IPeopleService
         string? search,
         PersonStatus? status,
         DocumentType? documentType,
+        RoleType? role = null,
         int pageNumber = 1,
         int pageSize = 20,
         CancellationToken cancellationToken = default);

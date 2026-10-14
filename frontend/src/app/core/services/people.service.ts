@@ -28,6 +28,7 @@ export class PeopleService {
     search?: string;
     status?: PersonStatus;
     documentType?: DocumentType;
+    role?: string;
     pageNumber?: number;
     pageSize?: number;
   }): Observable<PagedResult<PersonSummary>> {
@@ -35,6 +36,7 @@ export class PeopleService {
     if (filters?.search) params = params.set('search', filters.search);
     if (filters?.status !== undefined) params = params.set('status', filters.status.toString());
     if (filters?.documentType !== undefined) params = params.set('documentType', filters.documentType.toString());
+    if (filters?.role) params = params.set('role', filters.role);
     if (filters?.pageNumber !== undefined) params = params.set('pageNumber', filters.pageNumber.toString());
     if (filters?.pageSize !== undefined) params = params.set('pageSize', filters.pageSize.toString());
 

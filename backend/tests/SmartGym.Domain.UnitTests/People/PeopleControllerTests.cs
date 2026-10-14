@@ -114,10 +114,10 @@ public class PeopleControllerTests
             1, 20, 1
         );
 
-        _mockService.Setup(s => s.SearchAsync("juan", PersonStatus.Active, DocumentType.Dni, 1, 20, It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.SearchAsync("juan", PersonStatus.Active, DocumentType.Dni, null, 1, 20, It.IsAny<CancellationToken>()))
             .ReturnsAsync(pagedResult);
 
-        var result = await _controller.Search("juan", "ACTIVA", "DNI", 1, 20);
+        var result = await _controller.Search("juan", "ACTIVA", "DNI", null, 1, 20);
 
         var okResult = Assert.IsType<OkObjectResult>(result);
         Assert.Equal(pagedResult, okResult.Value);
@@ -127,13 +127,13 @@ public class PeopleControllerTests
     public async Task Search_WithSpanishStatusCode_FiltersByMatchingEnum()
     {
         var pagedResult = new PagedResult<PersonSummaryDto>(new List<PersonSummaryDto>(), 0, 1, 20);
-        _mockService.Setup(s => s.SearchAsync(null, PersonStatus.Blocked, DocumentType.Passport, 1, 20, It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.SearchAsync(null, PersonStatus.Blocked, DocumentType.Passport, null, 1, 20, It.IsAny<CancellationToken>()))
             .ReturnsAsync(pagedResult);
 
-        var result = await _controller.Search(null, "BLOQUEADA", "PASAPORTE", 1, 20);
+        var result = await _controller.Search(null, "BLOQUEADA", "PASAPORTE", null, 1, 20);
 
         Assert.IsType<OkObjectResult>(result);
-        _mockService.Verify(s => s.SearchAsync(null, PersonStatus.Blocked, DocumentType.Passport, 1, 20, It.IsAny<CancellationToken>()), Times.Once);
+        _mockService.Verify(s => s.SearchAsync(null, PersonStatus.Blocked, DocumentType.Passport, null, 1, 20, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Theory]
@@ -143,11 +143,36 @@ public class PeopleControllerTests
     [InlineData(null, "Passport")]
     public async Task Search_WithUnknownEnumCode_ShouldReturn400(string? status, string? documentType)
     {
-        var result = await _controller.Search(null, status, documentType, 1, 20);
+        var result = await _controller.Search(null, status, documentType, null, 1, 20);
 
         Assert.IsType<BadRequestObjectResult>(result);
         _mockService.Verify(s => s.SearchAsync(It.IsAny<string?>(), It.IsAny<PersonStatus?>(), It.IsAny<DocumentType?>(),
-            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+            It.IsAny<RoleType?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Search_WithValidRole_PassesRoleFilterToService()
+    {
+        var pagedResult = new PagedResult<PersonSummaryDto>(new List<PersonSummaryDto>(), 0, 1, 20);
+        _mockService.Setup(s => s.SearchAsync(null, PersonStatus.Active, null, RoleType.Instructor, 1, 20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pagedResult);
+
+        var result = await _controller.Search(null, "ACTIVA", null, "Instructor", 1, 20);
+
+        Assert.IsType<OkObjectResult>(result);
+        _mockService.Verify(s => s.SearchAsync(null, PersonStatus.Active, null, RoleType.Instructor, 1, 20, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("NO_EXISTE")]
+    [InlineData("123")]
+    public async Task Search_WithUnknownRole_ShouldReturn400(string? role)
+    {
+        var result = await _controller.Search(null, null, null, role, 1, 20);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        _mockService.Verify(s => s.SearchAsync(It.IsAny<string?>(), It.IsAny<PersonStatus?>(), It.IsAny<DocumentType?>(),
+            It.IsAny<RoleType?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

@@ -24,7 +24,7 @@ export const routes: Routes = [
   },
   {
     path: 'portal/admin',
-    canActivate: [authGuard, roleGuard(['Administrator'])],
+    canActivate: [authGuard, roleGuard(['Administrator', 'Secretary'])],
     loadComponent: () => import('./features/portal/admin/admin-portal').then(m => m.AdminPortalComponent)
   },
   {
