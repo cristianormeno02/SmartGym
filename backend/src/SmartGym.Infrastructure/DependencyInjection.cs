@@ -1,4 +1,6 @@
 using System.Text;
+using System.Security.Claims;
+using System.IdentityModel.Tokens.Jwt;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -6,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using SmartGym.Application.Common.Interfaces;
 using SmartGym.Application.Common.Security;
+using SmartGym.Application.Modules.Identity.Services;
 using SmartGym.Infrastructure.Persistence;
 using SmartGym.Infrastructure.Services.Auth;
 using SmartGym.Infrastructure.Services.FileStorage;
@@ -32,6 +35,7 @@ public static class DependencyInjection
         services.AddScoped<ISmartGymDbContext>(provider => provider.GetRequiredService<SmartGymDbContext>());
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
+        services.AddScoped<IIdentityLock, PostgreSqlIdentityLock>();
 
         // File Storage Configuration
         services.Configure<S3StorageOptions>(configuration.GetSection(S3StorageOptions.SectionName));
@@ -99,6 +103,53 @@ public static class DependencyInjection
                 ValidAudience = jwtOptions.Audience,
                 ValidateLifetime = true,
                 ClockSkew = TimeSpan.Zero
+            };
+
+            options.Events = new JwtBearerEvents
+            {
+                OnTokenValidated = async context =>
+                {
+                    var sub = context.Principal?.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                              ?? context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+                    if (!Guid.TryParse(sub, out var userId))
+                    {
+                        context.Fail("Identificador de usuario inválido.");
+                        return;
+                    }
+
+                    var tokenStamp = context.Principal?.FindFirst("sstamp")?.Value;
+                    if (string.IsNullOrEmpty(tokenStamp))
+                    {
+                        context.Fail("El token no contiene el sello de seguridad requerido.");
+                        return;
+                    }
+
+                    var dbContext = context.HttpContext.RequestServices.GetRequiredService<ISmartGymDbContext>();
+                    var userRecord = await dbContext.Users
+                        .AsNoTracking()
+                        .Where(u => u.Id == userId)
+                        .Select(u => new { u.IsActive, u.SecurityStamp })
+                        .FirstOrDefaultAsync(context.HttpContext.RequestAborted);
+
+                    if (userRecord == null)
+                    {
+                        context.Fail("El usuario no existe.");
+                        return;
+                    }
+
+                    if (!userRecord.IsActive)
+                    {
+                        context.Fail("La cuenta se encuentra inhabilitada.");
+                        return;
+                    }
+
+                    if (!string.Equals(userRecord.SecurityStamp, tokenStamp, StringComparison.Ordinal))
+                    {
+                        context.Fail("La sesión ha expirado o el sello de seguridad no coincide.");
+                        return;
+                    }
+                }
             };
         });
 

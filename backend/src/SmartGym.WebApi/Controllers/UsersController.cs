@@ -1,8 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SmartGym.Application.Common.Exceptions;
 using SmartGym.Application.Common.Interfaces;
 using SmartGym.Application.Common.Security;
+using SmartGym.Application.Modules.Identity.Dtos;
+using SmartGym.Application.Modules.Identity.Services;
 
 namespace SmartGym.WebApi.Controllers;
 
@@ -13,15 +16,18 @@ public class UsersController : ControllerBase
     private readonly ICurrentUserService _currentUserService;
     private readonly ISmartGymDbContext _dbContext;
     private readonly IFileStorageService _fileStorageService;
+    private readonly IUserAccountService _userAccountService;
 
     public UsersController(
         ICurrentUserService currentUserService,
         ISmartGymDbContext dbContext,
-        IFileStorageService fileStorageService)
+        IFileStorageService fileStorageService,
+        IUserAccountService userAccountService)
     {
         _currentUserService = currentUserService;
         _dbContext = dbContext;
         _fileStorageService = fileStorageService;
+        _userAccountService = userAccountService;
     }
 
     [HttpGet("me")]
@@ -105,4 +111,97 @@ public class UsersController : ControllerBase
             roles = _currentUserService.Roles
         });
     }
+
+    [HttpGet("{personId:guid}/account")]
+    [Authorize(Policy = Policies.RequireAdministrator)]
+    public async Task<IActionResult> GetAccount(Guid personId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var account = await _userAccountService.GetAccountAsync(personId, cancellationToken);
+            return Ok(account);
+        }
+        catch (Exception ex) when (TryMapException(ex, out var error))
+        {
+            return error;
+        }
+    }
+
+    [HttpPost("{personId:guid}/account")]
+    [Authorize(Policy = Policies.RequireAdministrator)]
+    public async Task<IActionResult> Provision(Guid personId, [FromBody] ProvisionUserAccountRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var account = await _userAccountService.ProvisionAsync(personId, request, cancellationToken);
+            return StatusCode(StatusCodes.Status201Created, account);
+        }
+        catch (Exception ex) when (TryMapException(ex, out var error))
+        {
+            return error;
+        }
+    }
+
+    [HttpPut("{personId:guid}/roles")]
+    [Authorize(Policy = Policies.RequireAdministrator)]
+    public async Task<IActionResult> UpdateRoles(Guid personId, [FromBody] UpdateUserRolesRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var account = await _userAccountService.UpdateRolesAsync(personId, request, cancellationToken);
+            return Ok(account);
+        }
+        catch (Exception ex) when (TryMapException(ex, out var error))
+        {
+            return error;
+        }
+    }
+
+    [HttpPatch("{personId:guid}/status")]
+    [Authorize(Policy = Policies.RequireAdministrator)]
+    public async Task<IActionResult> UpdateStatus(Guid personId, [FromBody] UpdateUserStatusRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var account = await _userAccountService.UpdateStatusAsync(personId, request, cancellationToken);
+            return Ok(account);
+        }
+        catch (Exception ex) when (TryMapException(ex, out var error))
+        {
+            return error;
+        }
+    }
+
+    [HttpPost("{personId:guid}/reset-password")]
+    [Authorize(Policy = Policies.RequireAdministrator)]
+    public async Task<IActionResult> ResetPassword(Guid personId, [FromBody] AdminResetPasswordRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _userAccountService.ResetPasswordAsync(personId, request, cancellationToken);
+            return NoContent();
+        }
+        catch (Exception ex) when (TryMapException(ex, out var error))
+        {
+            return error;
+        }
+    }
+
+    private bool TryMapException(Exception ex, out IActionResult result)
+    {
+        IActionResult? mapped = ex switch
+        {
+            ValidationException vex => BadRequest(new { message = vex.Message, errors = vex.Errors }),
+            NotFoundException nfe => NotFound(new { message = nfe.Message }),
+            ForbiddenException fe => StatusCode(StatusCodes.Status403Forbidden, new { message = fe.Message }),
+            ConflictException ce => Conflict(new { message = ce.Message }),
+            ArgumentException aex => BadRequest(new { message = aex.Message }),
+            InvalidOperationException ioex => Conflict(new { message = ioex.Message }),
+            _ => null
+        };
+
+        result = mapped!;
+        return mapped != null;
+    }
 }
+

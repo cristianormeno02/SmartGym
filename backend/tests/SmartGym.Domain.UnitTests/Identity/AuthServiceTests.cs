@@ -251,4 +251,27 @@ public class AuthServiceTests
         var request = new LoginRequest("juan@example.com", "Password123!");
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => _authService.LoginAsync(request));
     }
+
+    [Fact]
+    public async Task LoginAsync_SuspendedUser_ThrowsUnauthorizedAccessException()
+    {
+        var person = Person.Create("Ana", "Gomez", "ana@example.com");
+        _dbContext.People.Add(person);
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            PersonId = person.Id,
+            Person = person,
+            Username = "ana@example.com",
+            PasswordHash = _passwordHasher.HashPassword("Password123!"),
+            IsActive = false
+        };
+        _dbContext.Users.Add(user);
+        await _dbContext.SaveChangesAsync();
+
+        var request = new LoginRequest("ana@example.com", "Password123!");
+        var ex = await Assert.ThrowsAsync<UnauthorizedAccessException>(() => _authService.LoginAsync(request));
+        Assert.Contains("suspendida", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
 }

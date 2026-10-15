@@ -272,4 +272,73 @@ public class PersonDomainTests
     {
         Assert.Throws<ArgumentException>(() => Address.Create("Calle", "1", null, null, null, null, null, country));
     }
+
+    [Fact]
+    public void AddRole_WhenNewRole_AddsActivePersonRole()
+    {
+        var person = Person.Create("Carlos", "Gómez");
+        var role = new Role { Id = (int)RoleType.Instructor, Name = "Instructor" };
+
+        person.AddRole(role);
+
+        Assert.Single(person.PersonRoles);
+        var pr = person.PersonRoles.First();
+        Assert.Equal(role.Id, pr.RoleId);
+        Assert.True(pr.IsActive);
+        Assert.True(person.HasRole(RoleType.Instructor));
+    }
+
+    [Fact]
+    public void RemoveRole_WhenActiveRoleExists_SetsIsActiveFalse()
+    {
+        var person = Person.Create("Carlos", "Gómez");
+        var role = new Role { Id = (int)RoleType.Instructor, Name = "Instructor" };
+        person.AddRole(role);
+
+        person.RemoveRole((int)RoleType.Instructor);
+
+        Assert.Single(person.PersonRoles);
+        Assert.False(person.PersonRoles.First().IsActive);
+        Assert.False(person.HasRole(RoleType.Instructor));
+    }
+
+    [Fact]
+    public void AddRole_WhenInactiveRoleExists_ReactivatesExistingPersonRoleWithoutDuplicate()
+    {
+        var person = Person.Create("Carlos", "Gómez");
+        var role = new Role { Id = (int)RoleType.Instructor, Name = "Instructor" };
+        person.AddRole(role);
+        person.RemoveRole((int)RoleType.Instructor);
+
+        person.AddRole(role);
+
+        Assert.Single(person.PersonRoles);
+        var pr = person.PersonRoles.First();
+        Assert.Equal(role.Id, pr.RoleId);
+        Assert.True(pr.IsActive);
+        Assert.True(person.HasRole(RoleType.Instructor));
+    }
+
+    [Fact]
+    public void AddRole_WhenPersonIsDeceased_ThrowsInvalidOperationException()
+    {
+        var person = Person.Create("Carlos", "Gómez");
+        person.ChangeStatus(PersonStatus.Deceased, "Fallecimiento informado", Guid.NewGuid(), isAdmin: true);
+        var role = new Role { Id = (int)RoleType.Student, Name = "Student" };
+
+        var ex = Assert.Throws<InvalidOperationException>(() => person.AddRole(role));
+        Assert.Contains("deceased", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RemoveRole_WhenPersonIsDeceased_ThrowsInvalidOperationException()
+    {
+        var person = Person.Create("Carlos", "Gómez");
+        var role = new Role { Id = (int)RoleType.Student, Name = "Student" };
+        person.AddRole(role);
+        person.ChangeStatus(PersonStatus.Deceased, "Fallecimiento informado", Guid.NewGuid(), isAdmin: true);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => person.RemoveRole((int)RoleType.Student));
+        Assert.Contains("deceased", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
 }

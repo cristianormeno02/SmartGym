@@ -35,7 +35,7 @@ Ver `proposal.md` para la justificación y `specs/` para los requerimientos norm
   - `GET /api/users/{personId}/account` → `{ hasAccount, userId?, username?, isActive?, lastLoginUtc?, roles: string[] }`. Los roles se devuelven aunque la persona no tenga cuenta.
   - `POST /api/users/{personId}/account` → body `{ password, roleIds }`. 201 con el mismo DTO.
   - `PUT /api/users/{personId}/roles` → body `{ roleIds: int[] }`. 200 con el DTO.
-  - `PATCH /api/users/{personId}/status` → body `{ isActive: bool }`. 204.
+  - `PATCH /api/users/{personId}/status` → body `{ isActive: bool }`. 200 con el DTO, para que la UI refleje el estado sin otra consulta.
   - `POST /api/users/{personId}/reset-password` → body `{ newPassword }`. 204.
 - La lógica reside en un nuevo `IUserAccountService` en `SmartGym.Application.Modules.Identity`, no en `AuthService`, que queda dedicado a autenticación.
 - Los roles asignables son exactamente `Administrator`, `Secretary`, `Instructor` y `Student` (ids 1–4). `Public` u otros ids devuelven 400. Una lista vacía es válida en `PUT /roles` (revoca todo, sujeto a la guarda) y en el aprovisionamiento.
@@ -54,7 +54,7 @@ Ver `proposal.md` para la justificación y `specs/` para los requerimientos norm
 - **Alternativas consideradas**: *Reutilizar `IsLockedOut`*: descartado; su nombre sugiere bloqueo temporal automático y dejaría `IsActive` sin significado.
 
 ### 4. Sello de seguridad para invalidar sesiones
-- **Decisión**: Nueva columna `Users.SecurityStamp` (`string`, no nula, default `Guid` aleatorio; la migración completa los existentes). `JwtTokenGenerator` agrega el claim `sstamp`. En `AddJwtBearer` se registra `JwtBearerEvents.OnTokenValidated`, que lee el usuario por id (`AsNoTracking`, proyección de `IsActive` y `SecurityStamp`) y llama a `context.Fail(...)` si no existe, está suspendido o el sello no coincide.
+- **Decisión**: Nueva columna `Users.SecurityStamp` (`string`, no nula). La entidad la inicializa con un `Guid` aleatorio y la columna declara en el modelo un default SQL (`md5(random()::text || clock_timestamp()::text)`) con el que la migración completa las filas existentes. `JwtTokenGenerator` agrega el claim `sstamp`. En `AddJwtBearer` se registra `JwtBearerEvents.OnTokenValidated`, que lee el usuario por id (`AsNoTracking`, proyección de `IsActive` y `SecurityStamp`) y llama a `context.Fail(...)` si no existe, está suspendido o el sello no coincide.
 - El sello se rota al suspender, al restablecer la contraseña y al modificar roles (porque los roles viajan en el token). El usuario afectado recibe 401 en su siguiente request y debe volver a iniciar sesión, momento en que obtiene los roles vigentes.
 - Tokens emitidos antes del despliegue no tienen `sstamp`: se rechazan, forzando un único re-login general.
 - **Alternativas consideradas**:
@@ -111,7 +111,7 @@ Ver `proposal.md` para la justificación y `specs/` para los requerimientos norm
 
 ## Migration Plan
 
-- Migración no destructiva que agrega `Users.SecurityStamp` (no nula, rellenada con un valor aleatorio por fila).
+- Migración no destructiva que agrega `Users.SecurityStamp` (no nula, con default SQL aleatorio declarado también en `UserConfiguration`, de modo que modelo y base coinciden).
 - No cambian `Roles` ni `PersonRoles`; los roles ya están sembrados con `HasData`.
 - Al desplegar, todas las sesiones vigentes se invalidan una vez (tokens sin `sstamp`).
 - Rollback: revertir la migración y el código; la columna no es usada por versiones previas.

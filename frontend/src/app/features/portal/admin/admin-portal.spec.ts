@@ -1,10 +1,14 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+import { signal } from '@angular/core';
 import { AdminPortalComponent } from './admin-portal';
 import { GymApiService } from '../../../core/services/gym-api.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { NotificationsService } from '../../../core/services/notifications.service';
-import { of } from 'rxjs';
+import { UserManagementService } from '../../../core/services/user-management.service';
+import { of, throwError } from 'rxjs';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { AdminUserOverview } from '../../../core/models/gym.models';
 
 describe('AdminPortalComponent', () => {
   let component: AdminPortalComponent;
@@ -12,11 +16,31 @@ describe('AdminPortalComponent', () => {
   let gymApiSpy: any;
   let authServiceSpy: any;
   let notificationsServiceSpy: any;
+  let userManagementSpy: any;
+
+  const mockUsers: AdminUserOverview[] = [
+    {
+      userId: 'user-1',
+      personId: 'person-1',
+      fullName: 'Carlos Gómez',
+      email: 'carlos@gym.com',
+      isActive: true,
+      roles: ['Administrator', 'Secretary']
+    },
+    {
+      userId: 'user-2',
+      personId: 'person-2',
+      fullName: 'Laura Pausini',
+      email: 'laura@gym.com',
+      isActive: true,
+      roles: ['Instructor']
+    }
+  ];
 
   beforeEach(() => {
     gymApiSpy = {
       getDashboardMetrics: vi.fn().mockReturnValue(of(null)),
-      getAdminUsers: vi.fn().mockReturnValue(of([])),
+      getAdminUsers: vi.fn().mockReturnValue(of(mockUsers)),
       getPromotions: vi.fn().mockReturnValue(of([])),
       getAuditLogs: vi.fn().mockReturnValue(of([])),
       getRooms: vi.fn().mockReturnValue(of([])),
@@ -26,12 +50,17 @@ describe('AdminPortalComponent', () => {
     authServiceSpy = {
       isAdmin: vi.fn().mockReturnValue(true),
       isStaff: vi.fn().mockReturnValue(true),
-      hasAnyRole: vi.fn().mockReturnValue(true)
+      hasAnyRole: vi.fn().mockReturnValue(true),
+      currentUser: signal({ userId: 'user-1', personId: 'person-1', email: 'carlos@gym.com', roles: ['Administrator'] })
     };
 
     notificationsServiceSpy = {
       getFailedDeliveries: vi.fn().mockReturnValue(of([])),
       getTemplates: vi.fn().mockReturnValue(of([]))
+    };
+
+    userManagementSpy = {
+      updateRoles: vi.fn().mockReturnValue(of({}))
     };
   });
 
@@ -41,9 +70,11 @@ describe('AdminPortalComponent', () => {
     await TestBed.configureTestingModule({
       imports: [AdminPortalComponent],
       providers: [
+        provideRouter([]),
         { provide: GymApiService, useValue: gymApiSpy },
         { provide: AuthService, useValue: authServiceSpy },
-        { provide: NotificationsService, useValue: notificationsServiceSpy }
+        { provide: NotificationsService, useValue: notificationsServiceSpy },
+        { provide: UserManagementService, useValue: userManagementSpy }
       ]
     }).compileComponents();
 
@@ -82,6 +113,74 @@ describe('AdminPortalComponent', () => {
     expect(gymApiSpy.getAuditLogs).not.toHaveBeenCalled();
   });
 
+  describe('Users tab actions', () => {
+    beforeEach(async () => {
+      await setupComponent(true);
+      component.setActiveTab('users');
+      fixture.detectChanges();
+    });
+
+    it('should render Ver Ficha and Roles buttons for each user row', () => {
+      const viewFichaBtn1 = fixture.nativeElement.querySelector('[data-testid="btn-view-ficha-user-1"]');
+      const manageRolesBtn1 = fixture.nativeElement.querySelector('[data-testid="btn-manage-roles-user-1"]');
+
+      expect(viewFichaBtn1).not.toBeNull();
+      expect(viewFichaBtn1.getAttribute('href')).toBe('/portal/personas/person-1');
+      expect(manageRolesBtn1).not.toBeNull();
+
+      const viewFichaBtn2 = fixture.nativeElement.querySelector('[data-testid="btn-view-ficha-user-2"]');
+      expect(viewFichaBtn2.getAttribute('href')).toBe('/portal/personas/person-2');
+    });
+
+    it('should open Manage Roles modal when clicking Roles button', () => {
+      const manageRolesBtn2 = fixture.nativeElement.querySelector('[data-testid="btn-manage-roles-user-2"]');
+      manageRolesBtn2.click();
+      fixture.detectChanges();
+
+      expect(component.showRolesModal()).toBe(true);
+      expect(component.selectedUserForRoles()).toEqual(mockUsers[1]);
+
+      const modal = fixture.nativeElement.querySelector('[data-testid="admin-roles-modal"]');
+      expect(modal).not.toBeNull();
+      expect(modal.textContent).toContain('Laura Pausini');
+    });
+
+    it('should submit role updates and reload users on success', () => {
+      component.openRolesModal(mockUsers[1]);
+      component.userManageRoleIds[1] = true; // Add Administrator
+      component.userManageRoleIds[3] = true; // Keep Instructor
+
+      component.submitUserRoles();
+
+      expect(userManagementSpy.updateRoles).toHaveBeenCalledWith('person-2', {
+        roleIds: [1, 3]
+      });
+      expect(component.showRolesModal()).toBe(false);
+      expect(gymApiSpy.getAdminUsers).toHaveBeenCalledTimes(2); // Initial + reload
+    });
+
+    it('should display conflict error (409) in modal when role update fails', () => {
+      userManagementSpy.updateRoles.mockReturnValue(
+        throwError(() => ({ error: { message: 'No se puede revocar el rol de Administrador porque no existen otros administradores operativos.' } }))
+      );
+
+      component.openRolesModal(mockUsers[0]);
+      component.submitUserRoles();
+
+      expect(component.showRolesModal()).toBe(true);
+      expect(component.rolesModalError()).toContain('otros administradores');
+    });
+
+    it('should warn when administrator modifies own roles', () => {
+      component.openRolesModal(mockUsers[0]); // user-1 is the current user
+      fixture.detectChanges();
+
+      expect(component.isSelfUser(mockUsers[0])).toBe(true);
+      const warning = fixture.nativeElement.querySelector('[data-testid="admin-self-roles-warning"]');
+      expect(warning).not.toBeNull();
+    });
+  });
+
   describe('notification template actions', () => {
     const templates = [
       { id: 't1', code: 'WELCOME', channel: 0, version: 1, locale: 'es', bodyTemplate: 'Hola', status: 1 }
@@ -116,9 +215,11 @@ describe('AdminPortalComponent', () => {
     await TestBed.configureTestingModule({
       imports: [AdminPortalComponent],
       providers: [
+        provideRouter([]),
         { provide: GymApiService, useValue: gymApiSpy },
         { provide: AuthService, useValue: authServiceSpy },
-        { provide: NotificationsService, useValue: notificationsServiceSpy }
+        { provide: NotificationsService, useValue: notificationsServiceSpy },
+        { provide: UserManagementService, useValue: userManagementSpy }
       ]
     }).compileComponents();
 

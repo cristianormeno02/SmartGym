@@ -13,4 +13,11 @@ public class User : BaseEntity
     public bool IsEmailConfirmed { get; set; }
     public DateTime? LastLoginUtc { get; set; }
     public bool IsLockedOut { get; set; }
+    public string SecurityStamp { get; set; } = Guid.NewGuid().ToString("N");
+
+    public void UpdateSecurityStamp()
+    {
+        SecurityStamp = Guid.NewGuid().ToString("N");
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
 }

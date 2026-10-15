@@ -1,9 +1,11 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { PeopleService } from '../../core/services/people.service';
 import { AuthService } from '../../core/services/auth.service';
+import { UserManagementService } from '../../core/services/user-management.service';
+import { UserAccountDto, ROLE_DEFINITIONS } from '../../core/models/user-management.models';
 import {
   PersonDetail,
   PersonStatus,
@@ -13,6 +15,7 @@ import {
   Gender,
   GenderLabels
 } from '../../core/models/person.model';
+import { apiErrorMessage } from '../../core/utils/api-error';
 
 @Component({
   selector: 'app-person-detail',
@@ -154,6 +157,109 @@ import {
               </div>
             }
           </div>
+
+          <!-- Card: Cuenta de Acceso y Roles (Solo Administrator) -->
+          @if (authService.isAdmin()) {
+            <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4" data-testid="user-account-card">
+              <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800/80 pb-4">
+                <div>
+                  <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <span class="text-xl">🔐</span> Cuenta de Acceso y Roles
+                  </h3>
+                  <p class="text-xs text-slate-400 mt-0.5">
+                    Gestión de credenciales de inicio de sesión y asignación de roles operativos.
+                  </p>
+                </div>
+
+                @if (isLoadingAccount()) {
+                  <span class="text-xs text-slate-400 animate-pulse">Cargando cuenta...</span>
+                } @else if (userAccount()?.hasAccount) {
+                  <div class="flex flex-wrap items-center gap-2">
+                    <button (click)="openRolesModal()" data-testid="btn-manage-roles"
+                            class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 rounded-xl text-xs font-bold transition">
+                      ⚙️ Gestionar Roles
+                    </button>
+                    <button (click)="openResetPasswordModal()" data-testid="btn-reset-password"
+                            class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 rounded-xl text-xs font-bold transition">
+                      🔑 Restablecer Contraseña
+                    </button>
+                    <button (click)="openStatusAccountModal()" data-testid="btn-toggle-status"
+                            class="px-3 py-1.5 rounded-xl text-xs font-bold transition border"
+                            [ngClass]="userAccount()?.isActive ? 'bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border-rose-800/60' : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border-emerald-800/60'">
+                      {{ userAccount()?.isActive ? '⛔ Suspender Cuenta' : '✅ Reactivar Cuenta' }}
+                    </button>
+                  </div>
+                } @else {
+                  <div>
+                    <button (click)="openProvisionModal()" data-testid="btn-provision-account"
+                            [disabled]="!p.email || p.status === PersonStatus.Deceased"
+                            [title]="!p.email ? 'Debe registrar un correo electrónico en la ficha para crear una cuenta' : (p.status === PersonStatus.Deceased ? 'No se pueden crear cuentas para personas fallecidas' : '')"
+                            class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition shadow">
+                      + Crear Cuenta de Acceso
+                    </button>
+                  </div>
+                }
+              </div>
+
+              <!-- Body of Card -->
+              @if (userAccount(); as acc) {
+                @if (acc.hasAccount) {
+                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs pt-1">
+                    <div>
+                      <span class="text-slate-500 uppercase font-semibold block">Estado de la Cuenta</span>
+                      <span class="inline-flex items-center gap-1.5 mt-1 font-bold px-2.5 py-0.5 rounded-full border text-xs"
+                            [ngClass]="acc.isActive ? 'bg-emerald-950/50 text-emerald-400 border-emerald-800' : 'bg-rose-950/50 text-rose-400 border-rose-800'"
+                            data-testid="account-status-badge">
+                        {{ acc.isActive ? 'Activa' : 'Suspendida' }}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span class="text-slate-500 uppercase font-semibold block">Nombre de Usuario / Email</span>
+                      <span class="font-mono text-slate-200 mt-1 block font-semibold" data-testid="account-username">{{ acc.username }}</span>
+                    </div>
+
+                    <div>
+                      <span class="text-slate-500 uppercase font-semibold block">Último Acceso</span>
+                      <span class="text-slate-300 mt-1 block">
+                        {{ acc.lastLoginUtc ? (acc.lastLoginUtc | date:'medium') : 'Nunca ha iniciado sesión' }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="pt-2">
+                    <span class="text-slate-500 uppercase font-semibold text-xs block mb-1.5">Roles Operativos Asignados</span>
+                    <div class="flex flex-wrap gap-2 items-center" data-testid="account-roles-container">
+                      @for (role of acc.roles; track role) {
+                        <span class="text-xs px-3 py-1 rounded-full font-bold border" [ngClass]="getRoleBadgeClass(role)">
+                          {{ getRoleLabel(role) }}
+                        </span>
+                      }
+                      @if (acc.roles.length === 0) {
+                        <span class="text-xs text-slate-500 italic">Sin roles operativos asignados</span>
+                      }
+                    </div>
+                  </div>
+                } @else {
+                  <div class="py-2 text-xs text-slate-400 space-y-2">
+                    <p class="font-semibold text-slate-300" data-testid="no-account-notice">
+                      ℹ️ Sin cuenta de usuario creada
+                    </p>
+                    @if (!p.email) {
+                      <p class="text-rose-400 font-medium" data-testid="no-email-warning">
+                        ⚠️ Esta persona no tiene correo electrónico cargado. Para crear una cuenta de acceso, primero edita los datos de la ficha y asigna un email válido.
+                      </p>
+                    }
+                    @if (p.status === PersonStatus.Deceased) {
+                      <p class="text-rose-400 font-medium" data-testid="deceased-warning">
+                        ⚠️ No se pueden aprovisionar credenciales de acceso a personas registradas como fallecidas.
+                      </p>
+                    }
+                  </div>
+                }
+              }
+            </div>
+          }
 
           <!-- Master Data Grid -->
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -327,6 +433,191 @@ import {
           </div>
         }
 
+        <!-- Provision User Modal -->
+        @if (showProvisionModal()) {
+          <div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" data-testid="modal-provision">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+              <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                <span>➕</span> Crear Cuenta de Acceso
+              </h3>
+              <p class="text-xs text-slate-400">
+                Aprovisionar usuario para <span class="font-bold text-slate-200">{{ person()?.lastName }}, {{ person()?.firstName }}</span> ({{ person()?.email }}).
+              </p>
+
+              <div>
+                <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Contraseña Inicial <span class="text-rose-400">*</span></label>
+                <input type="password" [(ngModel)]="provisionPassword" placeholder="Contraseña segura" data-testid="input-provision-password"
+                       class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500 font-mono" />
+                <p class="text-[11px] text-slate-500 mt-1">Mínimo 8 caracteres, al menos una mayúscula, un número y un símbolo.</p>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold uppercase text-slate-400 mb-2">Roles Iniciales</label>
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                  @for (role of ROLE_DEFINITIONS; track role.id) {
+                    <label class="flex items-center gap-2 p-2 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer hover:border-slate-700">
+                      <input type="checkbox" [(ngModel)]="provisionRoleIds[role.id]" [attr.data-testid]="'checkbox-role-' + role.id"
+                             class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0" />
+                      <span class="text-slate-200 font-semibold">{{ role.label }}</span>
+                    </label>
+                  }
+                </div>
+              </div>
+
+              @if (provisionError()) {
+                <div class="p-3 bg-rose-950/60 border border-rose-800 text-rose-300 rounded-xl text-xs font-semibold" data-testid="provision-error-msg">
+                  {{ provisionError() }}
+                </div>
+              }
+
+              <div class="flex items-center justify-end gap-2 pt-2">
+                <button (click)="closeProvisionModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition">
+                  Cancelar
+                </button>
+                <button (click)="submitProvision()" [disabled]="isSubmittingProvision() || !provisionPassword" data-testid="btn-submit-provision"
+                        class="px-5 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition">
+                  {{ isSubmittingProvision() ? 'Creando...' : 'Crear Cuenta' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        }
+
+        <!-- Manage Roles Modal -->
+        @if (showRolesModal()) {
+          <div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" data-testid="modal-roles">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+              <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                <span>⚙️</span> Gestionar Roles Operativos
+              </h3>
+              <p class="text-xs text-slate-400">
+                Seleccione los roles asignados a <span class="font-bold text-slate-200">{{ person()?.lastName }}, {{ person()?.firstName }}</span>.
+              </p>
+
+              @if (isSelfAccount()) {
+                <div class="p-3 bg-amber-950/60 border border-amber-800 text-amber-300 rounded-xl text-xs font-semibold" data-testid="self-modification-warning">
+                  ⚠️ Advertencia: Estás modificando tus propios roles. Si te revocas permisos o cambias roles, tu sesión actual se cerrará y deberás volver a iniciar sesión.
+                </div>
+              }
+
+              <div class="space-y-2">
+                @for (role of ROLE_DEFINITIONS; track role.id) {
+                  <label class="flex items-center justify-between p-3 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer hover:border-slate-700 transition">
+                    <div>
+                      <span class="text-sm text-slate-200 font-bold block">{{ role.label }}</span>
+                      <span class="text-[11px] text-slate-500">{{ role.name }}</span>
+                    </div>
+                    <input type="checkbox" [(ngModel)]="manageRoleIds[role.id]" [attr.data-testid]="'checkbox-manage-role-' + role.id"
+                           class="w-4 h-4 rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0" />
+                  </label>
+                }
+              </div>
+
+              @if (rolesError()) {
+                <div class="p-3 bg-rose-950/60 border border-rose-800 text-rose-300 rounded-xl text-xs font-semibold" data-testid="roles-error-msg">
+                  {{ rolesError() }}
+                </div>
+              }
+
+              <div class="flex items-center justify-end gap-2 pt-2">
+                <button (click)="closeRolesModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition">
+                  Cancelar
+                </button>
+                <button (click)="submitUpdateRoles()" [disabled]="isSubmittingRoles()" data-testid="btn-submit-roles"
+                        class="px-5 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition">
+                  {{ isSubmittingRoles() ? 'Guardando...' : 'Guardar Roles' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        }
+
+        <!-- Reset Password Modal -->
+        @if (showResetPasswordModal()) {
+          <div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" data-testid="modal-reset-password">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+              <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                <span>🔑</span> Restablecer Contraseña
+              </h3>
+              <p class="text-xs text-slate-400">
+                Defina una nueva contraseña provisoria para <span class="font-bold text-slate-200">{{ person()?.lastName }}, {{ person()?.firstName }}</span>.
+              </p>
+
+              @if (isSelfAccount()) {
+                <div class="p-3 bg-amber-950/60 border border-amber-800 text-amber-300 rounded-xl text-xs font-semibold" data-testid="self-reset-password-warning">
+                  ⚠️ Advertencia: Estás cambiando la contraseña de tu propia cuenta. Tu sesión actual se cerrará inmediatamente.
+                </div>
+              }
+
+              <div>
+                <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Nueva Contraseña <span class="text-rose-400">*</span></label>
+                <input type="password" [(ngModel)]="newAccountPassword" placeholder="Nueva contraseña provisoria" data-testid="input-reset-password"
+                       class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500 font-mono" />
+                <p class="text-[11px] text-slate-500 mt-1">Mínimo 8 caracteres, al menos una mayúscula, un número y un símbolo.</p>
+              </div>
+
+              @if (resetPasswordError()) {
+                <div class="p-3 bg-rose-950/60 border border-rose-800 text-rose-300 rounded-xl text-xs font-semibold" data-testid="reset-password-error-msg">
+                  {{ resetPasswordError() }}
+                </div>
+              }
+
+              <div class="flex items-center justify-end gap-2 pt-2">
+                <button (click)="closeResetPasswordModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition">
+                  Cancelar
+                </button>
+                <button (click)="submitResetPassword()" [disabled]="isSubmittingResetPassword() || !newAccountPassword" data-testid="btn-submit-reset-password"
+                        class="px-5 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition">
+                  {{ isSubmittingResetPassword() ? 'Restableciendo...' : 'Restablecer' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        }
+
+        <!-- Suspend / Reactivate Status Modal -->
+        @if (showStatusAccountModal()) {
+          <div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" data-testid="modal-status-account">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+              <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                <span>{{ userAccount()?.isActive ? '⛔' : '✅' }}</span>
+                {{ userAccount()?.isActive ? 'Suspender Cuenta de Acceso' : 'Reactivar Cuenta de Acceso' }}
+              </h3>
+
+              @if (isSelfAccount() && userAccount()?.isActive) {
+                <div class="p-3 bg-rose-950/60 border border-rose-800 text-rose-300 rounded-xl text-xs font-semibold" data-testid="self-suspension-warning">
+                  ⚠️ Advertencia Crítica: Estás por suspender tu propia cuenta de acceso. No podrás volver a ingresar al sistema a menos que otro Administrador la reactive. Tu sesión se cerrará de inmediato.
+                </div>
+              }
+
+              <p class="text-xs text-slate-300">
+                @if (userAccount()?.isActive) {
+                  ¿Está seguro de que desea <strong>suspender</strong> la cuenta de <strong>{{ person()?.lastName }}, {{ person()?.firstName }}</strong>? El usuario perderá acceso inmediato al sistema y sus sesiones activas serán invalidadas.
+                } @else {
+                  ¿Está seguro de que desea <strong>reactivar</strong> la cuenta de <strong>{{ person()?.lastName }}, {{ person()?.firstName }}</strong>? El usuario podrá volver a ingresar normalmente con sus credenciales y roles asignados.
+                }
+              </p>
+
+              @if (statusAccountError()) {
+                <div class="p-3 bg-rose-950/60 border border-rose-800 text-rose-300 rounded-xl text-xs font-semibold" data-testid="status-account-error-msg">
+                  {{ statusAccountError() }}
+                </div>
+              }
+
+              <div class="flex items-center justify-end gap-2 pt-2">
+                <button (click)="closeStatusAccountModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition">
+                  Cancelar
+                </button>
+                <button (click)="submitToggleStatusAccount()" [disabled]="isSubmittingStatusAccount()" data-testid="btn-submit-status-account"
+                        class="px-5 py-2 text-white rounded-xl text-xs font-bold transition disabled:opacity-40"
+                        [ngClass]="userAccount()?.isActive ? 'bg-rose-600 hover:bg-rose-500' : 'bg-emerald-600 hover:bg-emerald-500'">
+                  {{ isSubmittingStatusAccount() ? 'Procesando...' : (userAccount()?.isActive ? 'Confirmar Suspensión' : 'Confirmar Reactivación') }}
+                </button>
+              </div>
+            </div>
+          </div>
+        }
+
       </div>
     </div>
   `
@@ -336,14 +627,54 @@ export class PersonDetailComponent implements OnInit {
   private readonly router = inject(Router);
   readonly peopleService = inject(PeopleService);
   readonly authService = inject(AuthService);
+  readonly userManagementService = inject(UserManagementService);
 
   readonly PersonStatus = PersonStatus;
   readonly DocumentType = DocumentType;
+  readonly ROLE_DEFINITIONS = ROLE_DEFINITIONS;
 
   readonly person = signal<PersonDetail | null>(null);
   readonly feedback = signal<string | null>(null);
   readonly feedbackSuccess = signal<boolean>(true);
   readonly isUploadingPhoto = signal<boolean>(false);
+
+  // User Account & Roles
+  readonly userAccount = signal<UserAccountDto | null>(null);
+  readonly isLoadingAccount = signal<boolean>(false);
+
+  readonly isSelfAccount = computed(() => {
+    const current = this.authService.currentUser();
+    const acc = this.userAccount();
+    const p = this.person();
+    if (!current) return false;
+    if (acc?.userId && current.userId === acc.userId) return true;
+    if (p?.id && current.personId === p.id) return true;
+    return false;
+  });
+
+  // Provision modal
+  readonly showProvisionModal = signal<boolean>(false);
+  readonly isSubmittingProvision = signal<boolean>(false);
+  readonly provisionError = signal<string | null>(null);
+  provisionPassword = '';
+  provisionRoleIds: { [key: number]: boolean } = { 1: false, 2: false, 3: false, 4: false };
+
+  // Manage Roles modal
+  readonly showRolesModal = signal<boolean>(false);
+  readonly isSubmittingRoles = signal<boolean>(false);
+  readonly rolesError = signal<string | null>(null);
+  manageRoleIds: { [key: number]: boolean } = { 1: false, 2: false, 3: false, 4: false };
+
+  // Reset Password modal
+  readonly showResetPasswordModal = signal<boolean>(false);
+  readonly isSubmittingResetPassword = signal<boolean>(false);
+  readonly resetPasswordError = signal<string | null>(null);
+  newAccountPassword = '';
+
+  // Status Account modal
+  readonly showStatusAccountModal = signal<boolean>(false);
+  readonly isSubmittingStatusAccount = signal<boolean>(false);
+  readonly statusAccountError = signal<string | null>(null);
 
   // Status modal
   readonly showStatusModal = signal<boolean>(false);
@@ -364,10 +695,27 @@ export class PersonDetailComponent implements OnInit {
       next: (p) => {
         this.person.set(p);
         this.newStatus = p.status;
+        if (this.authService.isAdmin()) {
+          this.loadAccount(id);
+        }
       },
       error: (err) => {
         this.feedback.set(err.error?.message || 'Error al cargar la ficha de la persona.');
         this.feedbackSuccess.set(false);
+      }
+    });
+  }
+
+  loadAccount(personId: string): void {
+    if (!this.authService.isAdmin()) return;
+    this.isLoadingAccount.set(true);
+    this.userManagementService.getAccount(personId).subscribe({
+      next: (acc) => {
+        this.userAccount.set(acc);
+        this.isLoadingAccount.set(false);
+      },
+      error: () => {
+        this.isLoadingAccount.set(false);
       }
     });
   }
@@ -504,6 +852,175 @@ export class PersonDetailComponent implements OnInit {
         return 'bg-purple-900/30 text-purple-300 border-purple-800/40';
       default:
         return 'bg-slate-800 text-slate-400 border-slate-700';
+    }
+  }
+
+  // User Management Actions
+  openProvisionModal(): void {
+    this.provisionPassword = '';
+    this.provisionRoleIds = { 1: false, 2: false, 3: false, 4: false };
+    this.provisionError.set(null);
+    this.showProvisionModal.set(true);
+  }
+
+  closeProvisionModal(): void {
+    this.showProvisionModal.set(false);
+  }
+
+  submitProvision(): void {
+    const p = this.person();
+    if (!p) return;
+
+    const roleIds = Object.entries(this.provisionRoleIds)
+      .filter(([_, checked]) => checked)
+      .map(([id]) => Number(id));
+
+    this.isSubmittingProvision.set(true);
+    this.provisionError.set(null);
+
+    this.userManagementService.provision(p.id, {
+      password: this.provisionPassword,
+      roleIds
+    }).subscribe({
+      next: (acc) => {
+        this.isSubmittingProvision.set(false);
+        this.showProvisionModal.set(false);
+        this.userAccount.set(acc);
+        this.person.update(curr => curr ? { ...curr, hasUserAccount: true } : curr);
+        this.feedback.set('Cuenta de acceso creada exitosamente.');
+        this.feedbackSuccess.set(true);
+      },
+      error: (err) => {
+        this.isSubmittingProvision.set(false);
+        this.provisionError.set(apiErrorMessage(err, 'Error al aprovisionar la cuenta de usuario.'));
+      }
+    });
+  }
+
+  openRolesModal(): void {
+    const acc = this.userAccount();
+    const currentRoles = acc?.roles ?? [];
+    this.manageRoleIds = {
+      1: currentRoles.includes('Administrator'),
+      2: currentRoles.includes('Secretary'),
+      3: currentRoles.includes('Instructor'),
+      4: currentRoles.includes('Student')
+    };
+    this.rolesError.set(null);
+    this.showRolesModal.set(true);
+  }
+
+  closeRolesModal(): void {
+    this.showRolesModal.set(false);
+  }
+
+  submitUpdateRoles(): void {
+    const p = this.person();
+    if (!p) return;
+
+    const roleIds = Object.entries(this.manageRoleIds)
+      .filter(([_, checked]) => checked)
+      .map(([id]) => Number(id));
+
+    this.isSubmittingRoles.set(true);
+    this.rolesError.set(null);
+
+    this.userManagementService.updateRoles(p.id, { roleIds }).subscribe({
+      next: (acc) => {
+        this.isSubmittingRoles.set(false);
+        this.showRolesModal.set(false);
+        this.userAccount.set(acc);
+        this.feedback.set('Roles operativos actualizados exitosamente.');
+        this.feedbackSuccess.set(true);
+      },
+      error: (err) => {
+        this.isSubmittingRoles.set(false);
+        this.rolesError.set(apiErrorMessage(err, 'Error al actualizar los roles.'));
+      }
+    });
+  }
+
+  openResetPasswordModal(): void {
+    this.newAccountPassword = '';
+    this.resetPasswordError.set(null);
+    this.showResetPasswordModal.set(true);
+  }
+
+  closeResetPasswordModal(): void {
+    this.showResetPasswordModal.set(false);
+  }
+
+  submitResetPassword(): void {
+    const p = this.person();
+    if (!p) return;
+
+    this.isSubmittingResetPassword.set(true);
+    this.resetPasswordError.set(null);
+
+    this.userManagementService.resetPassword(p.id, { newPassword: this.newAccountPassword }).subscribe({
+      next: () => {
+        this.isSubmittingResetPassword.set(false);
+        this.showResetPasswordModal.set(false);
+        this.feedback.set('Contraseña restablecida exitosamente.');
+        this.feedbackSuccess.set(true);
+      },
+      error: (err) => {
+        this.isSubmittingResetPassword.set(false);
+        this.resetPasswordError.set(apiErrorMessage(err, 'Error al restablecer la contraseña.'));
+      }
+    });
+  }
+
+  openStatusAccountModal(): void {
+    this.statusAccountError.set(null);
+    this.showStatusAccountModal.set(true);
+  }
+
+  closeStatusAccountModal(): void {
+    this.showStatusAccountModal.set(false);
+  }
+
+  submitToggleStatusAccount(): void {
+    const p = this.person();
+    const acc = this.userAccount();
+    if (!p || !acc) return;
+
+    const targetIsActive = !acc.isActive;
+    this.isSubmittingStatusAccount.set(true);
+    this.statusAccountError.set(null);
+
+    this.userManagementService.updateStatus(p.id, { isActive: targetIsActive }).subscribe({
+      next: (updatedAcc) => {
+        this.isSubmittingStatusAccount.set(false);
+        this.showStatusAccountModal.set(false);
+        this.userAccount.set(updatedAcc);
+        this.feedback.set(targetIsActive ? 'Cuenta reactivada exitosamente.' : 'Cuenta suspendida exitosamente.');
+        this.feedbackSuccess.set(true);
+      },
+      error: (err) => {
+        this.isSubmittingStatusAccount.set(false);
+        this.statusAccountError.set(apiErrorMessage(err, 'Error al cambiar el estado de la cuenta.'));
+      }
+    });
+  }
+
+  getRoleLabel(role: string): string {
+    switch (role) {
+      case 'Administrator': return 'Administrador';
+      case 'Secretary': return 'Secretaria';
+      case 'Instructor': return 'Profesor';
+      case 'Student': return 'Alumno';
+      default: return role;
+    }
+  }
+
+  getRoleBadgeClass(role: string): string {
+    switch (role) {
+      case 'Administrator': return 'bg-purple-950/60 text-purple-300 border-purple-800';
+      case 'Secretary': return 'bg-blue-950/60 text-blue-300 border-blue-800';
+      case 'Instructor': return 'bg-emerald-950/60 text-emerald-300 border-emerald-800';
+      case 'Student': return 'bg-amber-950/60 text-amber-300 border-amber-800';
+      default: return 'bg-slate-800 text-slate-300 border-slate-700';
     }
   }
 }

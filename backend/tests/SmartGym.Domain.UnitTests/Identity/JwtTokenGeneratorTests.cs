@@ -56,4 +56,25 @@ public class JwtTokenGeneratorTests
         Assert.Contains(RoleType.Student.ToString(), roleClaims);
         Assert.Contains(RoleType.Instructor.ToString(), roleClaims);
     }
+
+    [Fact]
+    public void GenerateToken_ShouldIncludeSecurityStampClaim()
+    {
+        var generator = new JwtTokenGenerator(Options.Create(_options));
+        var person = Person.Create("Juan", "Pérez", "juan@example.com");
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            PersonId = person.Id,
+            Username = "juan@example.com",
+            SecurityStamp = "custom_security_stamp_123"
+        };
+
+        var tokenString = generator.GenerateToken(user, person, Array.Empty<string>());
+        var handler = new JwtSecurityTokenHandler();
+        var jwt = handler.ReadJwtToken(tokenString);
+
+        var sstampClaim = Assert.Single(jwt.Claims, c => c.Type == "sstamp");
+        Assert.Equal("custom_security_stamp_123", sstampClaim.Value);
+    }
 }

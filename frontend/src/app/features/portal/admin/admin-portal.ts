@@ -1,9 +1,12 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { GymApiService } from '../../../core/services/gym-api.service';
 import { NotificationsService } from '../../../core/services/notifications.service';
+import { UserManagementService } from '../../../core/services/user-management.service';
+import { ROLE_DEFINITIONS } from '../../../core/models/user-management.models';
 import {
   DashboardMetrics,
   AdminUserOverview,
@@ -22,11 +25,12 @@ import { RoomsManagementComponent } from '../../catalog/rooms-management/rooms-m
 import { ActivitiesManagementComponent } from '../../catalog/activities-management/activities-management';
 import { SchedulesManagementComponent } from '../../catalog/schedules-management/schedules-management';
 import { PlansManagementComponent } from '../../catalog/plans-management/plans-management';
+import { apiErrorMessage } from '../../../core/utils/api-error';
 
 @Component({
   selector: 'app-admin-portal',
   standalone: true,
-  imports: [CommonModule, FormsModule, RoomsManagementComponent, ActivitiesManagementComponent, SchedulesManagementComponent, PlansManagementComponent],
+  imports: [CommonModule, FormsModule, RouterLink, RoomsManagementComponent, ActivitiesManagementComponent, SchedulesManagementComponent, PlansManagementComponent],
   template: `
     <div class="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8">
       <div class="max-w-7xl mx-auto space-y-8">
@@ -159,6 +163,12 @@ import { PlansManagementComponent } from '../../catalog/plans-management/plans-m
               <button (click)="loadUsers()" class="text-xs text-amber-400 hover:text-amber-300">Actualizar Listado</button>
             </div>
 
+            @if (rolesFeedback()) {
+              <div class="p-3 rounded-xl text-xs font-semibold bg-emerald-950/60 border border-emerald-800 text-emerald-300" data-testid="roles-feedback-msg">
+                {{ rolesFeedback() }}
+              </div>
+            }
+
             <div class="overflow-x-auto">
               <table class="w-full text-left text-sm">
                 <thead class="text-xs text-slate-400 bg-slate-950/70 border-b border-slate-800 uppercase">
@@ -168,6 +178,7 @@ import { PlansManagementComponent } from '../../catalog/plans-management/plans-m
                     <th class="py-3 px-4">Documento</th>
                     <th class="py-3 px-4">Roles Asignados</th>
                     <th class="py-3 px-4 text-center">Estado</th>
+                    <th class="py-3 px-4 text-right">Acciones</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-800/80">
@@ -191,12 +202,77 @@ import { PlansManagementComponent } from '../../catalog/plans-management/plans-m
                           {{ u.isActive ? 'Activo' : 'Inactivo' }}
                         </span>
                       </td>
+                      <td class="py-3 px-4 text-right">
+                        <div class="flex items-center justify-end gap-2">
+                          <a [routerLink]="['/portal/personas', u.personId]"
+                             [attr.data-testid]="'btn-view-ficha-' + u.userId"
+                             class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-semibold transition inline-flex items-center gap-1">
+                            👁️ Ver Ficha
+                          </a>
+                          <button (click)="openRolesModal(u)"
+                                  [attr.data-testid]="'btn-manage-roles-' + u.userId"
+                                  class="px-2.5 py-1 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 border border-cyan-800/60 rounded-lg text-xs font-bold transition inline-flex items-center gap-1">
+                            ⚙️ Roles
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   }
                 </tbody>
               </table>
             </div>
           </div>
+
+          <!-- Modal de Gestión de Roles desde Directorio -->
+          @if (showRolesModal()) {
+            @if (selectedUserForRoles(); as targetUser) {
+              <div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" data-testid="admin-roles-modal">
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+                  <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <span>⚙️</span> Gestionar Roles de Usuario
+                  </h3>
+                  <p class="text-xs text-slate-400">
+                    Modificar roles operativos para <span class="font-bold text-slate-200">{{ targetUser.fullName }}</span> ({{ targetUser.email }}).
+                  </p>
+
+                  @if (isSelfUser(targetUser)) {
+                    <div class="p-3 bg-amber-950/60 border border-amber-800 text-amber-300 rounded-xl text-xs font-semibold" data-testid="admin-self-roles-warning">
+                      ⚠️ Advertencia: Estás modificando tus propios roles. Si te revocas permisos o cambias roles, tu sesión actual se cerrará y deberás volver a iniciar sesión.
+                    </div>
+                  }
+
+                  <div class="space-y-2">
+                    @for (role of ROLE_DEFINITIONS; track role.id) {
+                      <label class="flex items-center justify-between p-3 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer hover:border-slate-700 transition">
+                        <div>
+                          <span class="text-sm text-slate-200 font-bold block">{{ role.label }}</span>
+                          <span class="text-[11px] text-slate-500">{{ role.name }}</span>
+                        </div>
+                        <input type="checkbox" [(ngModel)]="userManageRoleIds[role.id]" [attr.data-testid]="'checkbox-admin-role-' + role.id"
+                               class="w-4 h-4 rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0" />
+                      </label>
+                    }
+                  </div>
+
+                  @if (rolesModalError()) {
+                    <div class="p-3 bg-rose-950/60 border border-rose-800 text-rose-300 rounded-xl text-xs font-semibold" data-testid="admin-roles-error-msg">
+                      {{ rolesModalError() }}
+                    </div>
+                  }
+
+                  <div class="flex items-center justify-end gap-2 pt-2">
+                    <button (click)="closeRolesModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition">
+                      Cancelar
+                    </button>
+                    <button (click)="submitUserRoles()" [disabled]="isSubmittingRoles()" data-testid="btn-submit-admin-roles"
+                            class="px-5 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition">
+                      {{ isSubmittingRoles() ? 'Guardando...' : 'Guardar Roles' }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            }
+          }
         }
 
         <!-- TAB 3: PROMOTIONS -->
@@ -462,6 +538,9 @@ export class AdminPortalComponent implements OnInit {
   readonly authService = inject(AuthService);
   private readonly gymApi = inject(GymApiService);
   private readonly notificationsService = inject(NotificationsService);
+  private readonly userManagementService = inject(UserManagementService);
+
+  readonly ROLE_DEFINITIONS = ROLE_DEFINITIONS;
 
   activeTab = signal<'kpis' | 'rooms' | 'catalog' | 'users' | 'promotions' | 'notifications' | 'audit'>('kpis');
   catalogSubTab = signal<'activities' | 'schedules' | 'plans'>('activities');
@@ -474,6 +553,14 @@ export class AdminPortalComponent implements OnInit {
   showUnconfiguredDeliveries = signal(false);
   notificationTemplates = signal<NotificationTemplateItem[]>([]);
   notificationFeedback = signal<string | null>(null);
+
+  // User Roles Management Modal
+  readonly showRolesModal = signal<boolean>(false);
+  readonly selectedUserForRoles = signal<AdminUserOverview | null>(null);
+  readonly isSubmittingRoles = signal<boolean>(false);
+  readonly rolesModalError = signal<string | null>(null);
+  readonly rolesFeedback = signal<string | null>(null);
+  userManageRoleIds: { [key: number]: boolean } = { 1: false, 2: false, 3: false, 4: false };
 
   readonly PromotionStatus = PromotionStatus;
   readonly NotificationTemplateStatus = NotificationTemplateStatus;
@@ -615,5 +702,56 @@ export class AdminPortalComponent implements OnInit {
       case 4: return 'Cancelada';
       default: return 'Desconocido';
     }
+  }
+
+  isSelfUser(u: AdminUserOverview | null): boolean {
+    if (!u) return false;
+    const current = this.authService.currentUser();
+    if (!current) return false;
+    return current.userId === u.userId || current.personId === u.personId;
+  }
+
+  openRolesModal(u: AdminUserOverview): void {
+    this.selectedUserForRoles.set(u);
+    const currentRoles = u.roles ?? [];
+    this.userManageRoleIds = {
+      1: currentRoles.includes('Administrator'),
+      2: currentRoles.includes('Secretary'),
+      3: currentRoles.includes('Instructor'),
+      4: currentRoles.includes('Student')
+    };
+    this.rolesModalError.set(null);
+    this.showRolesModal.set(true);
+  }
+
+  closeRolesModal(): void {
+    this.showRolesModal.set(false);
+    this.selectedUserForRoles.set(null);
+  }
+
+  submitUserRoles(): void {
+    const u = this.selectedUserForRoles();
+    if (!u) return;
+
+    const roleIds = Object.entries(this.userManageRoleIds)
+      .filter(([_, checked]) => checked)
+      .map(([id]) => Number(id));
+
+    this.isSubmittingRoles.set(true);
+    this.rolesModalError.set(null);
+
+    this.userManagementService.updateRoles(u.personId, { roleIds }).subscribe({
+      next: () => {
+        this.isSubmittingRoles.set(false);
+        this.showRolesModal.set(false);
+        this.selectedUserForRoles.set(null);
+        this.rolesFeedback.set(`Roles actualizados correctamente para ${u.fullName}.`);
+        this.loadUsers();
+      },
+      error: (err) => {
+        this.isSubmittingRoles.set(false);
+        this.rolesModalError.set(apiErrorMessage(err, 'Error al actualizar roles.'));
+      }
+    });
   }
 }

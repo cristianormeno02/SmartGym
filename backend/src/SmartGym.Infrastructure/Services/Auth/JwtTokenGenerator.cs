@@ -26,6 +26,7 @@ public class JwtTokenGenerator : IJwtTokenGenerator
             new(JwtRegisteredClaimNames.GivenName, person.FirstName),
             new(JwtRegisteredClaimNames.FamilyName, person.LastName),
             new("person_id", person.Id.ToString()),
+            new("sstamp", user.SecurityStamp),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 

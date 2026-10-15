@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using SmartGym.Application.Modules.Identity.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -48,6 +50,7 @@ public class PeopleServiceErrorMappingTests
     {
         var options = new DbContextOptionsBuilder<SmartGymDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         _dbContext = new FailingSaveDbContext(options);
 
@@ -76,7 +79,9 @@ public class PeopleServiceErrorMappingTests
             new CreatePersonRequestValidator(),
             new UpdatePersonRequestValidator(),
             new ChangePersonStatusRequestValidator(),
-            new UpdateOwnContactRequestValidator());
+            new UpdateOwnContactRequestValidator(),
+            new LastAdministratorGuard(_dbContext),
+            new NoOpIdentityLock());
     }
 
     private void FailNextSaveWithConcurrencyConflict() =>

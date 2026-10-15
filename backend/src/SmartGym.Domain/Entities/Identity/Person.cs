@@ -269,18 +269,26 @@ public class Person : BaseEntity
     public void AddRole(Role role)
     {
         EnsureNotDeceased();
-        if (!PersonRoles.Any(pr => pr.RoleId == role.Id && pr.IsActive))
+        var existing = PersonRoles.FirstOrDefault(pr => pr.RoleId == role.Id);
+        if (existing != null)
         {
-            PersonRoles.Add(new PersonRole
+            if (!existing.IsActive)
             {
-                PersonId = Id,
-                Person = this,
-                RoleId = role.Id,
-                Role = role,
-                AssignedAtUtc = DateTime.UtcNow,
-                IsActive = true
-            });
+                existing.IsActive = true;
+                existing.AssignedAtUtc = DateTime.UtcNow;
+            }
+            return;
         }
+
+        PersonRoles.Add(new PersonRole
+        {
+            PersonId = Id,
+            Person = this,
+            RoleId = role.Id,
+            Role = role,
+            AssignedAtUtc = DateTime.UtcNow,
+            IsActive = true
+        });
     }
 
     public void RemoveRole(int roleId)

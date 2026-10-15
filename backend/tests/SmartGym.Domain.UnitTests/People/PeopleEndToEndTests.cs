@@ -83,7 +83,9 @@ public class PeopleEndToEndTests : IDisposable
             new CreatePersonRequestValidator(),
             new UpdatePersonRequestValidator(),
             new ChangePersonStatusRequestValidator(),
-            new UpdateOwnContactRequestValidator()
+            new UpdateOwnContactRequestValidator(),
+            new LastAdministratorGuard(_dbContext),
+            new NoOpIdentityLock()
         );
 
         _authService = new AuthService(

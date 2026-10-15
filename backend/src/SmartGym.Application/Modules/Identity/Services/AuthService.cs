@@ -125,6 +125,11 @@ public class AuthService : IAuthService
             throw new UnauthorizedAccessException("El acceso a esta cuenta no está permitido.");
         }
 
+        if (!user.IsActive)
+        {
+            throw new UnauthorizedAccessException("La cuenta se encuentra suspendida.");
+        }
+
         if (user.IsLockedOut)
         {
             throw new UnauthorizedAccessException("La cuenta se encuentra temporalmente bloqueada.");
@@ -180,6 +185,11 @@ public class AuthService : IAuthService
                 throw new UnauthorizedAccessException("El acceso a esta cuenta no está permitido.");
             }
 
+            if (!user.IsActive)
+            {
+                throw new UnauthorizedAccessException("La cuenta se encuentra suspendida.");
+            }
+
             if (user.IsLockedOut)
             {
                 throw new UnauthorizedAccessException("La cuenta se encuentra temporalmente bloqueada.");
@@ -206,6 +216,16 @@ public class AuthService : IAuthService
             if (user.Person.Status == PersonStatus.Deceased)
             {
                 throw new UnauthorizedAccessException("El acceso a esta cuenta no está permitido.");
+            }
+
+            if (!user.IsActive)
+            {
+                throw new UnauthorizedAccessException("La cuenta se encuentra suspendida.");
+            }
+
+            if (user.IsLockedOut)
+            {
+                throw new UnauthorizedAccessException("La cuenta se encuentra temporalmente bloqueada.");
             }
 
             // Vincular identidad Google a la cuenta y persona existente

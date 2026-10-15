@@ -28,5 +28,10 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.HasIndex(u => u.GoogleSubjectId)
             .IsUnique()
             .HasFilter("\"GoogleSubjectId\" IS NOT NULL");
+
+        builder.Property(u => u.SecurityStamp)
+            .IsRequired()
+            .HasMaxLength(64)
+            .HasDefaultValueSql("md5(random()::text || clock_timestamp()::text)");
     }
 }

@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using SmartGym.Application.Modules.Identity.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -30,6 +32,7 @@ public class PeopleServiceTests
     {
         var options = new DbContextOptionsBuilder<SmartGymDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
 
         _dbContext = new SmartGymDbContext(options);
@@ -64,7 +67,9 @@ public class PeopleServiceTests
             new CreatePersonRequestValidator(),
             new UpdatePersonRequestValidator(),
             new ChangePersonStatusRequestValidator(),
-            new UpdateOwnContactRequestValidator()
+            new UpdateOwnContactRequestValidator(),
+            new LastAdministratorGuard(_dbContext),
+            new NoOpIdentityLock()
         );
     }
 
@@ -507,4 +512,39 @@ public class PeopleServiceTests
         Assert.Equal(1, result.TotalCount);
         Assert.Equal(p1.Id, result.Items[0].Id);
     }
+
+    [Fact]
+    public async Task ChangeStatusAsync_ThrowsConflict_WhenChangingStatusOfLastOperationalAdministrator()
+    {
+        _mockCurrentUser.Setup(u => u.IsInRole(Roles.Administrator)).Returns(true);
+
+        var adminPerson = Person.Create("Sole", "Admin", "soleadmin@smartgym.com");
+        adminPerson.PersonRoles.Add(new PersonRole
+        {
+            PersonId = adminPerson.Id,
+            RoleId = (int)RoleType.Administrator,
+            IsActive = true
+        });
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            PersonId = adminPerson.Id,
+            Username = "soleadmin@smartgym.com",
+            IsActive = true
+        };
+        adminPerson.SetUser(user);
+
+        _dbContext.People.Add(adminPerson);
+        _dbContext.Users.Add(user);
+        await _dbContext.SaveChangesAsync();
+
+        var request = new ChangePersonStatusRequest(PersonStatus.Inactive, "Vacaciones");
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            _service.ChangeStatusAsync(adminPerson.Id, request));
+
+        Assert.Contains("último administrador", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
 }
+

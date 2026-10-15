@@ -86,4 +86,15 @@ public class PersonModelConfigurationTests
         var check = Assert.Single(personType.GetCheckConstraints(), c => c.ModelName == "CK_People_DocumentNumberNormalized_NotEmpty");
         Assert.Contains("\"DocumentNumberNormalized\" <> ''", check.Sql);
     }
+
+    [Fact]
+    public void UserSecurityStamp_ShouldBeRequiredAndHaveMaxLength64()
+    {
+        var model = BuildModel();
+        var userType = model.FindEntityType(typeof(User))!;
+
+        var stampProp = userType.FindProperty(nameof(User.SecurityStamp))!;
+        Assert.False(stampProp.IsNullable);
+        Assert.Equal(64, stampProp.GetMaxLength());
+    }
 }

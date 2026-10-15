@@ -187,4 +187,105 @@ public class GoogleAuthTests
         Assert.Equal(expectedFirstName, person.FirstName);
         Assert.Equal(expectedLastName, person.LastName);
     }
+
+    [Fact]
+    public async Task LoginWithGoogleAsync_WhenUserFoundByGoogleSubjectIdIsInactive_ThrowsUnauthorizedAccessException()
+    {
+        var person = Person.Create("Maria", "Lopez", "maria@example.com");
+        _dbContext.People.Add(person);
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            PersonId = person.Id,
+            Person = person,
+            Username = "maria@example.com",
+            GoogleSubjectId = "google_subj_123",
+            IsActive = false
+        };
+        _dbContext.Users.Add(user);
+        await _dbContext.SaveChangesAsync();
+
+        var validator = new TestGoogleTokenValidator(_ => new GoogleAuthPayload(
+            SubjectId: "google_subj_123",
+            Email: "maria@example.com",
+            GivenName: "Maria",
+            FamilyName: "Lopez",
+            PictureUrl: null,
+            EmailVerified: true,
+            FullName: "Maria Lopez"));
+
+        var authService = new AuthService(_dbContext, _passwordHasher, _jwtTokenGenerator, validator);
+
+        var ex = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            authService.LoginWithGoogleAsync(new GoogleLoginRequest("token")));
+        Assert.Contains("suspendida", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task LoginWithGoogleAsync_WhenUserFoundByEmailIsInactive_ThrowsUnauthorizedAccessException()
+    {
+        var person = Person.Create("Lucas", "Perez", "lucas@example.com");
+        _dbContext.People.Add(person);
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            PersonId = person.Id,
+            Person = person,
+            Username = "lucas@example.com",
+            IsActive = false
+        };
+        _dbContext.Users.Add(user);
+        await _dbContext.SaveChangesAsync();
+
+        var validator = new TestGoogleTokenValidator(_ => new GoogleAuthPayload(
+            SubjectId: "google_subj_999",
+            Email: "lucas@example.com",
+            GivenName: "Lucas",
+            FamilyName: "Perez",
+            PictureUrl: null,
+            EmailVerified: true,
+            FullName: "Lucas Perez"));
+
+        var authService = new AuthService(_dbContext, _passwordHasher, _jwtTokenGenerator, validator);
+
+        var ex = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            authService.LoginWithGoogleAsync(new GoogleLoginRequest("token")));
+        Assert.Contains("suspendida", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task LoginWithGoogleAsync_WhenUserFoundByEmailIsLockedOut_ThrowsUnauthorizedAccessException()
+    {
+        var person = Person.Create("Martin", "Gomez", "martin@example.com");
+        _dbContext.People.Add(person);
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            PersonId = person.Id,
+            Person = person,
+            Username = "martin@example.com",
+            IsActive = true,
+            IsLockedOut = true
+        };
+        _dbContext.Users.Add(user);
+        await _dbContext.SaveChangesAsync();
+
+        var validator = new TestGoogleTokenValidator(_ => new GoogleAuthPayload(
+            SubjectId: "google_subj_888",
+            Email: "martin@example.com",
+            GivenName: "Martin",
+            FamilyName: "Gomez",
+            PictureUrl: null,
+            EmailVerified: true,
+            FullName: "Martin Gomez"));
+
+        var authService = new AuthService(_dbContext, _passwordHasher, _jwtTokenGenerator, validator);
+
+        var ex = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            authService.LoginWithGoogleAsync(new GoogleLoginRequest("token")));
+        Assert.Contains("bloqueada", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
 }

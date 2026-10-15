@@ -7,6 +7,7 @@ using SmartGym.Application.Common.Exceptions;
 using SmartGym.Application.Common.Interfaces;
 using SmartGym.Application.Common.Models;
 using SmartGym.Application.Common.Security;
+using SmartGym.Application.Modules.Identity.Services;
 using SmartGym.Application.Modules.People.Dtos;
 using SmartGym.Domain.Common;
 using SmartGym.Domain.Entities.Identity;
@@ -28,6 +29,8 @@ public class PeopleService : IPeopleService
     private readonly IValidator<UpdatePersonRequest> _updateValidator;
     private readonly IValidator<ChangePersonStatusRequest> _statusValidator;
     private readonly IValidator<UpdateOwnContactRequest> _ownContactValidator;
+    private readonly ILastAdministratorGuard _lastAdministratorGuard;
+    private readonly IIdentityLock _identityLock;
 
     public PeopleService(
         ISmartGymDbContext dbContext,
@@ -38,7 +41,9 @@ public class PeopleService : IPeopleService
         IValidator<CreatePersonRequest> createValidator,
         IValidator<UpdatePersonRequest> updateValidator,
         IValidator<ChangePersonStatusRequest> statusValidator,
-        IValidator<UpdateOwnContactRequest> ownContactValidator)
+        IValidator<UpdateOwnContactRequest> ownContactValidator,
+        ILastAdministratorGuard lastAdministratorGuard,
+        IIdentityLock identityLock)
     {
         _dbContext = dbContext;
         _currentUserService = currentUserService;
@@ -49,6 +54,8 @@ public class PeopleService : IPeopleService
         _updateValidator = updateValidator;
         _statusValidator = statusValidator;
         _ownContactValidator = ownContactValidator;
+        _lastAdministratorGuard = lastAdministratorGuard;
+        _identityLock = identityLock;
     }
 
     public async Task<PagedResult<PersonSummaryDto>> SearchAsync(
@@ -389,6 +396,22 @@ public class PeopleService : IPeopleService
 
         var currentUserId = _currentUserService.UserId ?? Guid.Empty;
 
+        // Dejar de estar ACTIVA quita a la persona del conteo de administradores operativos:
+        // se serializa con las demás operaciones que pueden dejar al gimnasio sin administración.
+        var leavesActiveStatus = person.Status == PersonStatus.Active && request.TargetStatus != PersonStatus.Active;
+        var isOperationalAdmin = leavesActiveStatus
+            && await _lastAdministratorGuard.IsOperationalAdministratorAsync(id, cancellationToken);
+
+        await using var transaction = isOperationalAdmin
+            ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
+        if (isOperationalAdmin)
+        {
+            await _identityLock.AcquireRolesLockAsync(cancellationToken);
+            await _lastAdministratorGuard.EnsureAnotherOperationalAdministratorAsync(id, cancellationToken);
+        }
+
         try
         {
             person.ChangeStatus(request.TargetStatus, request.Reason, currentUserId, isAdmin);
@@ -399,6 +422,11 @@ public class PeopleService : IPeopleService
         }
 
         await SaveChangesMappingConflictsAsync(cancellationToken);
+
+        if (transaction != null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
 
         bool hasUser = await _dbContext.Users.AnyAsync(u => u.PersonId == id, cancellationToken);
         var photoUrl = await ResolvePhotoUrlAsync(person, cancellationToken);

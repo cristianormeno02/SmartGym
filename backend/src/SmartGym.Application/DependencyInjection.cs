@@ -23,6 +23,8 @@ public static class DependencyInjection
 
         services.AddScoped<IPeopleService, PeopleService>();
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<ILastAdministratorGuard, LastAdministratorGuard>();
+        services.AddScoped<IUserAccountService, UserAccountService>();
         services.AddScoped<IAdminUserSeeder, AdminUserSeeder>();
         services.AddScoped<IRoomService, RoomService>();
         services.AddScoped<IActivityService, ActivityService>();

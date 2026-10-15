@@ -28,4 +28,20 @@ public class MigrationVerificationTests
         Assert.Equal("12345678", normalized);
         Assert.Equal("AR", country);
     }
+
+    [Fact]
+    public void User_SecurityStamp_IsInitializedWithNonEmptyValueAndRotatesOnUpdate()
+    {
+        var user = new Domain.Entities.Identity.User
+        {
+            Username = "admin@smartgym.com"
+        };
+
+        Assert.False(string.IsNullOrWhiteSpace(user.SecurityStamp));
+        var initialStamp = user.SecurityStamp;
+
+        user.UpdateSecurityStamp();
+        Assert.False(string.IsNullOrWhiteSpace(user.SecurityStamp));
+        Assert.NotEqual(initialStamp, user.SecurityStamp);
+    }
 }
