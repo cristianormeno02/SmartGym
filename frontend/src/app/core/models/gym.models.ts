@@ -95,6 +95,40 @@ export interface UpdateRecurringScheduleRequest {
   isActive: boolean;
 }
 
+export enum ScheduleConflictKind {
+  Room = 0,
+  Instructor = 1,
+  WithinBatch = 2
+}
+
+export interface ScheduleConflict {
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  kind: ScheduleConflictKind | number;
+  conflictingScheduleId?: string | null;
+  conflictingActivityName?: string | null;
+  conflictingStartTime?: string | null;
+  conflictingEndTime?: string | null;
+}
+
+export interface BatchScheduleSlot {
+  daysOfWeek: number[];
+  startTime: string;
+  endTime: string;
+}
+
+export interface CreateBatchRecurringScheduleRequest {
+  activityId: string;
+  roomId: string;
+  instructorId: string;
+  secretaryId?: string | null;
+  validFrom: string;
+  validTo?: string | null;
+  maxCapacity?: number | null;
+  slots: BatchScheduleSlot[];
+}
+
 export interface CreateMembershipPlanRequest {
   name: string;
   description?: string;

@@ -43,6 +43,7 @@ import {
   UpdateActivityRequest,
   ChangeActivityStatusRequest,
   CreateRecurringScheduleRequest,
+  CreateBatchRecurringScheduleRequest,
   UpdateRecurringScheduleRequest,
   CreateMembershipPlanRequest,
   UpdateMembershipPlanRequest
@@ -117,6 +118,10 @@ export class GymApiService {
 
   createSchedule(request: CreateRecurringScheduleRequest): Observable<RecurringSchedule> {
     return this.http.post<RecurringSchedule>(`${this.apiUrl}/schedules`, request);
+  }
+
+  createBatchSchedules(request: CreateBatchRecurringScheduleRequest): Observable<RecurringSchedule[]> {
+    return this.http.post<RecurringSchedule[]>(`${this.apiUrl}/schedules/batch`, request);
   }
 
   updateSchedule(id: string, request: UpdateRecurringScheduleRequest): Observable<RecurringSchedule> {

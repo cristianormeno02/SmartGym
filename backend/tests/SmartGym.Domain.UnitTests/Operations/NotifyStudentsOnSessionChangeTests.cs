@@ -104,7 +104,7 @@ public class NotifyStudentsOnSessionChangeTests
         using (var setupDb = new SmartGymDbContext(_options))
         {
             var session = ClassSession.CreateExtraordinary(_activityId, _roomId, startsUtc, endsUtc, 20, _instructorId, null);
-            session.Open(DateTime.UtcNow);
+            session.Open(startsUtc.AddHours(-2));
             setupDb.ClassSessions.Add(session);
 
             setupDb.Reservations.Add(new Reservation
@@ -140,7 +140,7 @@ public class NotifyStudentsOnSessionChangeTests
         db = new SmartGymDbContext(_options, sp);
 
         var sessionToSuspend = await db.ClassSessions.FirstAsync();
-        sessionToSuspend.Suspend(ClassSessionSuspensionReason.Weather, "Lluvia", Guid.NewGuid(), DateTime.UtcNow);
+        sessionToSuspend.Suspend(ClassSessionSuspensionReason.Weather, "Lluvia", Guid.NewGuid(), startsUtc.AddHours(-1));
 
         await db.SaveChangesAsync();
 
@@ -314,7 +314,7 @@ public class NotifyStudentsOnSessionChangeTests
         using (var setupDb = new SmartGymDbContext(_options))
         {
             var session = ClassSession.CreateExtraordinary(_activityId, _roomId, startsUtc, endsUtc, 20, _instructorId, null);
-            session.Open(DateTime.UtcNow);
+            session.Open(startsUtc.AddHours(-2));
             setupDb.ClassSessions.Add(session);
 
             setupDb.Reservations.Add(new Reservation
@@ -341,7 +341,7 @@ public class NotifyStudentsOnSessionChangeTests
         db = new SmartGymDbContext(_options, sp);
 
         var sessionToChange = await db.ClassSessions.FirstAsync();
-        sessionToChange.ChangeRoom(_room2Id, Guid.NewGuid(), DateTime.UtcNow);
+        sessionToChange.ChangeRoom(_room2Id, Guid.NewGuid(), startsUtc.AddHours(-1));
 
         await db.SaveChangesAsync();
 

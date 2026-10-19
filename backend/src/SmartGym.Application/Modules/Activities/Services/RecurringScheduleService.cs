@@ -66,47 +66,15 @@ public class RecurringScheduleService : IRecurringScheduleService
 
     public async Task<RecurringScheduleDto> CreateAsync(CreateRecurringScheduleRequest request, CancellationToken cancellationToken = default)
     {
-        var activity = await _dbContext.Activities.FirstOrDefaultAsync(a => a.Id == request.ActivityId && a.IsActive, cancellationToken);
-        if (activity == null)
+        var entities = await ValidateEntitiesAsync(request.ActivityId, request.RoomId, request.InstructorId, request.SecretaryId, cancellationToken);
+
+        var conflicts = await DetectCollisionsAsync(Guid.Empty, request.RoomId, request.InstructorId, request.DayOfWeek, request.StartTime, request.EndTime, request.ValidFrom, request.ValidTo, cancellationToken);
+        if (conflicts.Count > 0)
         {
-            throw new ArgumentException("La actividad especificada no existe o no está activa.");
-        }
-
-        var room = await _dbContext.Rooms.FirstOrDefaultAsync(r => r.Id == request.RoomId && r.IsActive, cancellationToken);
-        if (room == null)
-        {
-            throw new ArgumentException("La sala especificada no existe o no está activa.");
-        }
-
-        var instructor = await _dbContext.People
-            .Include(p => p.PersonRoles)
-                .ThenInclude(pr => pr.Role)
-            .FirstOrDefaultAsync(p => p.Id == request.InstructorId && p.IsActive, cancellationToken);
-
-        if (instructor == null || !instructor.PersonRoles.Any(pr => pr.IsActive && pr.Role.Name == RoleType.Instructor.ToString()))
-        {
-            throw new ArgumentException("El instructor especificado no existe o no posee el rol de Instructor asignado.");
-        }
-
-        Person? secretary = null;
-        if (request.SecretaryId.HasValue)
-        {
-            secretary = await _dbContext.People
-                .Include(p => p.PersonRoles)
-                    .ThenInclude(pr => pr.Role)
-                .FirstOrDefaultAsync(p => p.Id == request.SecretaryId.Value && p.IsActive, cancellationToken);
-
-            if (secretary == null || !secretary.PersonRoles.Any(pr => pr.IsActive && (pr.Role.Name == RoleType.Secretary.ToString() || pr.Role.Name == RoleType.Administrator.ToString())))
-            {
-                throw new ArgumentException("El secretario especificado no existe o no posee el rol de Secretario o Administrador asignado.");
-            }
-        }
-
-        // Validación de superposición de horarios en la misma sala
-        var roomConflict = await HasRoomCollisionAsync(Guid.Empty, request.RoomId, request.DayOfWeek, request.StartTime, request.EndTime, request.ValidFrom, request.ValidTo, cancellationToken);
-        if (roomConflict)
-        {
-            throw new InvalidOperationException("Ya existe una clase asignada en la misma sala durante ese día y rango horario.");
+            var message = conflicts.Any(c => c.Kind == ScheduleConflictKind.Room)
+                ? "Ya existe una clase asignada en la misma sala durante ese día y rango horario."
+                : "El instructor ya tiene otra clase asignada durante ese día y rango horario.";
+            throw new ScheduleConflictException(message, conflicts);
         }
 
         var schedule = new RecurringSchedule
@@ -117,7 +85,7 @@ public class RecurringScheduleService : IRecurringScheduleService
             InstructorId = request.InstructorId,
             SecretaryId = request.SecretaryId,
             DayOfWeek = request.DayOfWeek,
-            MaxCapacity = activity.ResolveCapacity(request.MaxCapacity),
+            MaxCapacity = entities.Activity.ResolveCapacity(request.MaxCapacity),
             CreatedAtUtc = DateTime.UtcNow,
             IsActive = true
         };
@@ -128,15 +96,196 @@ public class RecurringScheduleService : IRecurringScheduleService
         _dbContext.RecurringSchedules.Add(schedule);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        schedule.Activity = activity;
-        schedule.Room = room;
-        schedule.Instructor = instructor;
-        schedule.Secretary = secretary;
+        schedule.Activity = entities.Activity;
+        schedule.Room = entities.Room;
+        schedule.Instructor = entities.Instructor;
+        schedule.Secretary = entities.Secretary;
 
         // Synchronize and generate sessions
         var divergent = await _scheduleSync.SyncAsync(schedule.Id, cancellationToken: cancellationToken);
 
         return MapToDto(schedule, divergent);
+    }
+
+    public async Task<List<RecurringScheduleDto>> CreateBatchAsync(CreateBatchRecurringScheduleRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request.Slots == null || request.Slots.Count == 0)
+        {
+            throw new ArgumentException("Debe especificar al menos un grupo de horarios.");
+        }
+
+        if (request.ValidTo.HasValue && request.ValidTo.Value < request.ValidFrom)
+        {
+            throw new ArgumentException("La fecha de fin de vigencia no puede ser anterior a la de inicio.");
+        }
+
+        foreach (var slot in request.Slots)
+        {
+            if (slot.DaysOfWeek == null || slot.DaysOfWeek.Count == 0)
+            {
+                throw new ArgumentException("Cada grupo de horarios debe tener al menos un día asignado.");
+            }
+
+            if (slot.DaysOfWeek.Distinct().Count() != slot.DaysOfWeek.Count)
+            {
+                throw new ArgumentException("No se pueden repetir días dentro del mismo grupo de horarios.");
+            }
+
+            if (slot.EndTime <= slot.StartTime)
+            {
+                throw new ArgumentException("La hora de fin debe ser posterior a la de inicio.");
+            }
+        }
+
+        var entities = await ValidateEntitiesAsync(request.ActivityId, request.RoomId, request.InstructorId, request.SecretaryId, cancellationToken);
+        var resolvedCapacity = entities.Activity.ResolveCapacity(request.MaxCapacity);
+
+        var expandedTuples = new List<(DayOfWeek Day, TimeOnly StartTime, TimeOnly EndTime)>();
+        foreach (var slot in request.Slots)
+        {
+            foreach (var day in slot.DaysOfWeek)
+            {
+                expandedTuples.Add((day, slot.StartTime, slot.EndTime));
+            }
+        }
+
+        if (expandedTuples.Count > 50)
+        {
+            throw new ArgumentException("El lote no puede superar el límite máximo de 50 horarios recurrentes.");
+        }
+
+        // Sort by day and start time
+        expandedTuples = expandedTuples.OrderBy(t => t.Day).ThenBy(t => t.StartTime).ToList();
+
+        var conflicts = new List<ScheduleConflictDto>();
+
+        // 1. Detect collisions within the batch
+        for (int i = 0; i < expandedTuples.Count; i++)
+        {
+            var a = expandedTuples[i];
+            for (int j = i + 1; j < expandedTuples.Count; j++)
+            {
+                var b = expandedTuples[j];
+                if (a.Day == b.Day && a.StartTime < b.EndTime && b.StartTime < a.EndTime)
+                {
+                    conflicts.Add(new ScheduleConflictDto(
+                        DayOfWeek: b.Day,
+                        StartTime: b.StartTime,
+                        EndTime: b.EndTime,
+                        Kind: ScheduleConflictKind.WithinBatch,
+                        ConflictingScheduleId: null,
+                        ConflictingActivityName: entities.Activity.Name,
+                        ConflictingStartTime: a.StartTime,
+                        ConflictingEndTime: a.EndTime
+                    ));
+                }
+            }
+        }
+
+        // 2. Query active schedules from database that could collide
+        var relevantDays = expandedTuples.Select(t => t.Day).Distinct().ToList();
+        var existingCandidates = await _dbContext.RecurringSchedules
+            .Include(s => s.Activity)
+            .Where(s => s.IsActive && relevantDays.Contains(s.DayOfWeek) && (s.RoomId == request.RoomId || s.InstructorId == request.InstructorId))
+            .ToListAsync(cancellationToken);
+
+        foreach (var t in expandedTuples)
+        {
+            foreach (var s in existingCandidates.Where(s => s.DayOfWeek == t.Day))
+            {
+                var datesOverlap = (!request.ValidTo.HasValue || s.ValidFrom <= request.ValidTo.Value) &&
+                                   (!s.ValidTo.HasValue || request.ValidFrom <= s.ValidTo.Value);
+
+                if (!datesOverlap) continue;
+
+                var timesOverlap = t.StartTime < s.EndTime && s.StartTime < t.EndTime;
+                if (!timesOverlap) continue;
+
+                if (s.RoomId == request.RoomId)
+                {
+                    conflicts.Add(new ScheduleConflictDto(
+                        DayOfWeek: t.Day,
+                        StartTime: t.StartTime,
+                        EndTime: t.EndTime,
+                        Kind: ScheduleConflictKind.Room,
+                        ConflictingScheduleId: s.Id,
+                        ConflictingActivityName: s.Activity?.Name,
+                        ConflictingStartTime: s.StartTime,
+                        ConflictingEndTime: s.EndTime
+                    ));
+                }
+
+                if (s.InstructorId == request.InstructorId && s.RoomId != request.RoomId)
+                {
+                    conflicts.Add(new ScheduleConflictDto(
+                        DayOfWeek: t.Day,
+                        StartTime: t.StartTime,
+                        EndTime: t.EndTime,
+                        Kind: ScheduleConflictKind.Instructor,
+                        ConflictingScheduleId: s.Id,
+                        ConflictingActivityName: s.Activity?.Name,
+                        ConflictingStartTime: s.StartTime,
+                        ConflictingEndTime: s.EndTime
+                    ));
+                }
+            }
+        }
+
+        if (conflicts.Count > 0)
+        {
+            throw new ScheduleConflictException("Se detectaron uno o más conflictos en el lote de horarios recurrentes.", conflicts);
+        }
+
+        // 3. Persist atomically
+        await using var tx = _dbContext.Database.CurrentTransaction == null
+            ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
+        var createdSchedules = new List<RecurringSchedule>();
+        var now = DateTime.UtcNow;
+
+        foreach (var t in expandedTuples)
+        {
+            var schedule = new RecurringSchedule
+            {
+                Id = Guid.NewGuid(),
+                ActivityId = request.ActivityId,
+                RoomId = request.RoomId,
+                InstructorId = request.InstructorId,
+                SecretaryId = request.SecretaryId,
+                DayOfWeek = t.Day,
+                MaxCapacity = resolvedCapacity,
+                CreatedAtUtc = now,
+                IsActive = true
+            };
+
+            schedule.SetTimeSlot(t.StartTime, t.EndTime);
+            schedule.SetValidityPeriod(request.ValidFrom, request.ValidTo);
+
+            schedule.Activity = entities.Activity;
+            schedule.Room = entities.Room;
+            schedule.Instructor = entities.Instructor;
+            schedule.Secretary = entities.Secretary;
+
+            _dbContext.RecurringSchedules.Add(schedule);
+            createdSchedules.Add(schedule);
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var dtos = new List<RecurringScheduleDto>();
+        foreach (var s in createdSchedules)
+        {
+            var divergent = await _scheduleSync.SyncAsync(s.Id, cancellationToken: cancellationToken);
+            dtos.Add(MapToDto(s, divergent));
+        }
+
+        if (tx != null)
+        {
+            await tx.CommitAsync(cancellationToken);
+        }
+
+        return dtos;
     }
 
     public async Task<RecurringScheduleDto?> UpdateAsync(Guid id, UpdateRecurringScheduleRequest request, CancellationToken cancellationToken = default)
@@ -157,42 +306,17 @@ public class RecurringScheduleService : IRecurringScheduleService
 
         var resolvedCapacity = schedule.Activity.ResolveCapacity(request.MaxCapacity);
 
-        var room = await _dbContext.Rooms.FirstOrDefaultAsync(r => r.Id == request.RoomId && r.IsActive, cancellationToken);
-        if (room == null)
-        {
-            throw new ArgumentException("La sala especificada no existe o no está activa.");
-        }
-
-        var instructor = await _dbContext.People
-            .Include(p => p.PersonRoles)
-                .ThenInclude(pr => pr.Role)
-            .FirstOrDefaultAsync(p => p.Id == request.InstructorId && p.IsActive, cancellationToken);
-
-        if (instructor == null || !instructor.PersonRoles.Any(pr => pr.IsActive && pr.Role.Name == RoleType.Instructor.ToString()))
-        {
-            throw new ArgumentException("El instructor especificado no existe o no posee el rol de Instructor asignado.");
-        }
-
-        Person? secretary = null;
-        if (request.SecretaryId.HasValue)
-        {
-            secretary = await _dbContext.People
-                .Include(p => p.PersonRoles)
-                    .ThenInclude(pr => pr.Role)
-                .FirstOrDefaultAsync(p => p.Id == request.SecretaryId.Value && p.IsActive, cancellationToken);
-
-            if (secretary == null || !secretary.PersonRoles.Any(pr => pr.IsActive && (pr.Role.Name == RoleType.Secretary.ToString() || pr.Role.Name == RoleType.Administrator.ToString())))
-            {
-                throw new ArgumentException("El secretario especificado no existe o no posee el rol de Secretario o Administrador asignado.");
-            }
-        }
+        var entities = await ValidateEntitiesAsync(schedule.ActivityId, request.RoomId, request.InstructorId, request.SecretaryId, cancellationToken);
 
         if (request.IsActive)
         {
-            var roomConflict = await HasRoomCollisionAsync(id, request.RoomId, request.DayOfWeek, request.StartTime, request.EndTime, request.ValidFrom, request.ValidTo, cancellationToken);
-            if (roomConflict)
+            var conflicts = await DetectCollisionsAsync(id, request.RoomId, request.InstructorId, request.DayOfWeek, request.StartTime, request.EndTime, request.ValidFrom, request.ValidTo, cancellationToken);
+            if (conflicts.Count > 0)
             {
-                throw new InvalidOperationException("Ya existe una clase asignada en la misma sala durante ese día y rango horario.");
+                var message = conflicts.Any(c => c.Kind == ScheduleConflictKind.Room)
+                    ? "Ya existe una clase asignada en la misma sala durante ese día y rango horario."
+                    : "El instructor ya tiene otra clase asignada durante ese día y rango horario.";
+                throw new ScheduleConflictException(message, conflicts);
             }
         }
 
@@ -209,9 +333,9 @@ public class RecurringScheduleService : IRecurringScheduleService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        schedule.Room = room;
-        schedule.Instructor = instructor;
-        schedule.Secretary = secretary;
+        schedule.Room = entities.Room;
+        schedule.Instructor = entities.Instructor;
+        schedule.Secretary = entities.Secretary;
 
         // Synchronize sessions within the same transaction/operation
         var divergent = await _scheduleSync.SyncAsync(schedule.Id, cancellationToken: cancellationToken);
@@ -235,6 +359,119 @@ public class RecurringScheduleService : IRecurringScheduleService
         return true;
     }
 
+    private record ValidatedScheduleEntities(
+        Activity Activity,
+        Room Room,
+        Person Instructor,
+        Person? Secretary
+    );
+
+    private async Task<ValidatedScheduleEntities> ValidateEntitiesAsync(
+        Guid activityId,
+        Guid roomId,
+        Guid instructorId,
+        Guid? secretaryId,
+        CancellationToken cancellationToken)
+    {
+        var activity = await _dbContext.Activities.FirstOrDefaultAsync(a => a.Id == activityId && a.IsActive, cancellationToken);
+        if (activity == null)
+        {
+            throw new ArgumentException("La actividad especificada no existe o no está activa.");
+        }
+
+        var room = await _dbContext.Rooms.FirstOrDefaultAsync(r => r.Id == roomId && r.IsActive, cancellationToken);
+        if (room == null)
+        {
+            throw new ArgumentException("La sala especificada no existe o no está activa.");
+        }
+
+        var instructor = await _dbContext.People
+            .Include(p => p.PersonRoles)
+                .ThenInclude(pr => pr.Role)
+            .FirstOrDefaultAsync(p => p.Id == instructorId && p.IsActive, cancellationToken);
+
+        if (instructor == null || !instructor.PersonRoles.Any(pr => pr.IsActive && pr.Role.Name == RoleType.Instructor.ToString()))
+        {
+            throw new ArgumentException("El instructor especificado no existe o no posee el rol de Instructor asignado.");
+        }
+
+        Person? secretary = null;
+        if (secretaryId.HasValue)
+        {
+            secretary = await _dbContext.People
+                .Include(p => p.PersonRoles)
+                    .ThenInclude(pr => pr.Role)
+                .FirstOrDefaultAsync(p => p.Id == secretaryId.Value && p.IsActive, cancellationToken);
+
+            if (secretary == null || !secretary.PersonRoles.Any(pr => pr.IsActive && (pr.Role.Name == RoleType.Secretary.ToString() || pr.Role.Name == RoleType.Administrator.ToString())))
+            {
+                throw new ArgumentException("El secretario especificado no existe o no posee el rol de Secretario o Administrador asignado.");
+            }
+        }
+
+        return new ValidatedScheduleEntities(activity, room, instructor, secretary);
+    }
+
+    private async Task<List<ScheduleConflictDto>> DetectCollisionsAsync(
+        Guid currentId,
+        Guid roomId,
+        Guid instructorId,
+        DayOfWeek dayOfWeek,
+        TimeOnly startTime,
+        TimeOnly endTime,
+        DateOnly validFrom,
+        DateOnly? validTo,
+        CancellationToken cancellationToken)
+    {
+        var schedules = await _dbContext.RecurringSchedules
+            .Include(s => s.Activity)
+            .Where(s => s.Id != currentId && s.IsActive && s.DayOfWeek == dayOfWeek && (s.RoomId == roomId || s.InstructorId == instructorId))
+            .ToListAsync(cancellationToken);
+
+        var conflicts = new List<ScheduleConflictDto>();
+
+        foreach (var s in schedules)
+        {
+            var datesOverlap = (!validTo.HasValue || s.ValidFrom <= validTo.Value) &&
+                               (!s.ValidTo.HasValue || validFrom <= s.ValidTo.Value);
+
+            if (!datesOverlap) continue;
+
+            var timesOverlap = startTime < s.EndTime && s.StartTime < endTime;
+            if (!timesOverlap) continue;
+
+            if (s.RoomId == roomId)
+            {
+                conflicts.Add(new ScheduleConflictDto(
+                    DayOfWeek: dayOfWeek,
+                    StartTime: startTime,
+                    EndTime: endTime,
+                    Kind: ScheduleConflictKind.Room,
+                    ConflictingScheduleId: s.Id,
+                    ConflictingActivityName: s.Activity?.Name,
+                    ConflictingStartTime: s.StartTime,
+                    ConflictingEndTime: s.EndTime
+                ));
+            }
+
+            if (s.InstructorId == instructorId && s.RoomId != roomId)
+            {
+                conflicts.Add(new ScheduleConflictDto(
+                    DayOfWeek: dayOfWeek,
+                    StartTime: startTime,
+                    EndTime: endTime,
+                    Kind: ScheduleConflictKind.Instructor,
+                    ConflictingScheduleId: s.Id,
+                    ConflictingActivityName: s.Activity?.Name,
+                    ConflictingStartTime: s.StartTime,
+                    ConflictingEndTime: s.EndTime
+                ));
+            }
+        }
+
+        return conflicts;
+    }
+
     private async Task<bool> HasRoomCollisionAsync(
         Guid currentId,
         Guid roomId,
@@ -245,28 +482,22 @@ public class RecurringScheduleService : IRecurringScheduleService
         DateOnly? validTo,
         CancellationToken cancellationToken)
     {
-        var schedules = await _dbContext.RecurringSchedules
-            .Where(s => s.Id != currentId && s.IsActive && s.RoomId == roomId && s.DayOfWeek == dayOfWeek)
-            .ToListAsync(cancellationToken);
+        var conflicts = await DetectCollisionsAsync(currentId, roomId, Guid.Empty, dayOfWeek, startTime, endTime, validFrom, validTo, cancellationToken);
+        return conflicts.Any(c => c.Kind == ScheduleConflictKind.Room);
+    }
 
-        foreach (var s in schedules)
-        {
-            // Verificación de solapamiento de fechas
-            var datesOverlap = (!validTo.HasValue || s.ValidFrom <= validTo.Value) &&
-                               (!s.ValidTo.HasValue || validFrom <= s.ValidTo.Value);
-
-            if (datesOverlap)
-            {
-                // Verificación de solapamiento de horarios
-                var timesOverlap = startTime < s.EndTime && s.StartTime < endTime;
-                if (timesOverlap)
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+    private async Task<bool> HasInstructorCollisionAsync(
+        Guid currentId,
+        Guid instructorId,
+        DayOfWeek dayOfWeek,
+        TimeOnly startTime,
+        TimeOnly endTime,
+        DateOnly validFrom,
+        DateOnly? validTo,
+        CancellationToken cancellationToken)
+    {
+        var conflicts = await DetectCollisionsAsync(currentId, Guid.Empty, instructorId, dayOfWeek, startTime, endTime, validFrom, validTo, cancellationToken);
+        return conflicts.Any(c => c.Kind == ScheduleConflictKind.Instructor);
     }
 
     private static RecurringScheduleDto MapToDto(RecurringSchedule s, IReadOnlyList<Guid>? divergentSessionIds = null) =>

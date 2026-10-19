@@ -45,3 +45,20 @@ public record UpdateRecurringScheduleRequest(
     int? MaxCapacity,
     bool IsActive
 );
+
+public record BatchScheduleSlotRequest(
+    IReadOnlyList<DayOfWeek> DaysOfWeek,
+    TimeOnly StartTime,
+    TimeOnly EndTime
+);
+
+public record CreateBatchRecurringScheduleRequest(
+    Guid ActivityId,
+    Guid RoomId,
+    Guid InstructorId,
+    Guid? SecretaryId,
+    DateOnly ValidFrom,
+    DateOnly? ValidTo,
+    int? MaxCapacity,
+    IReadOnlyList<BatchScheduleSlotRequest> Slots
+);

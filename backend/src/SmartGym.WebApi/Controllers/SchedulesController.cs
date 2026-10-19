@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SmartGym.Application.Common.Security;
+using SmartGym.Application.Modules.Activities;
 using SmartGym.Application.Modules.Activities.Dtos;
 using SmartGym.Application.Modules.Activities.Services;
 
@@ -48,6 +49,33 @@ public class SchedulesController : ControllerBase
             var created = await _scheduleService.CreateAsync(request, cancellationToken);
             return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
         }
+        catch (ScheduleConflictException ex)
+        {
+            return Conflict(new { message = ex.Message, conflicts = ex.Conflicts });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("batch")]
+    [Authorize(Policy = Policies.RequireStaff)]
+    public async Task<IActionResult> CreateBatch([FromBody] CreateBatchRecurringScheduleRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var created = await _scheduleService.CreateBatchAsync(request, cancellationToken);
+            return StatusCode(StatusCodes.Status201Created, created);
+        }
+        catch (ScheduleConflictException ex)
+        {
+            return Conflict(new { message = ex.Message, conflicts = ex.Conflicts });
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(new { message = ex.Message });
@@ -71,6 +99,10 @@ public class SchedulesController : ControllerBase
             }
 
             return Ok(updated);
+        }
+        catch (ScheduleConflictException ex)
+        {
+            return Conflict(new { message = ex.Message, conflicts = ex.Conflicts });
         }
         catch (ArgumentException ex)
         {

@@ -1,14 +1,23 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { GymApiService } from '../../../core/services/gym-api.service';
 import { RecurringSchedule } from '../../../core/models/gym.models';
 import { ScheduleFormModalComponent } from '../schedule-form-modal/schedule-form-modal';
+import { ScheduleBatchModalComponent } from '../schedule-batch-modal/schedule-batch-modal';
+import { ScheduleCalendarComponent } from '../schedule-calendar/schedule-calendar';
+import { ScheduleDetailModalComponent } from '../schedule-detail-modal/schedule-detail-modal';
 import { WEEK_DAYS } from '../../../core/utils/catalog-mappings';
 
 @Component({
   selector: 'app-schedules-management',
   standalone: true,
-  imports: [CommonModule, ScheduleFormModalComponent],
+  imports: [
+    CommonModule,
+    ScheduleFormModalComponent,
+    ScheduleBatchModalComponent,
+    ScheduleCalendarComponent,
+    ScheduleDetailModalComponent
+  ],
   template: `
     <div class="space-y-6">
       <!-- Header bar -->
@@ -22,7 +31,46 @@ import { WEEK_DAYS } from '../../../core/utils/catalog-mappings';
           <p class="text-xs text-slate-400">Configure los turnos recurrentes semanales vinculando actividades, salas e instructores</p>
         </div>
 
-        <div class="flex items-center gap-4">
+        <div class="flex flex-wrap items-center gap-3">
+          <!-- View switcher -->
+          <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+            <button
+              type="button"
+              (click)="viewMode.set('calendar')"
+              [class.bg-slate-800]="viewMode() === 'calendar'"
+              [class.text-white]="viewMode() === 'calendar'"
+              [class.text-slate-400]="viewMode() !== 'calendar'"
+              class="btn-view-calendar px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
+            >
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              Calendario
+            </button>
+            <button
+              type="button"
+              (click)="viewMode.set('cards')"
+              [class.bg-slate-800]="viewMode() === 'cards'"
+              [class.text-white]="viewMode() === 'cards'"
+              [class.text-slate-400]="viewMode() !== 'cards'"
+              class="btn-view-cards px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
+            >
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+              </svg>
+              Tarjetas
+            </button>
+          </div>
+
+          <button
+            (click)="openBatchModal()"
+            class="btn-batch-schedule px-4 py-2.5 rounded-xl text-xs font-bold text-cyan-400 bg-cyan-950/60 border border-cyan-800/80 hover:bg-cyan-900/60 transition flex items-center gap-2"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            Carga Masiva
+          </button>
           <button
             (click)="openCreateModal()"
             class="px-5 py-2.5 rounded-xl text-xs font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 shadow-lg shadow-cyan-500/20 transition flex items-center gap-2"
@@ -47,84 +95,130 @@ import { WEEK_DAYS } from '../../../core/utils/catalog-mappings';
         </div>
       }
 
-      <!-- Days of Week Tabs -->
-      <div class="flex flex-wrap gap-2">
-        @for (day of weekDays; track day.day) {
+      <!-- Multi-Activity Filter Toolbar -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 mr-1">Filtrar:</span>
           <button
-            (click)="selectedDay.set(day.day)"
-            class="px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2"
-            [ngClass]="selectedDay() === day.day ? 'bg-cyan-500 text-slate-950' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'"
+            type="button"
+            (click)="selectAllActivities()"
+            [class.bg-cyan-500]="isAllActivitiesSelected()"
+            [class.text-slate-950]="isAllActivitiesSelected()"
+            [class.font-bold]="isAllActivitiesSelected()"
+            [class.bg-slate-950]="!isAllActivitiesSelected()"
+            [class.text-slate-300]="!isAllActivitiesSelected()"
+            class="chip-all-activities px-3 py-1.5 rounded-xl text-xs border border-slate-800 transition hover:border-slate-700"
           >
-            {{ day.name }}
-            <span
-              class="px-1.5 py-0.5 rounded-full text-[10px]"
-              [ngClass]="selectedDay() === day.day ? 'bg-slate-900/30 text-slate-950 font-black' : 'bg-slate-800 text-slate-400'"
-            >
-              {{ countByDay(day.day) }}
-            </span>
+            Todas las actividades
           </button>
-        }
+          @for (act of uniqueActivities(); track act.id) {
+            <button
+              type="button"
+              (click)="toggleActivityFilter(act.id)"
+              [class.bg-cyan-500]="isActivitySelected(act.id)"
+              [class.text-slate-950]="isActivitySelected(act.id)"
+              [class.font-bold]="isActivitySelected(act.id)"
+              [class.bg-slate-950]="!isActivitySelected(act.id)"
+              [class.text-slate-300]="!isActivitySelected(act.id)"
+              class="chip-activity px-3 py-1.5 rounded-xl text-xs border border-slate-800 transition hover:border-slate-700"
+            >
+              {{ act.name }}
+            </button>
+          }
+        </div>
+
+        <div class="text-xs text-slate-400 font-medium">
+          {{ filteredSchedules().length }} horarios visibles
+        </div>
       </div>
 
-      <!-- Schedules Grid -->
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        @for (item of displayedSchedules(); track item.id) {
-          <div
-            class="bg-slate-900 border rounded-2xl p-6 transition flex flex-col justify-between"
-            [ngClass]="item.isActive ? 'border-slate-800 hover:border-cyan-500/40' : 'border-slate-800/50 opacity-60 bg-slate-900/40'"
-          >
-            <div>
-              <div class="flex justify-between items-start mb-3">
-                <div>
-                  <h3 class="text-lg font-bold text-white">{{ item.activityName }}</h3>
-                  <span class="text-xs text-cyan-400 font-semibold">{{ item.roomName }}</span>
+      <!-- Main View: Calendar vs Cards -->
+      @if (viewMode() === 'calendar') {
+        <app-schedule-calendar
+          [schedules]="filteredSchedules()"
+          [canManage]="true"
+          (scheduleSelected)="onScheduleSelectedFromCalendar($event)"
+        ></app-schedule-calendar>
+      } @else {
+        <!-- Days of Week Tabs -->
+        <div class="flex flex-wrap gap-2">
+          @for (day of weekDays; track day.day) {
+            <button
+              (click)="selectedDay.set(day.day)"
+              class="px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2"
+              [ngClass]="selectedDay() === day.day ? 'bg-cyan-500 text-slate-950' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'"
+            >
+              {{ day.name }}
+              <span
+                class="px-1.5 py-0.5 rounded-full text-[10px]"
+                [ngClass]="selectedDay() === day.day ? 'bg-slate-900/30 text-slate-950 font-black' : 'bg-slate-800 text-slate-400'"
+              >
+                {{ countByDay(day.day) }}
+              </span>
+            </button>
+          }
+        </div>
+
+        <!-- Schedules Grid (Cards) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          @for (item of displayedSchedules(); track item.id) {
+            <div
+              class="bg-slate-900 border rounded-2xl p-6 transition flex flex-col justify-between"
+              [ngClass]="item.isActive ? 'border-slate-800 hover:border-cyan-500/40' : 'border-slate-800/50 opacity-60 bg-slate-900/40'"
+            >
+              <div>
+                <div class="flex justify-between items-start mb-3">
+                  <div>
+                    <h3 class="text-lg font-bold text-white">{{ item.activityName }}</h3>
+                    <span class="text-xs text-cyan-400 font-semibold">{{ item.roomName }}</span>
+                  </div>
+                  <div class="text-right">
+                    <span class="text-lg font-black text-white">{{ item.startTime.substring(0, 5) }}</span>
+                    <span class="text-xs text-slate-400 block">a {{ item.endTime.substring(0, 5) }}</span>
+                  </div>
                 </div>
-                <div class="text-right">
-                  <span class="text-lg font-black text-white">{{ item.startTime.substring(0, 5) }}</span>
-                  <span class="text-xs text-slate-400 block">a {{ item.endTime.substring(0, 5) }}</span>
+
+                <div class="space-y-1 text-xs text-slate-400 py-2">
+                  <p class="flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full" [ngClass]="item.isActive ? 'bg-emerald-400' : 'bg-slate-500'"></span>
+                    <span>Prof. <strong class="text-slate-300">{{ item.instructorName }}</strong></span>
+                  </p>
+                  <p>Cupo: <strong class="text-slate-300">{{ item.maxCapacity ? item.maxCapacity + ' alumnos' : 'Por actividad' }}</strong></p>
+                  <p>Vigencia: {{ item.validFrom.substring(0, 10) }}{{ item.validTo ? ' al ' + item.validTo.substring(0, 10) : ' (indefinida)' }}</p>
+                  <div>
+                    <span
+                      class="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
+                      [ngClass]="item.isActive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-400 border border-slate-700'"
+                    >
+                      {{ item.isActive ? 'Activo' : 'Inactivo' }}
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              <div class="space-y-1 text-xs text-slate-400 py-2">
-                <p class="flex items-center gap-1.5">
-                  <span class="w-2 h-2 rounded-full" [ngClass]="item.isActive ? 'bg-emerald-400' : 'bg-slate-500'"></span>
-                  <span>Prof. <strong class="text-slate-300">{{ item.instructorName }}</strong></span>
-                </p>
-                <p>Cupo: <strong class="text-slate-300">{{ item.maxCapacity ? item.maxCapacity + ' alumnos' : 'Por actividad' }}</strong></p>
-                <p>Vigencia: {{ item.validFrom.substring(0, 10) }}{{ item.validTo ? ' al ' + item.validTo.substring(0, 10) : ' (indefinida)' }}</p>
-                <div>
-                  <span
-                    class="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
-                    [ngClass]="item.isActive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-400 border border-slate-700'"
-                  >
-                    {{ item.isActive ? 'Activo' : 'Inactivo' }}
-                  </span>
-                </div>
+              <!-- Actions -->
+              <div class="pt-4 mt-4 border-t border-slate-800/80 flex items-center justify-end gap-2">
+                <button
+                  (click)="openEditModal(item)"
+                  class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+                >
+                  Editar
+                </button>
+                <button
+                  (click)="requestDelete(item)"
+                  class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 transition"
+                >
+                  Dar de Baja
+                </button>
               </div>
             </div>
-
-            <!-- Actions -->
-            <div class="pt-4 mt-4 border-t border-slate-800/80 flex items-center justify-end gap-2">
-              <button
-                (click)="openEditModal(item)"
-                class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
-              >
-                Editar
-              </button>
-              <button
-                (click)="requestDelete(item)"
-                class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 transition"
-              >
-                Dar de Baja
-              </button>
+          } @empty {
+            <div class="col-span-full text-center py-12 bg-slate-900/30 rounded-2xl border border-slate-800/60 text-slate-500">
+              No hay horarios registrados para este día con el filtro seleccionado.
             </div>
-          </div>
-        } @empty {
-          <div class="col-span-full text-center py-12 bg-slate-900/30 rounded-2xl border border-slate-800/60 text-slate-500">
-            No hay horarios registrados para este día.
-          </div>
-        }
-      </div>
+          }
+        </div>
+      }
 
       <!-- Delete Confirmation Dialog -->
       @if (scheduleToDelete()) {
@@ -164,13 +258,32 @@ import { WEEK_DAYS } from '../../../core/utils/catalog-mappings';
         </div>
       }
 
-      <!-- Schedule Modal -->
+      <!-- Schedule Modal (Create/Edit) -->
       @if (isModalOpen()) {
         <app-schedule-form-modal
           [schedule]="selectedSchedule()"
           (saved)="onScheduleSaved()"
           (cancelled)="isModalOpen.set(false)"
         ></app-schedule-form-modal>
+      }
+
+      <!-- Batch Schedule Modal -->
+      @if (isBatchModalOpen()) {
+        <app-schedule-batch-modal
+          (saved)="onBatchSchedulesSaved($event)"
+          (cancelled)="isBatchModalOpen.set(false)"
+        ></app-schedule-batch-modal>
+      }
+
+      <!-- Schedule Detail Modal (from calendar click) -->
+      @if (selectedDetailSchedule()) {
+        <app-schedule-detail-modal
+          [schedule]="selectedDetailSchedule()"
+          [canManage]="true"
+          (edit)="onEditFromDetail($event)"
+          (delete)="onDeleteFromDetail($event)"
+          (closed)="selectedDetailSchedule.set(null)"
+        ></app-schedule-detail-modal>
       }
     </div>
   `
@@ -181,13 +294,38 @@ export class SchedulesManagementComponent implements OnInit {
   readonly weekDays = WEEK_DAYS;
   readonly schedules = signal<RecurringSchedule[]>([]);
   readonly selectedDay = signal<number>(1); // Lunes por defecto
+  readonly viewMode = signal<'calendar' | 'cards'>('calendar');
+  readonly selectedActivityIds = signal<Set<string>>(new Set());
 
   readonly isModalOpen = signal(false);
+  readonly isBatchModalOpen = signal(false);
   readonly selectedSchedule = signal<RecurringSchedule | null>(null);
+  readonly selectedDetailSchedule = signal<RecurringSchedule | null>(null);
   readonly scheduleToDelete = signal<RecurringSchedule | null>(null);
 
   readonly feedbackMessage = signal<string | null>(null);
   readonly errorMessage = signal<string | null>(null);
+
+  readonly uniqueActivities = computed(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    for (const s of this.schedules()) {
+      if (!map.has(s.activityId)) {
+        map.set(s.activityId, { id: s.activityId, name: s.activityName });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  });
+
+  readonly isAllActivitiesSelected = computed(() => this.selectedActivityIds().size === 0);
+
+  readonly filteredSchedules = computed(() => {
+    const selected = this.selectedActivityIds();
+    const all = this.schedules();
+    if (selected.size === 0) {
+      return all;
+    }
+    return all.filter(s => selected.has(s.activityId));
+  });
 
   ngOnInit(): void {
     this.loadSchedules();
@@ -200,13 +338,31 @@ export class SchedulesManagementComponent implements OnInit {
     });
   }
 
+  isActivitySelected(id: string): boolean {
+    return this.selectedActivityIds().has(id);
+  }
+
+  selectAllActivities(): void {
+    this.selectedActivityIds.set(new Set());
+  }
+
+  toggleActivityFilter(id: string): void {
+    const current = new Set(this.selectedActivityIds());
+    if (current.has(id)) {
+      current.delete(id);
+    } else {
+      current.add(id);
+    }
+    this.selectedActivityIds.set(current);
+  }
+
   countByDay(day: number): number {
-    return this.schedules().filter(s => s.dayOfWeek === day).length;
+    return this.filteredSchedules().filter(s => s.dayOfWeek === day).length;
   }
 
   displayedSchedules(): RecurringSchedule[] {
     // GET /api/schedules solo devuelve horarios activos
-    return this.schedules().filter(s => s.dayOfWeek === this.selectedDay());
+    return this.filteredSchedules().filter(s => s.dayOfWeek === this.selectedDay());
   }
 
   getDayName(day: number): string {
@@ -219,15 +375,40 @@ export class SchedulesManagementComponent implements OnInit {
     this.isModalOpen.set(true);
   }
 
+  openBatchModal(): void {
+    this.isBatchModalOpen.set(true);
+  }
+
   openEditModal(schedule: RecurringSchedule): void {
     this.selectedSchedule.set(schedule);
     this.isModalOpen.set(true);
+  }
+
+  onScheduleSelectedFromCalendar(schedule: RecurringSchedule): void {
+    this.selectedDetailSchedule.set(schedule);
+  }
+
+  onEditFromDetail(schedule: RecurringSchedule): void {
+    this.selectedDetailSchedule.set(null);
+    this.openEditModal(schedule);
+  }
+
+  onDeleteFromDetail(schedule: RecurringSchedule): void {
+    this.selectedDetailSchedule.set(null);
+    this.requestDelete(schedule);
   }
 
   onScheduleSaved(): void {
     this.isModalOpen.set(false);
     this.selectedSchedule.set(null);
     this.feedbackMessage.set('Horario guardado correctamente.');
+    this.loadSchedules();
+    setTimeout(() => this.feedbackMessage.set(null), 4000);
+  }
+
+  onBatchSchedulesSaved(created: RecurringSchedule[]): void {
+    this.isBatchModalOpen.set(false);
+    this.feedbackMessage.set(`Se crearon exitosamente ${created.length} horarios recurrentes.`);
     this.loadSchedules();
     setTimeout(() => this.feedbackMessage.set(null), 4000);
   }

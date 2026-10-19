@@ -11,6 +11,7 @@ import {
   UpdateActivityRequest,
   ChangeActivityStatusRequest,
   CreateRecurringScheduleRequest,
+  CreateBatchRecurringScheduleRequest,
   UpdateRecurringScheduleRequest,
   CreateMembershipPlanRequest,
   UpdateMembershipPlanRequest
@@ -147,6 +148,34 @@ describe('GymApiService - Catalog Management', () => {
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual(request);
       req.flush({ id: 's1', ...request, isActive: true });
+    });
+
+    it('createBatchSchedules should send POST to /schedules/batch with request body', () => {
+      const request: CreateBatchRecurringScheduleRequest = {
+        activityId: 'a1',
+        roomId: 'r1',
+        instructorId: 'i1',
+        secretaryId: null,
+        validFrom: '2026-10-01',
+        validTo: null,
+        maxCapacity: 20,
+        slots: [
+          { daysOfWeek: [1, 3, 5], startTime: '09:30', endTime: '10:30' }
+        ]
+      };
+
+      service.createBatchSchedules(request).subscribe((res) => {
+        expect(res.length).toBe(3);
+      });
+
+      const req = httpMock.expectOne(`${apiUrl}/schedules/batch`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(request);
+      req.flush([
+        { id: 's1', activityId: 'a1', dayOfWeek: 1, startTime: '09:30:00', endTime: '10:30:00' },
+        { id: 's2', activityId: 'a1', dayOfWeek: 3, startTime: '09:30:00', endTime: '10:30:00' },
+        { id: 's3', activityId: 'a1', dayOfWeek: 5, startTime: '09:30:00', endTime: '10:30:00' }
+      ]);
     });
 
     it('updateSchedule should send PUT to /schedules/:id with request body', () => {
