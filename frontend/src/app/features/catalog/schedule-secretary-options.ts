@@ -1,4 +1,4 @@
-import { Observable, forkJoin, map } from 'rxjs';
+import { Observable, map } from 'rxjs';
 import { PeopleService } from '../../core/services/people.service';
 import { PersonStatus, PersonSummary } from '../../core/models/person.model';
 
@@ -7,20 +7,11 @@ export interface PersonOption {
   label: string;
 }
 
-// El backend acepta como secretario de un horario a personas con rol Secretary o Administrator.
+// El selector de secretarios solo lista personas activas con usuario asignado y rol Secretary.
 export function loadSecretaryCandidates(peopleService: PeopleService): Observable<PersonSummary[]> {
-  return forkJoin([
-    peopleService.search({ role: 'Secretary', status: PersonStatus.Active, pageSize: 100 }),
-    peopleService.search({ role: 'Administrator', status: PersonStatus.Active, pageSize: 100 })
-  ]).pipe(
-    map(([secretaries, admins]) => {
-      const byId = new Map<string, PersonSummary>();
-      for (const p of [...(secretaries.items || []), ...(admins.items || [])]) {
-        byId.set(p.id, p);
-      }
-      return [...byId.values()];
-    })
-  );
+  return peopleService
+    .search({ role: 'Secretary', status: PersonStatus.Active, pageSize: 100 })
+    .pipe(map(res => (res.items || []).filter(p => p.hasUserAccount === true)));
 }
 
 export function toPersonOptions(people: PersonSummary[]): PersonOption[] {

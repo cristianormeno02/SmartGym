@@ -8,7 +8,6 @@ import { ScheduleFormModalComponent } from '../../catalog/schedule-form-modal/sc
 import { ScheduleBatchModalComponent } from '../../catalog/schedule-batch-modal/schedule-batch-modal';
 import { ScheduleCalendarComponent } from '../../catalog/schedule-calendar/schedule-calendar';
 import { ScheduleDetailModalComponent } from '../../catalog/schedule-detail-modal/schedule-detail-modal';
-import { WEEK_DAYS } from '../../../core/utils/catalog-mappings';
 
 @Component({
   selector: 'app-schedules',
@@ -86,40 +85,73 @@ import { WEEK_DAYS } from '../../../core/utils/catalog-mappings';
           </div>
         </div>
 
-        <!-- Multi-Activity Filter Toolbar -->
-        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 mr-1">Filtrar:</span>
-            <button
-              type="button"
-              (click)="selectAllActivities()"
-              [class.bg-cyan-500]="isAllActivitiesSelected()"
-              [class.text-slate-950]="isAllActivitiesSelected()"
-              [class.font-bold]="isAllActivitiesSelected()"
-              [class.bg-slate-950]="!isAllActivitiesSelected()"
-              [class.text-slate-300]="!isAllActivitiesSelected()"
-              class="chip-all-activities px-3 py-1.5 rounded-xl text-xs border border-slate-800 transition hover:border-slate-700"
-            >
-              Todas las actividades
-            </button>
-            @for (act of uniqueActivities(); track act.id) {
+        <!-- Multi-Activity & Multi-Room Filter Toolbar -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 mr-1">Actividades:</span>
               <button
                 type="button"
-                (click)="toggleActivityFilter(act.id)"
-                [class.bg-cyan-500]="isActivitySelected(act.id)"
-                [class.text-slate-950]="isActivitySelected(act.id)"
-                [class.font-bold]="isActivitySelected(act.id)"
-                [class.bg-slate-950]="!isActivitySelected(act.id)"
-                [class.text-slate-300]="!isActivitySelected(act.id)"
-                class="chip-activity px-3 py-1.5 rounded-xl text-xs border border-slate-800 transition hover:border-slate-700"
+                (click)="selectAllActivities()"
+                [class.bg-cyan-500]="isAllActivitiesSelected()"
+                [class.text-slate-950]="isAllActivitiesSelected()"
+                [class.font-bold]="isAllActivitiesSelected()"
+                [class.bg-slate-950]="!isAllActivitiesSelected()"
+                [class.text-slate-300]="!isAllActivitiesSelected()"
+                class="chip-all-activities px-3 py-1.5 rounded-xl text-xs border border-slate-800 transition hover:border-slate-700"
               >
-                {{ act.name }}
+                Todas las actividades
               </button>
-            }
+              @for (act of uniqueActivities(); track act.id) {
+                <button
+                  type="button"
+                  (click)="toggleActivityFilter(act.id)"
+                  [class.bg-cyan-500]="isActivitySelected(act.id)"
+                  [class.text-slate-950]="isActivitySelected(act.id)"
+                  [class.font-bold]="isActivitySelected(act.id)"
+                  [class.bg-slate-950]="!isActivitySelected(act.id)"
+                  [class.text-slate-300]="!isActivitySelected(act.id)"
+                  class="chip-activity px-3 py-1.5 rounded-xl text-xs border border-slate-800 transition hover:border-slate-700 inline-flex items-center gap-1.5"
+                >
+                  <span class="w-2.5 h-2.5 rounded-full shrink-0 border border-white/20" [style.backgroundColor]="act.colorHex"></span>
+                  {{ act.name }}
+                </button>
+              }
+            </div>
+
+            <div class="text-xs text-slate-400 font-medium shrink-0">
+              {{ filteredSchedules().length }} horarios visibles
+            </div>
           </div>
 
-          <div class="text-xs text-slate-400 font-medium">
-            {{ filteredSchedules().length }} horarios visibles
+          <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/80">
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 mr-1">Salas:</span>
+            <button
+              type="button"
+              (click)="selectAllRooms()"
+              [class.bg-cyan-500]="isAllRoomsSelected()"
+              [class.text-slate-950]="isAllRoomsSelected()"
+              [class.font-bold]="isAllRoomsSelected()"
+              [class.bg-slate-950]="!isAllRoomsSelected()"
+              [class.text-slate-300]="!isAllRoomsSelected()"
+              class="chip-all-rooms px-3 py-1.5 rounded-xl text-xs border border-slate-800 transition hover:border-slate-700"
+            >
+              Todas las salas
+            </button>
+            @for (room of uniqueRooms(); track room.id) {
+              <button
+                type="button"
+                (click)="toggleRoomFilter(room.id)"
+                [class.bg-cyan-500]="isRoomSelected(room.id)"
+                [class.text-slate-950]="isRoomSelected(room.id)"
+                [class.font-bold]="isRoomSelected(room.id)"
+                [class.bg-slate-950]="!isRoomSelected(room.id)"
+                [class.text-slate-300]="!isRoomSelected(room.id)"
+                class="chip-room px-3 py-1.5 rounded-xl text-xs border border-slate-800 transition hover:border-slate-700"
+              >
+                {{ room.name }}
+              </button>
+            }
           </div>
         </div>
 
@@ -151,11 +183,18 @@ import { WEEK_DAYS } from '../../../core/utils/catalog-mappings';
           <!-- Schedules Grid (Cards) -->
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             @for (item of displayedSchedules(); track item.id) {
-              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 hover:border-cyan-500/40 transition flex flex-col justify-between">
+              <div
+                class="bg-slate-900 border border-slate-800 rounded-2xl p-6 hover:border-cyan-500/40 transition flex flex-col justify-between"
+                [style.borderLeftWidth]="'4px'"
+                [style.borderLeftColor]="item.activityColorHex || '#06B6D4'"
+              >
                 <div>
                   <div class="flex justify-between items-start mb-4">
                     <div>
-                      <h3 class="text-xl font-bold text-white">{{ item.activityName }}</h3>
+                      <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full shrink-0" [style.backgroundColor]="item.activityColorHex || '#06B6D4'"></span>
+                        <h3 class="text-xl font-bold text-white">{{ item.activityName }}</h3>
+                      </div>
                       <span class="text-xs text-cyan-400 font-medium">{{ item.roomName }}</span>
                     </div>
                     <div class="text-right">
@@ -278,6 +317,7 @@ export class SchedulesComponent implements OnInit {
   readonly selectedDay = signal<number>(1); // Lunes por defecto
   readonly viewMode = signal<'calendar' | 'cards'>('calendar');
   readonly selectedActivityIds = signal<Set<string>>(new Set());
+  readonly selectedRoomIds = signal<Set<string>>(new Set());
 
   readonly isModalOpen = signal(false);
   readonly isBatchModalOpen = signal(false);
@@ -296,24 +336,39 @@ export class SchedulesComponent implements OnInit {
   ];
 
   readonly uniqueActivities = computed(() => {
-    const map = new Map<string, { id: string; name: string }>();
+    const map = new Map<string, { id: string; name: string; colorHex: string }>();
     for (const s of this.schedules()) {
       if (!map.has(s.activityId)) {
-        map.set(s.activityId, { id: s.activityId, name: s.activityName });
+        map.set(s.activityId, {
+          id: s.activityId,
+          name: s.activityName,
+          colorHex: s.activityColorHex || '#06B6D4'
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  });
+
+  readonly uniqueRooms = computed(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    for (const s of this.schedules()) {
+      if (!map.has(s.roomId)) {
+        map.set(s.roomId, { id: s.roomId, name: s.roomName });
       }
     }
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
   });
 
   readonly isAllActivitiesSelected = computed(() => this.selectedActivityIds().size === 0);
+  readonly isAllRoomsSelected = computed(() => this.selectedRoomIds().size === 0);
 
   readonly filteredSchedules = computed(() => {
-    const selected = this.selectedActivityIds();
-    const all = this.schedules();
-    if (selected.size === 0) {
-      return all;
-    }
-    return all.filter(s => selected.has(s.activityId));
+    const selectedActivities = this.selectedActivityIds();
+    const selectedRooms = this.selectedRoomIds();
+    return this.schedules().filter(s =>
+      (selectedActivities.size === 0 || selectedActivities.has(s.activityId)) &&
+      (selectedRooms.size === 0 || selectedRooms.has(s.roomId))
+    );
   });
 
   ngOnInit(): void {
@@ -346,6 +401,24 @@ export class SchedulesComponent implements OnInit {
       current.add(id);
     }
     this.selectedActivityIds.set(current);
+  }
+
+  isRoomSelected(id: string): boolean {
+    return this.selectedRoomIds().has(id);
+  }
+
+  selectAllRooms(): void {
+    this.selectedRoomIds.set(new Set());
+  }
+
+  toggleRoomFilter(id: string): void {
+    const current = new Set(this.selectedRoomIds());
+    if (current.has(id)) {
+      current.delete(id);
+    } else {
+      current.add(id);
+    }
+    this.selectedRoomIds.set(current);
   }
 
   displayedSchedules(): RecurringSchedule[] {

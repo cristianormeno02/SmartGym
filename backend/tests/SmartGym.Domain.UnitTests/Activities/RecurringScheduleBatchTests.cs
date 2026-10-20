@@ -283,4 +283,38 @@ public class RecurringScheduleBatchTests
         var inDb = await _dbContext.RecurringSchedules.CountAsync();
         Assert.Equal(2, inDb); // Solo los 2 preexistentes
     }
+
+    [Fact]
+    public async Task CreateBatch_WhenSecretaryHasNoUserOrOnlyAdminRole_ThrowsArgumentException()
+    {
+        var secretaryRole = new Role { Id = (int)RoleType.Secretary, Name = RoleType.Secretary.ToString(), Description = "Secretary" };
+        var adminRole = new Role { Id = (int)RoleType.Administrator, Name = RoleType.Administrator.ToString(), Description = "Admin" };
+
+        var noUserSecretary = Person.Create("Sin", "Usuario", "sin@example.com");
+        noUserSecretary.AddRole(secretaryRole);
+
+        var adminOnly = Person.Create("Admin", "Only", "admin@example.com");
+        adminOnly.AddRole(adminRole);
+        adminOnly.SetUser(new User { Id = Guid.NewGuid(), Username = "adminonly", IsActive = true });
+
+        _dbContext.AddRange(secretaryRole, adminRole, noUserSecretary, adminOnly, adminOnly.User!);
+        await _dbContext.SaveChangesAsync();
+
+        var slots = new List<BatchScheduleSlotRequest>
+        {
+            new(new[] { DayOfWeek.Monday }, new TimeOnly(9, 0), new TimeOnly(10, 0))
+        };
+
+        var reqNoUser = new CreateBatchRecurringScheduleRequest(
+            _activity.Id, _room1.Id, _instructor1.Id, noUserSecretary.Id,
+            MondayDate, null, 20, slots);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => _scheduleService.CreateBatchAsync(reqNoUser));
+
+        var reqAdminOnly = new CreateBatchRecurringScheduleRequest(
+            _activity.Id, _room1.Id, _instructor1.Id, adminOnly.Id,
+            MondayDate, null, 20, slots);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => _scheduleService.CreateBatchAsync(reqAdminOnly));
+    }
 }

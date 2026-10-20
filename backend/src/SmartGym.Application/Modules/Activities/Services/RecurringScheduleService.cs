@@ -404,13 +404,17 @@ public class RecurringScheduleService : IRecurringScheduleService
         if (secretaryId.HasValue)
         {
             secretary = await _dbContext.People
+                .Include(p => p.User)
                 .Include(p => p.PersonRoles)
                     .ThenInclude(pr => pr.Role)
                 .FirstOrDefaultAsync(p => p.Id == secretaryId.Value && p.IsActive, cancellationToken);
 
-            if (secretary == null || !secretary.PersonRoles.Any(pr => pr.IsActive && (pr.Role.Name == RoleType.Secretary.ToString() || pr.Role.Name == RoleType.Administrator.ToString())))
+            if (secretary == null ||
+                secretary.User == null ||
+                !secretary.User.IsActive ||
+                !secretary.PersonRoles.Any(pr => pr.IsActive && pr.Role.Name == RoleType.Secretary.ToString()))
             {
-                throw new ArgumentException("El secretario especificado no existe o no posee el rol de Secretario o Administrador asignado.");
+                throw new ArgumentException("El secretario especificado no existe, no posee cuenta de usuario activa o no tiene el rol de Secretario asignado.");
             }
         }
 
@@ -495,6 +499,7 @@ public class RecurringScheduleService : IRecurringScheduleService
             s.ValidTo,
             s.MaxCapacity,
             s.IsActive,
-            divergentSessionIds
+            divergentSessionIds,
+            s.Activity?.ColorHex
         );
 }

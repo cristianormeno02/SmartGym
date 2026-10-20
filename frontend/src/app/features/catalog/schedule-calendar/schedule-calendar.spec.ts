@@ -12,6 +12,7 @@ describe('ScheduleCalendarComponent', () => {
       id: 'sched-1',
       activityId: 'act-1',
       activityName: 'Spinning',
+      activityColorHex: '#EF4444',
       roomId: 'room-1',
       roomName: 'Sala 1',
       instructorId: 'inst-1',
@@ -28,6 +29,7 @@ describe('ScheduleCalendarComponent', () => {
       id: 'sched-2',
       activityId: 'act-2',
       activityName: 'Yoga',
+      activityColorHex: '#10B981',
       roomId: 'room-2',
       roomName: 'Sala 2',
       instructorId: 'inst-2',
@@ -44,6 +46,7 @@ describe('ScheduleCalendarComponent', () => {
       id: 'sched-3',
       activityId: 'act-3',
       activityName: 'Funcional',
+      activityColorHex: undefined,
       roomId: 'room-1',
       roomName: 'Sala 1',
       instructorId: 'inst-1',
@@ -60,6 +63,7 @@ describe('ScheduleCalendarComponent', () => {
       id: 'sched-4',
       activityId: 'act-4',
       activityName: 'Pilates',
+      activityColorHex: '#8B5CF6',
       roomId: 'room-3',
       roomName: 'Sala 3',
       instructorId: 'inst-3',
@@ -115,13 +119,32 @@ describe('ScheduleCalendarComponent', () => {
     expect(visible.some(s => s.id === 'sched-4')).toBe(true);
   });
 
-  it('should calculate dynamic visible hour range based on visible schedules', () => {
-    // Para la semana del 16 de Marzo 2026:
-    // Visible schedules: sched-1 (09:00 - 10:00) y sched-2 (09:30 - 10:30)
-    // El rango calculado debe cubrir al menos desde las 9 hasta las 11
-    const range = component.hourRange();
-    expect(range.startHour).toBeLessThanOrEqual(9);
-    expect(range.endHour).toBeGreaterThanOrEqual(11);
+  it('should show only hours with scheduled activities by default and allow toggling to full hour range', () => {
+    // Por defecto showFullHourRange es false
+    expect(component.showFullHourRange()).toBe(false);
+
+    // En la semana del 16 de Marzo 2026:
+    // sched-1 (09:00 - 10:00) toca la hora 9
+    // sched-2 (09:30 - 10:30) toca las horas 9 y 10
+    // Solo deben listarse las horas 9 y 10 (no 7, 8, 11..22)
+    expect(component.hoursList()).toEqual([9, 10]);
+
+    // Si navegamos a Mayo 2026 donde también está sched-3 (18:00 - 19:30, horas 18 y 19):
+    component.setReferenceDate(new Date('2026-05-04T12:00:00Z'));
+    expect(component.hoursList()).toEqual([9, 10, 18, 19]);
+
+    // Al activar rango horario completo, muestra todas las horas del rango (7 a 22)
+    component.toggleHourRangeMode();
+    expect(component.showFullHourRange()).toBe(true);
+    expect(component.hoursList().length).toBeGreaterThan(10);
+    expect(component.hoursList()).toContain(7);
+    expect(component.hoursList()).toContain(14);
+    expect(component.hoursList()).toContain(22);
+
+    // Al volver a alternar, regresa al modo compacto solo con actividades
+    component.toggleHourRangeMode();
+    expect(component.showFullHourRange()).toBe(false);
+    expect(component.hoursList()).toEqual([9, 10, 18, 19]);
   });
 
   it('should default hour range to 7-22 when no schedules are visible', () => {
@@ -144,8 +167,9 @@ describe('ScheduleCalendarComponent', () => {
     expect(item2.durationMinutes).toBe(60);
     expect(item1.heightPx).toBe(item2.heightPx);
 
-    // sched-2 inicia 30 minutos más tarde que sched-1, su topPx debe ser mayor
-    expect(item2.topPx).toBeGreaterThan(item1.topPx);
+    // En modo compacto, la hora 9 es la primera (índice 0 -> topPx = 0), y 09:30 está a 30px
+    expect(item1.topPx).toBe(0);
+    expect(item2.topPx).toBe(30);
   });
 
   it('should partition overlapping schedules in the same day into subcolumns', () => {
@@ -161,14 +185,14 @@ describe('ScheduleCalendarComponent', () => {
     expect(item2.widthPercent).toBe(50);
   });
 
-  it('should assign a consistent color class based on activityId', () => {
-    const color1A = component.getActivityColorClass('act-1');
-    const color1B = component.getActivityColorClass('act-1');
-    const color2 = component.getActivityColorClass('act-2');
+  it('should use the configured activityColorHex for each schedule block and fallback to #06B6D4 when undefined', () => {
+    expect(component.getActivityColorHex(mockSchedules[0])).toBe('#EF4444');
+    expect(component.getActivityColorHex(mockSchedules[1])).toBe('#10B981');
+    expect(component.getActivityColorHex(mockSchedules[2])).toBe('#06B6D4');
 
-    expect(color1A).toBe(color1B); // Idéntica para el mismo activityId
-    expect(typeof color1A).toBe('string');
-    expect(color1A.length).toBeGreaterThan(0);
+    const style1 = component.getActivityBlockStyle(mockSchedules[0]);
+    expect(style1['borderLeftColor']).toBe('#EF4444');
+    expect(style1['backgroundColor']).toContain('239, 68, 68');
   });
 
   it('should emit scheduleSelected when clicking on a schedule block', () => {

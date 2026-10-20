@@ -17,6 +17,7 @@ describe('SchedulesManagementComponent', () => {
       id: 'sched-1',
       activityId: 'act-1',
       activityName: 'Spinning',
+      activityColorHex: '#EF4444',
       roomId: 'room-1',
       roomName: 'Sala 1',
       instructorId: 'inst-1',
@@ -32,6 +33,7 @@ describe('SchedulesManagementComponent', () => {
       id: 'sched-2',
       activityId: 'act-2',
       activityName: 'Yoga',
+      activityColorHex: '#10B981',
       roomId: 'room-2',
       roomName: 'Sala 2',
       instructorId: 'inst-2',
@@ -97,9 +99,13 @@ describe('SchedulesManagementComponent', () => {
     expect(gymApiSpy.getSchedules).not.toHaveBeenCalled();
   });
 
-  it('should filter by one or multiple activities and reset to all', () => {
+  it('should filter by one or multiple activities and reset to all, exposing activity colorHex', () => {
     expect(component.isAllActivitiesSelected()).toBe(true);
     expect(component.filteredSchedules().length).toBe(2);
+    expect(component.uniqueActivities()).toEqual([
+      { id: 'act-1', name: 'Spinning', colorHex: '#EF4444' },
+      { id: 'act-2', name: 'Yoga', colorHex: '#10B981' }
+    ]);
 
     // Filter by act-1
     component.toggleActivityFilter('act-1');
@@ -115,6 +121,34 @@ describe('SchedulesManagementComponent', () => {
     component.selectAllActivities();
     expect(component.isAllActivitiesSelected()).toBe(true);
     expect(component.filteredSchedules().length).toBe(2);
+  });
+
+  it('should filter by one or multiple rooms and combine with activity filter across calendar and cards views', () => {
+    expect(component.isAllRoomsSelected()).toBe(true);
+    expect(component.uniqueRooms()).toEqual([
+      { id: 'room-1', name: 'Sala 1' },
+      { id: 'room-2', name: 'Sala 2' }
+    ]);
+
+    // Filter by room-2
+    component.toggleRoomFilter('room-2');
+    expect(component.isAllRoomsSelected()).toBe(false);
+    expect(component.isRoomSelected('room-2')).toBe(true);
+    expect(component.filteredSchedules().map(s => s.id)).toEqual(['sched-2']);
+
+    // In cards view on Monday, only sched-2 is displayed
+    component.viewMode.set('cards');
+    component.selectedDay.set(1);
+    expect(component.displayedSchedules().map(s => s.id)).toEqual(['sched-2']);
+
+    // Combine with activity act-1 (disjoint with room-2) -> 0 results
+    component.toggleActivityFilter('act-1');
+    expect(component.filteredSchedules().length).toBe(0);
+
+    // Reset rooms to all -> sched-1 (which matches act-1) is visible
+    component.selectAllRooms();
+    expect(component.isAllRoomsSelected()).toBe(true);
+    expect(component.filteredSchedules().map(s => s.id)).toEqual(['sched-1']);
   });
 
   it('should open schedule detail modal when clicking a schedule in calendar and allow edit/delete from detail', () => {

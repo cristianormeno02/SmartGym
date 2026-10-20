@@ -1,0 +1,22 @@
+## 1. Backend — Validación de Secretario y Color de Actividad en Horarios
+
+- [x] 1.1 Agregar `string? ActivityColorHex = null` al final de `RecurringScheduleDto` (`backend/src/SmartGym.Application/Modules/Activities/Dtos/RecurringScheduleDtos.cs`) y mapear `s.Activity?.ColorHex` en `RecurringScheduleService.MapToDto` (`backend/src/SmartGym.Application/Modules/Activities/Services/RecurringScheduleService.cs`).
+- [x] 1.2 (TDD Red) Añadir pruebas unitarias en `backend/tests/SmartGym.Domain.UnitTests/Activities/` verificando que `CreateAsync`, `UpdateAsync` y `CreateBatchAsync` aceptan un secretario solo cuando tiene cuenta de usuario activa (`User.IsActive == true`) y rol `Secretary` activo, rechazan con `ArgumentException` personas sin usuario, con usuario inactivo o solo con rol `Administrator`, y que los DTOs de horarios retornan `ActivityColorHex` desde `Activity.ColorHex`.
+- [x] 1.3 (TDD Green) Actualizar `RecurringScheduleService.ValidateResourcesAsync` para incluir `.Include(p => p.User)` en la consulta del secretario y exigir persona activa + `User != null && User.IsActive` + rol `Secretary` activo (`pr.IsActive && pr.Role.Name == RoleType.Secretary.ToString()`), ejecutando `dotnet test` para verificar que todas las pruebas pasen.
+- [x] 2.1 Extender la interfaz `RecurringSchedule` en `frontend/src/app/core/models/gym.models.ts` con `activityColorHex?: string | null`.
+- [x] 2.2 (TDD Red) Actualizar las pruebas en `frontend/src/app/features/catalog/schedule-form-modal/schedule-form-modal.spec.ts` y `frontend/src/app/features/catalog/schedule-batch-modal/schedule-batch-modal.spec.ts` para verificar que la carga de secretarios consulta únicamente `role: 'Secretary'` con `status: PersonStatus.Active` (sin consultar `Administrator`), filtra personas con `hasUserAccount === false` y conserva en modo edición al secretario actual si ya estaba asignado.
+- [x] 2.3 (TDD Green) Actualizar `loadSecretaryCandidates` en `frontend/src/app/features/catalog/schedule-secretary-options.ts` para consultar solo `role: 'Secretary'` y filtrar por `p.hasUserAccount === true` (manteniendo el respaldo de edición para `currentSecretaryId`), verificando que las pruebas de ambos modales pasen.
+
+## 3. Frontend — Calendario de Horarios: Color de Actividad y Rango Horario Compacto vs. Completo
+
+- [x] 3.1 (TDD Red) Añadir pruebas unitarias en `frontend/src/app/features/catalog/schedule-calendar/schedule-calendar.spec.ts` para: (a) aplicar `activityColorHex` en el estilo de cada bloque del calendario (y color de respaldo `#06B6D4` cuando no esté definido); (b) mostrar por defecto (`showFullHourRange() === false`) únicamente las franjas horarias que tienen actividades programadas en la semana visible; (c) alternar a la vista de rango horario completo (`showFullHourRange() === true`) y regresar al modo compacto.
+- [x] 3.2 (TDD Green) Implementar en `ScheduleCalendarComponent` (`frontend/src/app/features/catalog/schedule-calendar/schedule-calendar.ts`) el renderizado de colores basado en `schedule.activityColorHex` y el control/toggle para alternar entre horarios con actividades (por defecto) y rango horario completo, verificando que las pruebas de `schedule-calendar.spec.ts` pasen.
+
+## 4. Frontend — Filtro por Sala y Colores de Actividad en Vistas de Horarios
+
+- [x] 4.1 (TDD Red) Actualizar las pruebas en `frontend/src/app/features/catalog/schedules-management/schedules-management.spec.ts` y `frontend/src/app/features/public/schedules/schedules.spec.ts` para cubrir: (a) filtro por sala (`Todas las salas` por defecto, selección de una o múltiples salas); (b) combinación de filtros de sala y actividad tanto en vista Calendario como en vista Tarjetas; (c) visualización del color de cada actividad en los chips de filtro y tarjetas.
+- [x] 4.2 (TDD Green) Implementar el filtro por sala (`uniqueRooms`, `selectedRoomIds`, `toggleRoomFilter`, `selectAllRooms`) y los indicadores de color de actividad (`activityColorHex`) en `SchedulesManagementComponent` (`frontend/src/app/features/catalog/schedules-management/schedules-management.ts`) y `SchedulesComponent` (`frontend/src/app/features/public/schedules/schedules.ts`), verificando que todas las pruebas unitarias pasen.
+
+## 5. Verificación Integral
+
+- [x] 5.1 Ejecutar la suite completa de pruebas de backend (`dotnet test` en `backend/`) y de frontend (`npm test -- --watch=false` y `npm run build` en `frontend/`) para confirmar que no existan regresiones ni errores de compilación.

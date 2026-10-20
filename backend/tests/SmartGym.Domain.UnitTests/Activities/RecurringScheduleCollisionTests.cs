@@ -40,7 +40,7 @@ public class RecurringScheduleCollisionTests
         _room1 = new Room { Id = Guid.NewGuid(), Name = "Sala A", Capacity = 20 };
         _room2 = new Room { Id = Guid.NewGuid(), Name = "Sala B", Capacity = 20 };
 
-        _activity = new Activity("FUNCIONAL", "Funcional", defaultCapacity: 20);
+        _activity = new Activity("FUNCIONAL", "Funcional", colorHex: "#FF5733", defaultCapacity: 20);
 
         _dbContext.AddRange(instructorRole, _instructor1, _instructor2, _room1, _room2, _activity);
         _dbContext.SaveChanges();
@@ -228,5 +228,110 @@ public class RecurringScheduleCollisionTests
             MondayDate, null, 20, IsActive: true);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => _scheduleService.UpdateAsync(created.Id, updateReq));
+    }
+
+    [Fact]
+    public async Task CreateAndQuerySchedule_ShouldReturnActivityColorHex()
+    {
+        var req = new CreateRecurringScheduleRequest(
+            _activity.Id, _room1.Id, _instructor1.Id, null,
+            DayOfWeek.Monday, new TimeOnly(18, 0), new TimeOnly(19, 0),
+            MondayDate, null, 20);
+
+        var created = await _scheduleService.CreateAsync(req);
+        Assert.Equal("#FF5733", created.ActivityColorHex);
+
+        var byId = await _scheduleService.GetByIdAsync(created.Id);
+        Assert.NotNull(byId);
+        Assert.Equal("#FF5733", byId.ActivityColorHex);
+
+        var all = await _scheduleService.GetAllAsync();
+        Assert.Single(all);
+        Assert.Equal("#FF5733", all[0].ActivityColorHex);
+    }
+
+    [Fact]
+    public async Task CreateSchedule_WhenSecretaryHasActiveUserAndSecretaryRole_ShouldSucceed()
+    {
+        var secretaryRole = new Role { Id = (int)RoleType.Secretary, Name = RoleType.Secretary.ToString(), Description = "Secretary" };
+        var secretary = Person.Create("Ana", "Secretaria", "ana@example.com");
+        secretary.AddRole(secretaryRole);
+        secretary.SetUser(new User { Id = Guid.NewGuid(), Username = "ana", IsActive = true });
+
+        _dbContext.AddRange(secretaryRole, secretary, secretary.User!);
+        await _dbContext.SaveChangesAsync();
+
+        var req = new CreateRecurringScheduleRequest(
+            _activity.Id, _room1.Id, _instructor1.Id, secretary.Id,
+            DayOfWeek.Monday, new TimeOnly(18, 0), new TimeOnly(19, 0),
+            MondayDate, null, 20);
+
+        var created = await _scheduleService.CreateAsync(req);
+        Assert.Equal(secretary.Id, created.SecretaryId);
+        Assert.Equal("Ana Secretaria", created.SecretaryName);
+    }
+
+    [Fact]
+    public async Task CreateAndUpdateSchedule_WhenSecretaryHasNoUserAccount_ShouldThrowArgumentException()
+    {
+        var secretaryRole = new Role { Id = (int)RoleType.Secretary, Name = RoleType.Secretary.ToString(), Description = "Secretary" };
+        var personWithoutUser = Person.Create("Pedro", "SinUsuario", "pedro@example.com");
+        personWithoutUser.AddRole(secretaryRole);
+
+        _dbContext.AddRange(secretaryRole, personWithoutUser);
+        await _dbContext.SaveChangesAsync();
+
+        var createReq = new CreateRecurringScheduleRequest(
+            _activity.Id, _room1.Id, _instructor1.Id, personWithoutUser.Id,
+            DayOfWeek.Monday, new TimeOnly(18, 0), new TimeOnly(19, 0),
+            MondayDate, null, 20);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => _scheduleService.CreateAsync(createReq));
+
+        var validSchedule = await _scheduleService.CreateAsync(createReq with { SecretaryId = null });
+        var updateReq = new UpdateRecurringScheduleRequest(
+            _room1.Id, _instructor1.Id, personWithoutUser.Id,
+            DayOfWeek.Monday, new TimeOnly(18, 0), new TimeOnly(19, 0),
+            MondayDate, null, 20, IsActive: true);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => _scheduleService.UpdateAsync(validSchedule.Id, updateReq));
+    }
+
+    [Fact]
+    public async Task CreateSchedule_WhenSecretaryUserIsInactive_ShouldThrowArgumentException()
+    {
+        var secretaryRole = new Role { Id = (int)RoleType.Secretary, Name = RoleType.Secretary.ToString(), Description = "Secretary" };
+        var secretary = Person.Create("Laura", "Inactiva", "laura@example.com");
+        secretary.AddRole(secretaryRole);
+        secretary.SetUser(new User { Id = Guid.NewGuid(), Username = "laura", IsActive = false });
+
+        _dbContext.AddRange(secretaryRole, secretary, secretary.User!);
+        await _dbContext.SaveChangesAsync();
+
+        var req = new CreateRecurringScheduleRequest(
+            _activity.Id, _room1.Id, _instructor1.Id, secretary.Id,
+            DayOfWeek.Monday, new TimeOnly(18, 0), new TimeOnly(19, 0),
+            MondayDate, null, 20);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => _scheduleService.CreateAsync(req));
+    }
+
+    [Fact]
+    public async Task CreateSchedule_WhenSecretaryOnlyHasAdministratorRole_ShouldThrowArgumentException()
+    {
+        var adminRole = new Role { Id = (int)RoleType.Administrator, Name = RoleType.Administrator.ToString(), Description = "Admin" };
+        var adminOnly = Person.Create("Admin", "Puro", "admin@example.com");
+        adminOnly.AddRole(adminRole);
+        adminOnly.SetUser(new User { Id = Guid.NewGuid(), Username = "admin", IsActive = true });
+
+        _dbContext.AddRange(adminRole, adminOnly, adminOnly.User!);
+        await _dbContext.SaveChangesAsync();
+
+        var req = new CreateRecurringScheduleRequest(
+            _activity.Id, _room1.Id, _instructor1.Id, adminOnly.Id,
+            DayOfWeek.Monday, new TimeOnly(18, 0), new TimeOnly(19, 0),
+            MondayDate, null, 20);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => _scheduleService.CreateAsync(req));
     }
 }

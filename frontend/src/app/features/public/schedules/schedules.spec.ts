@@ -20,6 +20,7 @@ describe('SchedulesComponent (Public with staff controls)', () => {
       id: 'sched-1',
       activityId: 'act-1',
       activityName: 'Spinning',
+      activityColorHex: '#EF4444',
       roomId: 'room-1',
       roomName: 'Sala 1',
       instructorId: 'inst-1',
@@ -35,6 +36,7 @@ describe('SchedulesComponent (Public with staff controls)', () => {
       id: 'sched-2',
       activityId: 'act-2',
       activityName: 'Yoga',
+      activityColorHex: '#10B981',
       roomId: 'room-2',
       roomName: 'Sala 2',
       instructorId: 'inst-2',
@@ -128,10 +130,14 @@ describe('SchedulesComponent (Public with staff controls)', () => {
     expect(gymApiSpy.getSchedules).not.toHaveBeenCalled();
   });
 
-  it('should filter schedules by selected activities and restore all', async () => {
+  it('should filter schedules by selected activities and restore all, exposing activity colorHex', async () => {
     await setupComponent(false);
     expect(component.isAllActivitiesSelected()).toBe(true);
     expect(component.filteredSchedules().length).toBe(2);
+    expect(component.uniqueActivities()).toEqual([
+      { id: 'act-1', name: 'Spinning', colorHex: '#EF4444' },
+      { id: 'act-2', name: 'Yoga', colorHex: '#10B981' }
+    ]);
 
     component.toggleActivityFilter('act-1');
     expect(component.isAllActivitiesSelected()).toBe(false);
@@ -139,6 +145,25 @@ describe('SchedulesComponent (Public with staff controls)', () => {
 
     component.selectAllActivities();
     expect(component.isAllActivitiesSelected()).toBe(true);
+    expect(component.filteredSchedules().length).toBe(2);
+  });
+
+  it('should filter schedules by selected rooms and combine with activity filter', async () => {
+    await setupComponent(false);
+    expect(component.isAllRoomsSelected()).toBe(true);
+    expect(component.uniqueRooms()).toEqual([
+      { id: 'room-1', name: 'Sala 1' },
+      { id: 'room-2', name: 'Sala 2' }
+    ]);
+
+    component.toggleRoomFilter('room-1');
+    expect(component.isAllRoomsSelected()).toBe(false);
+    expect(component.isRoomSelected('room-1')).toBe(true);
+    expect(component.filteredSchedules().map(s => s.id)).toEqual(['sched-1']);
+
+    // Deselecting the last room returns to all rooms
+    component.toggleRoomFilter('room-1');
+    expect(component.isAllRoomsSelected()).toBe(true);
     expect(component.filteredSchedules().length).toBe(2);
   });
 

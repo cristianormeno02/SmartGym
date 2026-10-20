@@ -17,7 +17,8 @@ public record RecurringScheduleDto(
     DateOnly? ValidTo,
     int? MaxCapacity,
     bool IsActive,
-    IReadOnlyList<Guid>? DivergentSessionIds = null
+    IReadOnlyList<Guid>? DivergentSessionIds = null,
+    string? ActivityColorHex = null
 );
 
 public record CreateRecurringScheduleRequest(

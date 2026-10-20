@@ -56,6 +56,33 @@ describe('ScheduleBatchModalComponent', () => {
     hasNextPage: false
   };
 
+  const mockSecretaries: PersonPagedResult<PersonSummary> = {
+    items: [
+      {
+        id: 'sec-1',
+        firstName: 'Sofía',
+        lastName: 'Martínez',
+        document: { type: DocumentType.Dni, number: '30111222', issuingCountry: 'AR', numberNormalized: '30111222' },
+        status: PersonStatus.Active,
+        hasUserAccount: true
+      },
+      {
+        id: 'sec-no-user',
+        firstName: 'Pedro',
+        lastName: 'SinUsuario',
+        document: { type: DocumentType.Dni, number: '30999888', issuingCountry: 'AR', numberNormalized: '30999888' },
+        status: PersonStatus.Active,
+        hasUserAccount: false
+      }
+    ],
+    pageNumber: 1,
+    pageSize: 100,
+    totalCount: 2,
+    totalPages: 1,
+    hasPreviousPage: false,
+    hasNextPage: false
+  };
+
   beforeEach(async () => {
     gymApiSpy = {
       getActivities: vi.fn().mockReturnValue(of({ items: mockActivities })),
@@ -64,7 +91,12 @@ describe('ScheduleBatchModalComponent', () => {
     };
 
     peopleServiceSpy = {
-      search: vi.fn().mockReturnValue(of(mockInstructors))
+      search: vi.fn().mockImplementation((params: any) => {
+        if (params?.role === 'Secretary') {
+          return of(mockSecretaries);
+        }
+        return of(mockInstructors);
+      })
     };
 
     await TestBed.configureTestingModule({
@@ -351,9 +383,11 @@ describe('ScheduleBatchModalComponent', () => {
   });
 
   describe('secretary', () => {
-    it('should load secretary options from people with Secretary and Administrator roles', () => {
+    it('should load secretary options only from active people with Secretary role and active user account (hasUserAccount === true)', () => {
       expect(peopleServiceSpy.search).toHaveBeenCalledWith(expect.objectContaining({ role: 'Secretary', status: PersonStatus.Active }));
-      expect(peopleServiceSpy.search).toHaveBeenCalledWith(expect.objectContaining({ role: 'Administrator', status: PersonStatus.Active }));
+      expect(peopleServiceSpy.search).not.toHaveBeenCalledWith(expect.objectContaining({ role: 'Administrator' }));
+      expect(component.secretaryOptions()).toEqual([{ id: 'sec-1', label: 'Martínez, Sofía' }]);
+      expect(component.secretaryOptions().some(o => o.id === 'sec-no-user')).toBe(false);
     });
 
     it('should send the selected secretary in the batch request', () => {
@@ -363,7 +397,7 @@ describe('ScheduleBatchModalComponent', () => {
         activityId: 'act-1',
         roomId: 'room-1',
         instructorId: 'inst-1',
-        secretaryId: 'inst-1',
+        secretaryId: 'sec-1',
         validFrom: '2026-03-01',
         maxCapacity: 20
       });
@@ -371,7 +405,7 @@ describe('ScheduleBatchModalComponent', () => {
 
       component.onSubmit();
 
-      expect(gymApiSpy.createBatchSchedules).toHaveBeenCalledWith(expect.objectContaining({ secretaryId: 'inst-1' }));
+      expect(gymApiSpy.createBatchSchedules).toHaveBeenCalledWith(expect.objectContaining({ secretaryId: 'sec-1' }));
     });
   });
 });

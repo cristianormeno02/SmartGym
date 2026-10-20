@@ -1,7 +1,7 @@
 import { Component, Input, Output, EventEmitter, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RecurringSchedule } from '../../../core/models/gym.models';
-import { WEEK_DAYS, getDayOfWeekName } from '../../../core/utils/catalog-mappings';
+import { WEEK_DAYS } from '../../../core/utils/catalog-mappings';
 
 export interface CalendarLayoutItem {
   schedule: RecurringSchedule;
@@ -22,29 +22,8 @@ export interface HourRange {
 }
 
 const HOUR_HEIGHT_PX = 60;
-
-const PALETTES = [
-  'bg-cyan-500/15 border-cyan-500/40 text-cyan-200 hover:bg-cyan-500/25',
-  'bg-emerald-500/15 border-emerald-500/40 text-emerald-200 hover:bg-emerald-500/25',
-  'bg-violet-500/15 border-violet-500/40 text-violet-200 hover:bg-violet-500/25',
-  'bg-amber-500/15 border-amber-500/40 text-amber-200 hover:bg-amber-500/25',
-  'bg-rose-500/15 border-rose-500/40 text-rose-200 hover:bg-rose-500/25',
-  'bg-sky-500/15 border-sky-500/40 text-sky-200 hover:bg-sky-500/25',
-  'bg-indigo-500/15 border-indigo-500/40 text-indigo-200 hover:bg-indigo-500/25',
-  'bg-fuchsia-500/15 border-fuchsia-500/40 text-fuchsia-200 hover:bg-fuchsia-500/25',
-  'bg-teal-500/15 border-teal-500/40 text-teal-200 hover:bg-teal-500/25',
-  'bg-orange-500/15 border-orange-500/40 text-orange-200 hover:bg-orange-500/25'
-];
-
-function hashString(str: string): number {
-  if (!str) return 0;
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
+const DEFAULT_ACTIVITY_COLOR_HEX = '#06B6D4';
+const HEX_COLOR_REGEX = /^#[0-9A-Fa-f]{6}$/;
 
 function timeToMinutes(time: string): number {
   if (!time) return 0;
@@ -55,6 +34,14 @@ function timeToMinutes(time: string): number {
 function toIsoDate(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.substring(0, 2), 16) || 6;
+  const g = parseInt(clean.substring(2, 4), 16) || 182;
+  const b = parseInt(clean.substring(4, 6), 16) || 212;
+  return { r, g, b };
 }
 
 @Component({
@@ -99,8 +86,21 @@ function toIsoDate(d: Date): string {
           </span>
         </div>
 
-        <!-- Info / Mobile Selector -->
-        <div class="flex items-center justify-between sm:justify-end gap-3 text-xs text-slate-400">
+        <!-- Info & Hour Range Mode Toggle -->
+        <div class="flex flex-wrap items-center justify-between sm:justify-end gap-3 text-xs text-slate-400">
+          <button
+            type="button"
+            (click)="toggleHourRangeMode()"
+            [class.bg-cyan-950/60]="!showFullHourRange()"
+            [class.text-cyan-300]="!showFullHourRange()"
+            [class.border-cyan-800/80]="!showFullHourRange()"
+            [class.bg-slate-800]="showFullHourRange()"
+            [class.text-slate-300]="showFullHourRange()"
+            [class.border-slate-700]="showFullHourRange()"
+            class="btn-toggle-hour-range px-3 py-1.5 rounded-xl text-xs font-semibold border transition hover:text-white"
+          >
+            {{ showFullHourRange() ? 'Mostrar solo horarios con actividad' : 'Ver todo el rango horario' }}
+          </button>
           <span>{{ visibleSchedules().length }} turnos vigentes esta semana</span>
         </div>
       </div>
@@ -130,8 +130,8 @@ function toIsoDate(d: Date): string {
           @for (item of mobileDayItems(); track item.schedule.id) {
             <div
               (click)="onSelectSchedule(item.schedule)"
-              class="p-4 rounded-xl border cursor-pointer transition shadow-md flex items-center justify-between"
-              [ngClass]="getActivityColorClass(item.schedule.activityId)"
+              class="p-4 rounded-xl border cursor-pointer transition shadow-md flex items-center justify-between text-slate-100"
+              [ngStyle]="getActivityBlockStyle(item.schedule)"
             >
               <div>
                 <div class="font-bold text-sm text-white">{{ item.schedule.activityName }}</div>
@@ -140,7 +140,7 @@ function toIsoDate(d: Date): string {
                 </div>
               </div>
               <div class="text-right">
-                <div class="font-mono font-bold text-sm">
+                <div class="font-mono font-bold text-sm text-white">
                   {{ item.schedule.startTime.substring(0, 5) }} - {{ item.schedule.endTime.substring(0, 5) }}
                 </div>
                 <div class="text-[11px] opacity-75 mt-0.5">
@@ -173,61 +173,67 @@ function toIsoDate(d: Date): string {
           }
         </div>
 
-        <!-- Grid Body with Fixed Hour Height -->
-        <div class="relative overflow-y-auto max-h-[700px] select-text">
-          <div class="grid grid-cols-8 relative" [style.height.px]="totalGridHeightPx()">
-            <!-- Column 1: Time Labels Axis -->
-            <div class="border-r border-slate-800/80 relative bg-slate-950/40">
-              @for (hour of hoursList(); track hour) {
-                <div
-                  class="absolute w-full text-right pr-2 text-[11px] font-mono text-slate-500 -translate-y-2 pointer-events-none"
-                  [style.top.px]="getHourTopPx(hour)"
-                >
-                  {{ formatHourLabel(hour) }}
-                </div>
-              }
-            </div>
-
-            <!-- Columns 2-8: Monday to Sunday -->
-            @for (day of weekDays; track day.day) {
-              <div class="border-r border-slate-800/80 last:border-r-0 relative bg-slate-900/20">
-                <!-- Hour Horizontal Grid Lines -->
+        @if (hoursList().length === 0) {
+          <div class="text-center py-12 text-xs text-slate-500">
+            No hay horarios con actividades programadas en esta semana.
+          </div>
+        } @else {
+          <!-- Grid Body with Fixed Hour Height -->
+          <div class="relative overflow-y-auto max-h-[700px] select-text">
+            <div class="grid grid-cols-8 relative" [style.height.px]="totalGridHeightPx()">
+              <!-- Column 1: Time Labels Axis -->
+              <div class="border-r border-slate-800/80 relative bg-slate-950/40">
                 @for (hour of hoursList(); track hour) {
                   <div
-                    class="absolute w-full border-t border-slate-800/40 pointer-events-none"
+                    class="absolute w-full text-right pr-2 text-[11px] font-mono text-slate-400 top-1 pointer-events-none"
                     [style.top.px]="getHourTopPx(hour)"
-                  ></div>
-                }
-
-                <!-- Scheduled Blocks -->
-                @for (item of dayLayouts().get(day.day) || []; track item.schedule.id) {
-                  <div
-                    (click)="onSelectSchedule(item.schedule)"
-                    class="absolute rounded-lg border p-1.5 overflow-hidden cursor-pointer transition shadow hover:shadow-lg hover:z-20 text-[11px] leading-tight flex flex-col justify-between"
-                    [ngClass]="getActivityColorClass(item.schedule.activityId)"
-                    [style.top.px]="item.topPx"
-                    [style.height.px]="item.heightPx"
-                    [style.left.%]="item.leftPercent"
-                    [style.width.%]="item.widthPercent"
-                    [title]="item.schedule.activityName + ' (' + item.schedule.roomName + ')'"
                   >
-                    <div>
-                      <div class="font-bold truncate text-white">
-                        {{ item.schedule.activityName }}
-                      </div>
-                      <div class="text-[10px] opacity-85 truncate">
-                        {{ item.schedule.roomName }}
-                      </div>
-                    </div>
-                    <div class="font-mono text-[10px] opacity-90 truncate mt-auto">
-                      {{ item.schedule.startTime.substring(0, 5) }} - {{ item.schedule.endTime.substring(0, 5) }}
-                    </div>
+                    {{ formatHourLabel(hour) }}
                   </div>
                 }
               </div>
-            }
+
+              <!-- Columns 2-8: Monday to Sunday -->
+              @for (day of weekDays; track day.day) {
+                <div class="border-r border-slate-800/80 last:border-r-0 relative bg-slate-900/20">
+                  <!-- Hour Horizontal Grid Lines -->
+                  @for (hour of hoursList(); track hour) {
+                    <div
+                      class="absolute w-full border-t border-slate-800/40 pointer-events-none"
+                      [style.top.px]="getHourTopPx(hour)"
+                    ></div>
+                  }
+
+                  <!-- Scheduled Blocks -->
+                  @for (item of dayLayouts().get(day.day) || []; track item.schedule.id) {
+                    <div
+                      (click)="onSelectSchedule(item.schedule)"
+                      class="calendar-schedule-block absolute rounded-lg border p-1.5 overflow-hidden cursor-pointer transition shadow hover:shadow-lg hover:z-20 text-[11px] leading-tight flex flex-col justify-between text-slate-100"
+                      [ngStyle]="getActivityBlockStyle(item.schedule)"
+                      [style.top.px]="item.topPx"
+                      [style.height.px]="item.heightPx"
+                      [style.left.%]="item.leftPercent"
+                      [style.width.%]="item.widthPercent"
+                      [title]="item.schedule.activityName + ' (' + item.schedule.roomName + ')'"
+                    >
+                      <div>
+                        <div class="font-bold truncate text-white">
+                          {{ item.schedule.activityName }}
+                        </div>
+                        <div class="text-[10px] opacity-90 truncate">
+                          {{ item.schedule.roomName }}
+                        </div>
+                      </div>
+                      <div class="font-mono text-[10px] opacity-95 truncate mt-auto">
+                        {{ item.schedule.startTime.substring(0, 5) }} - {{ item.schedule.endTime.substring(0, 5) }}
+                      </div>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
           </div>
-        </div>
+        }
       </div>
     </div>
   `
@@ -249,6 +255,7 @@ export class ScheduleCalendarComponent {
   readonly weekDays = WEEK_DAYS;
   readonly referenceDate = signal<Date>(new Date());
   readonly selectedMobileDay = signal<number>(1); // Lunes por defecto
+  readonly showFullHourRange = signal<boolean>(false);
 
   readonly weekRange = computed(() => {
     const ref = new Date(this.referenceDate());
@@ -316,23 +323,41 @@ export class ScheduleCalendarComponent {
     return { startHour, endHour };
   });
 
-  readonly hoursList = computed(() => {
-    const { startHour, endHour } = this.hourRange();
-    const list: number[] = [];
-    for (let h = startHour; h <= endHour; h++) {
-      list.push(h);
+  readonly hoursList = computed<number[]>(() => {
+    const visible = this.visibleSchedules();
+    if (this.showFullHourRange()) {
+      const { startHour, endHour } = this.hourRange();
+      const list: number[] = [];
+      for (let h = startHour; h <= endHour; h++) {
+        list.push(h);
+      }
+      return list;
     }
-    return list;
+
+    const activeHours = new Set<number>();
+    for (const s of visible) {
+      const startMin = timeToMinutes(s.startTime);
+      const endMin = timeToMinutes(s.endTime);
+      const firstHour = Math.floor(startMin / 60);
+      const lastHour = Math.max(firstHour, Math.ceil(endMin / 60) - 1);
+      for (let h = firstHour; h <= lastHour; h++) {
+        if (h >= 0 && h <= 23) {
+          activeHours.add(h);
+        }
+      }
+    }
+
+    return Array.from(activeHours).sort((a, b) => a - b);
   });
 
   readonly totalGridHeightPx = computed(() => {
-    const { startHour, endHour } = this.hourRange();
-    return (endHour - startHour) * HOUR_HEIGHT_PX;
+    const hours = this.hoursList();
+    return Math.max(1, hours.length) * HOUR_HEIGHT_PX;
   });
 
   readonly dayLayouts = computed(() => {
     const layouts = new Map<number, CalendarLayoutItem[]>();
-    const { startHour } = this.hourRange();
+    const hours = this.hoursList();
     const visible = this.visibleSchedules();
 
     for (const wd of this.weekDays) {
@@ -388,7 +413,9 @@ export class ScheduleCalendarComponent {
         for (let i = 0; i < cItems.length; i++) {
           const item = cItems[i];
           const colIndex = itemCols[i];
-          const topPx = ((item.startMin - startHour * 60) / 60) * HOUR_HEIGHT_PX;
+          const startHourOfItem = Math.floor(item.startMin / 60);
+          const hourIdx = Math.max(0, hours.indexOf(startHourOfItem));
+          const topPx = (hourIdx + (item.startMin % 60) / 60) * HOUR_HEIGHT_PX;
           const heightPx = Math.max(26, (item.duration / 60) * HOUR_HEIGHT_PX);
           const widthPercent = 100 / totalCols;
           const leftPercent = (colIndex / totalCols) * 100;
@@ -435,17 +462,35 @@ export class ScheduleCalendarComponent {
   }
 
   getHourTopPx(hour: number): number {
-    const { startHour } = this.hourRange();
-    return (hour - startHour) * HOUR_HEIGHT_PX;
+    const idx = this.hoursList().indexOf(hour);
+    return Math.max(0, idx) * HOUR_HEIGHT_PX;
   }
 
   formatHourLabel(hour: number): string {
     return `${String(hour).padStart(2, '0')}:00`;
   }
 
-  getActivityColorClass(activityId: string): string {
-    const idx = hashString(activityId) % PALETTES.length;
-    return PALETTES[idx];
+  getActivityColorHex(schedule: RecurringSchedule): string {
+    const raw = schedule.activityColorHex?.trim();
+    if (raw && HEX_COLOR_REGEX.test(raw)) {
+      return raw.toUpperCase();
+    }
+    return DEFAULT_ACTIVITY_COLOR_HEX;
+  }
+
+  getActivityBlockStyle(schedule: RecurringSchedule): Record<string, string> {
+    const hex = this.getActivityColorHex(schedule);
+    const { r, g, b } = hexToRgb(hex);
+    return {
+      backgroundColor: `rgba(${r}, ${g}, ${b}, 0.22)`,
+      borderColor: `rgba(${r}, ${g}, ${b}, 0.55)`,
+      borderLeftColor: hex,
+      borderLeftWidth: '4px'
+    };
+  }
+
+  toggleHourRangeMode(): void {
+    this.showFullHourRange.update(v => !v);
   }
 
   setReferenceDate(date: Date): void {

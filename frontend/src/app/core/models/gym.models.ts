@@ -175,6 +175,7 @@ export interface RecurringSchedule {
   id: string;
   activityId: string;
   activityName: string;
+  activityColorHex?: string | null;
   roomId: string;
   roomName: string;
   instructorId: string;
@@ -195,6 +196,7 @@ export interface ClassSession {
   recurringScheduleId?: string;
   activityId: string;
   activityName: string;
+  activityColorHex?: string | null;
   roomId: string;
   roomName: string;
   instructorId: string;
@@ -559,6 +561,7 @@ export interface Reservation {
   classSessionId: string;
   activityId?: string;
   activityName: string;
+  activityColorHex?: string | null;
   classDate: string;
   startTime: string;
   endTime: string;
@@ -612,6 +615,7 @@ export interface ReservableClassSession {
   classSessionId: string;
   activityId: string;
   activityName: string;
+  activityColorHex?: string | null;
   roomId: string;
   roomName: string;
   effectiveInstructorId: string;
