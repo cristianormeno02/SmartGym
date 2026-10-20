@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SmartGym.Application;
+using SmartGym.Application.Common;
 using SmartGym.Application.Common.Exceptions;
 using SmartGym.Application.Common.Interfaces;
 using SmartGym.Application.Modules.Operations;
@@ -120,7 +121,7 @@ public class PaymentGatewayConcurrencyIntegrationTests : IDisposable
         var membership = Membership.Create(
             studentId: student.Id,
             plan: plan,
-            startDate: DateOnly.FromDateTime(DateTime.UtcNow),
+            startDate: _provider.GetRequiredService<IGymCalendar>().Today,
             purchasedAtUtc: DateTime.UtcNow,
             originalPrice: price,
             discountAmount: 0m,

@@ -35,12 +35,18 @@ public class ReservationConcurrencyIntegrationTests : IDisposable
         _provider = BuildProvider();
     }
 
-    private ServiceProvider BuildProvider(Action<ReservationsOptions>? configureReservations = null)
+    private ServiceProvider BuildProvider(
+        Action<ReservationsOptions>? configureReservations = null,
+        TimeProvider? timeProvider = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddOptions();
         services.AddApplication();
+        if (timeProvider != null)
+        {
+            services.AddSingleton(timeProvider);
+        }
         services.AddScoped(sp => _fixture.CreateDbContext(sp));
         services.AddScoped<ISmartGymDbContext>(sp => sp.GetRequiredService<SmartGymDbContext>());
         if (configureReservations != null)
@@ -53,13 +59,36 @@ public class ReservationConcurrencyIntegrationTests : IDisposable
 
     public void Dispose() => _provider.Dispose();
 
+    /// <summary>Reloj del sistema desplazado un intervalo fijo: el tiempo sigue avanzando, pero en otra hora del día.</summary>
+    private sealed class ShiftedTimeProvider(TimeSpan offset) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => System.GetUtcNow() + offset;
+    }
+
+    /// <summary>
+    /// Reloj que ubica "ahora" a las 23:00 hora del gimnasio, cuando la fecha UTC ya es la del día siguiente
+    /// (con UTC-3, entre las 21:00 y las 24:00 locales).
+    /// </summary>
+    private ServiceProvider BuildLateEveningProvider()
+    {
+        var calendar = _provider.GetRequiredService<IGymCalendar>();
+        var lateEveningUtc = calendar.ToUtc(calendar.Today, new TimeOnly(23, 0));
+        var provider = BuildProvider(timeProvider: new ShiftedTimeProvider(lateEveningUtc - calendar.UtcNow));
+        var shifted = provider.GetRequiredService<IGymCalendar>();
+        Assert.NotEqual(DateOnly.FromDateTime(shifted.UtcNow), shifted.Today);
+        return provider;
+    }
+
     private sealed record Scenario(Guid SessionId, List<Guid> StudentIds, Dictionary<Guid, Guid> MembershipByStudent, Guid StaffUserId);
 
-    private async Task<Scenario> SeedAsync(int students, int capacity)
+    private async Task<Scenario> SeedAsync(int students, int capacity, ServiceProvider? provider = null)
     {
         await using var db = _fixture.CreateDbContext();
-        var now = DateTime.UtcNow;
-        var today = DateOnly.FromDateTime(now);
+        // Las fechas de vigencia salen del calendario del gimnasio, igual que en los servicios: con la fecha UTC,
+        // entre las 21:00 y las 24:00 locales la membresía "empezaría mañana" y no podría suspenderse.
+        var calendar = (provider ?? _provider).GetRequiredService<IGymCalendar>();
+        var now = calendar.UtcNow;
+        var today = calendar.Today;
         var suffix = Guid.NewGuid().ToString("N");
 
         var studentRole = await db.Roles.FirstOrDefaultAsync(r => r.Id == (int)RoleType.Student);
@@ -147,14 +176,15 @@ public class ReservationConcurrencyIntegrationTests : IDisposable
     }
 
     private Task<(ReservationDto? Result, Exception? Error)> ReserveAsync(
-        Guid sessionId, Guid studentId, bool allowWaitlist = true, string? idempotencyKey = null) =>
+        Guid sessionId, Guid studentId, bool allowWaitlist = true, string? idempotencyKey = null,
+        ServiceProvider? provider = null) =>
         RunInScopeAsync(sp => sp.GetRequiredService<IReservationService>().CreateReservationAsync(
             new CreateReservationRequest(sessionId, studentId, AllowWaitlist: allowWaitlist, IdempotencyKey: idempotencyKey),
-            Guid.Empty));
+            Guid.Empty), provider);
 
-    private Task<(ReservationDto? Result, Exception? Error)> CancelAsync(Guid reservationId) =>
+    private Task<(ReservationDto? Result, Exception? Error)> CancelAsync(Guid reservationId, ServiceProvider? provider = null) =>
         RunInScopeAsync(sp => sp.GetRequiredService<IReservationService>().CancelReservationAsync(
-            reservationId, new CancelReservationRequest("Cancelación concurrente"), Guid.Empty));
+            reservationId, new CancelReservationRequest("Cancelación concurrente"), Guid.Empty), provider);
 
     private static void AssertOnlyConflicts(IEnumerable<Exception?> errors)
     {
@@ -287,15 +317,25 @@ public class ReservationConcurrencyIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task ReservationCancellationRacingMembershipSuspension_DoesNotDeadlockAndEndsConsistent()
+    public Task ReservationCancellationRacingMembershipSuspension_DoesNotDeadlockAndEndsConsistent() =>
+        AssertCancellationRacingSuspensionEndsConsistentAsync(_provider);
+
+    [Fact]
+    public async Task ReservationCancellationRacingMembershipSuspension_LateEveningGymTime_EndsConsistent()
+    {
+        using var lateEvening = BuildLateEveningProvider();
+        await AssertCancellationRacingSuspensionEndsConsistentAsync(lateEvening);
+    }
+
+    private async Task AssertCancellationRacingSuspensionEndsConsistentAsync(ServiceProvider provider)
     {
         const int pairs = 4;
-        var scenario = await SeedAsync(students: pairs, capacity: 10);
+        var scenario = await SeedAsync(students: pairs, capacity: 10, provider);
 
         var reservations = new List<ReservationDto>();
         foreach (var studentId in scenario.StudentIds)
         {
-            reservations.Add((await ReserveAsync(scenario.SessionId, studentId)).Result!);
+            reservations.Add((await ReserveAsync(scenario.SessionId, studentId, provider: provider)).Result!);
         }
 
         // Por cada alumno compiten la cancelación de su reserva y la suspensión de su membresía
@@ -303,9 +343,9 @@ public class ReservationConcurrencyIntegrationTests : IDisposable
         foreach (var reservation in reservations)
         {
             var membershipId = scenario.MembershipByStudent[reservation.StudentId];
-            tasks.Add(CancelAsync(reservation.Id).ContinueWith(t => t.Result.Error));
+            tasks.Add(CancelAsync(reservation.Id, provider).ContinueWith(t => t.Result.Error));
             tasks.Add(RunInScopeAsync(sp => sp.GetRequiredService<IMembershipService>().SuspendAsync(
-                membershipId, new SuspendMembershipRequest("Suspensión concurrente"), scenario.StaffUserId))
+                membershipId, new SuspendMembershipRequest("Suspensión concurrente"), scenario.StaffUserId), provider)
                 .ContinueWith(t => t.Result.Error));
         }
 

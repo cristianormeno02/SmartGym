@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SmartGym.Application;
+using SmartGym.Application.Common;
 using SmartGym.Application.Common.Exceptions;
 using SmartGym.Application.Common.Interfaces;
 using SmartGym.Application.Modules.Operations;
@@ -47,7 +48,8 @@ public class PaymentConcurrencyIntegrationTests : IDisposable
     {
         await using var db = _fixture.CreateDbContext();
         var suffix = Guid.NewGuid().ToString("N");
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // Fecha del gimnasio, como en los servicios: la fecha UTC se adelanta un día entre las 21:00 y las 24:00 locales.
+        var today = _provider.GetRequiredService<IGymCalendar>().Today;
 
         var student = Person.Create("Alumno", "Pagos", $"pagos.{suffix}@test.com");
         db.People.Add(student);
