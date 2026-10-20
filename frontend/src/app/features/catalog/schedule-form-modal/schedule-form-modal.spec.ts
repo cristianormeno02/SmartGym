@@ -296,4 +296,55 @@ describe('ScheduleFormModalComponent', () => {
     expect(component.errorMessage()).toContain('Superposición de horario en la sala.');
     expect(emitSpy).not.toHaveBeenCalled();
   });
+
+  describe('secretary', () => {
+    it('should load secretary options from people with Secretary and Administrator roles', () => {
+      expect(peopleServiceSpy.search).toHaveBeenCalledWith(expect.objectContaining({ role: 'Secretary', status: PersonStatus.Active }));
+      expect(peopleServiceSpy.search).toHaveBeenCalledWith(expect.objectContaining({ role: 'Administrator', status: PersonStatus.Active }));
+      expect(component.secretaryOptions().some(o => o.id === 'inst-1')).toBe(true);
+    });
+
+    it('should send the selected secretary on create', () => {
+      gymApiSpy.createSchedule.mockReturnValue(of(mockSchedule));
+
+      component.form.patchValue({
+        activityId: 'act-1',
+        roomId: 'room-1',
+        instructorId: 'inst-1',
+        secretaryId: 'inst-1',
+        dayOfWeek: 1,
+        startTime: '10:00',
+        endTime: '11:00',
+        validFrom: '2026-03-01'
+      });
+
+      component.onSubmit();
+
+      expect(gymApiSpy.createSchedule).toHaveBeenCalledWith(expect.objectContaining({ secretaryId: 'inst-1' }));
+    });
+
+    it('in edit mode: should preserve the assigned secretary and keep it as an option even if not listed', () => {
+      gymApiSpy.updateSchedule.mockReturnValue(of(mockSchedule));
+      component.schedule = { ...mockSchedule, secretaryId: 'sec-legacy', secretaryName: 'Ana Pérez' };
+      component.ngOnChanges();
+
+      expect(component.form.get('secretaryId')?.value).toBe('sec-legacy');
+      expect(component.secretaryOptions()).toContainEqual({ id: 'sec-legacy', label: 'Ana Pérez' });
+
+      component.onSubmit();
+
+      expect(gymApiSpy.updateSchedule).toHaveBeenCalledWith('sched-1', expect.objectContaining({ secretaryId: 'sec-legacy' }));
+    });
+
+    it('in edit mode: should send null when the secretary is cleared', () => {
+      gymApiSpy.updateSchedule.mockReturnValue(of(mockSchedule));
+      component.schedule = { ...mockSchedule, secretaryId: 'sec-legacy', secretaryName: 'Ana Pérez' };
+      component.ngOnChanges();
+
+      component.form.patchValue({ secretaryId: '' });
+      component.onSubmit();
+
+      expect(gymApiSpy.updateSchedule).toHaveBeenCalledWith('sched-1', expect.objectContaining({ secretaryId: null }));
+    });
+  });
 });

@@ -6,6 +6,7 @@ import { PeopleService } from '../../../core/services/people.service';
 import { Activity, ActivityStatus, CreateRecurringScheduleRequest, RecurringSchedule, Room, UpdateRecurringScheduleRequest } from '../../../core/models/gym.models';
 import { PersonStatus, PersonSummary } from '../../../core/models/person.model';
 import { WEEK_DAYS, formatTimeForApi, formatTimeForInput, todayIsoDate } from '../../../core/utils/catalog-mappings';
+import { PersonOption, loadSecretaryCandidates, toPersonOptions } from '../schedule-secretary-options';
 
 function timeRangeValidator(group: AbstractControl): ValidationErrors | null {
   const start = group.get('startTime')?.value;
@@ -117,6 +118,22 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
               @if (form.get('instructorId')?.touched && form.get('instructorId')?.hasError('required')) {
                 <span class="text-xs text-rose-400 mt-1 block">El instructor es obligatorio.</span>
               }
+            </div>
+
+            <!-- Secretario -->
+            <div class="md:col-span-2">
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
+                Secretario (Opcional)
+              </label>
+              <select
+                formControlName="secretaryId"
+                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-cyan-500 transition"
+              >
+                <option value="">Sin secretario asignado</option>
+                @for (sec of secretaryOptions(); track sec.id) {
+                  <option [value]="sec.id">{{ sec.label }}</option>
+                }
+              </select>
             </div>
           </div>
 
@@ -274,6 +291,7 @@ export class ScheduleFormModalComponent implements OnInit, OnChanges {
   readonly activities = signal<Activity[]>([]);
   readonly rooms = signal<Room[]>([]);
   readonly instructors = signal<PersonSummary[]>([]);
+  readonly secretaries = signal<PersonSummary[]>([]);
   private readonly editingSchedule = signal<RecurringSchedule | null>(null);
 
   // Solo recursos activos, salvo los ya asignados al horario en edición (para no perder la selección actual)
@@ -291,10 +309,20 @@ export class ScheduleFormModalComponent implements OnInit, OnChanges {
     return options;
   });
 
+  readonly secretaryOptions = computed<PersonOption[]>(() => {
+    const current = this.editingSchedule();
+    const options = toPersonOptions(this.secretaries());
+    if (current?.secretaryId && !options.some(o => o.id === current.secretaryId)) {
+      options.push({ id: current.secretaryId, label: current.secretaryName || current.secretaryId });
+    }
+    return options;
+  });
+
   form: FormGroup = this.fb.group({
     activityId: ['', [Validators.required]],
     roomId: ['', [Validators.required]],
     instructorId: ['', [Validators.required]],
+    secretaryId: [''],
     dayOfWeek: [1, [Validators.required]],
     startTime: ['', [Validators.required]],
     endTime: ['', [Validators.required]],
@@ -335,6 +363,10 @@ export class ScheduleFormModalComponent implements OnInit, OnChanges {
         this.instructors.set(res.items || []);
       }
     });
+
+    loadSecretaryCandidates(this.peopleService).subscribe({
+      next: (people) => this.secretaries.set(people)
+    });
   }
 
   onActivityChange(): void {
@@ -359,6 +391,7 @@ export class ScheduleFormModalComponent implements OnInit, OnChanges {
         activityId: this.schedule.activityId,
         roomId: this.schedule.roomId,
         instructorId: this.schedule.instructorId,
+        secretaryId: this.schedule.secretaryId || '',
         dayOfWeek: this.schedule.dayOfWeek,
         startTime: formatTimeForInput(this.schedule.startTime),
         endTime: formatTimeForInput(this.schedule.endTime),
@@ -370,6 +403,7 @@ export class ScheduleFormModalComponent implements OnInit, OnChanges {
     } else {
       this.form.reset({
         activityId: this.preselectedActivityId || '',
+        secretaryId: '',
         dayOfWeek: 1,
         validFrom: todayIsoDate()
       });
@@ -394,7 +428,7 @@ export class ScheduleFormModalComponent implements OnInit, OnChanges {
       const updateReq: UpdateRecurringScheduleRequest = {
         roomId: val.roomId,
         instructorId: val.instructorId,
-        secretaryId: null,
+        secretaryId: val.secretaryId || null,
         dayOfWeek: Number(val.dayOfWeek),
         startTime: formatTimeForApi(val.startTime),
         endTime: formatTimeForApi(val.endTime),
@@ -420,7 +454,7 @@ export class ScheduleFormModalComponent implements OnInit, OnChanges {
         activityId: val.activityId,
         roomId: val.roomId,
         instructorId: val.instructorId,
-        secretaryId: null,
+        secretaryId: val.secretaryId || null,
         dayOfWeek: Number(val.dayOfWeek),
         startTime: formatTimeForApi(val.startTime),
         endTime: formatTimeForApi(val.endTime),

@@ -94,4 +94,15 @@ describe('ScheduleDetailModalComponent', () => {
 
     expect(closedSpy).toHaveBeenCalled();
   });
+
+  it('should display the secretary when the schedule has one', () => {
+    component.schedule = { ...mockSchedule, secretaryId: 'sec-1', secretaryName: 'Ana Pérez' };
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Ana Pérez');
+  });
+
+  it('should not render the secretary block when the schedule has none', () => {
+    expect(fixture.nativeElement.querySelector('.detail-secretary')).toBeNull();
+  });
 });

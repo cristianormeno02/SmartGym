@@ -188,4 +188,45 @@ public class RecurringScheduleCollisionTests
         Assert.NotNull(updated);
         Assert.Equal(25, updated.MaxCapacity);
     }
+
+    [Fact]
+    public async Task UpdateSchedule_WhenDeactivatingScheduleOfInactiveActivity_ShouldSucceed()
+    {
+        var created = await _scheduleService.CreateAsync(new CreateRecurringScheduleRequest(
+            _activity.Id, _room1.Id, _instructor1.Id, null,
+            DayOfWeek.Monday, new TimeOnly(18, 0), new TimeOnly(19, 0),
+            MondayDate, null, 20));
+
+        _activity.ChangeStatus(ActivityStatus.Inactive);
+        await _dbContext.SaveChangesAsync();
+
+        var updateReq = new UpdateRecurringScheduleRequest(
+            _room1.Id, _instructor1.Id, null,
+            DayOfWeek.Monday, new TimeOnly(18, 0), new TimeOnly(19, 0),
+            MondayDate, null, 20, IsActive: false);
+
+        var updated = await _scheduleService.UpdateAsync(created.Id, updateReq);
+
+        Assert.NotNull(updated);
+        Assert.False(updated.IsActive);
+    }
+
+    [Fact]
+    public async Task UpdateSchedule_WhenKeepingActiveScheduleOfInactiveActivity_ShouldThrowInvalidOperationException()
+    {
+        var created = await _scheduleService.CreateAsync(new CreateRecurringScheduleRequest(
+            _activity.Id, _room1.Id, _instructor1.Id, null,
+            DayOfWeek.Monday, new TimeOnly(18, 0), new TimeOnly(19, 0),
+            MondayDate, null, 20));
+
+        _activity.ChangeStatus(ActivityStatus.Inactive);
+        await _dbContext.SaveChangesAsync();
+
+        var updateReq = new UpdateRecurringScheduleRequest(
+            _room1.Id, _instructor1.Id, null,
+            DayOfWeek.Monday, new TimeOnly(18, 0), new TimeOnly(19, 0),
+            MondayDate, null, 20, IsActive: true);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _scheduleService.UpdateAsync(created.Id, updateReq));
+    }
 }

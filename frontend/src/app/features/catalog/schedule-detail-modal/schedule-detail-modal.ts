@@ -60,6 +60,13 @@ import { getDayOfWeekName } from '../../../core/utils/catalog-mappings';
                 <span class="text-xs text-slate-400 uppercase tracking-wider block font-medium">Docente / Instructor</span>
                 <span class="text-sm font-semibold text-white mt-0.5 block">{{ schedule.instructorName }}</span>
               </div>
+
+              @if (schedule.secretaryName) {
+                <div class="detail-secretary p-3.5 bg-slate-950/40 border border-slate-800/60 rounded-xl sm:col-span-2">
+                  <span class="text-xs text-slate-400 uppercase tracking-wider block font-medium">Secretario</span>
+                  <span class="text-sm font-semibold text-white mt-0.5 block">{{ schedule.secretaryName }}</span>
+                </div>
+              }
             </div>
 
             <!-- Cupo y Vigencia -->

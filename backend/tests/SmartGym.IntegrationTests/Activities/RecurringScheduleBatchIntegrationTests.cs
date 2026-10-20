@@ -47,7 +47,7 @@ public class RecurringScheduleBatchIntegrationTests : IDisposable
         }
     }
 
-    private async Task<ServiceProvider> BuildProviderAsync()
+    private async Task<ServiceProvider> BuildProviderAsync(Action<IServiceCollection>? configure = null)
     {
         var connectionString = await _fixture.CreateIsolatedDatabaseAsync(applyAllMigrations: true);
 
@@ -69,6 +69,7 @@ public class RecurringScheduleBatchIntegrationTests : IDisposable
         services.AddApplication();
         services.AddInfrastructure(configuration);
         services.AddScoped<ICurrentUserService>(_ => _currentUser);
+        configure?.Invoke(services);
 
         var provider = services.BuildServiceProvider();
         _providers.Add(provider);
@@ -171,5 +172,68 @@ public class RecurringScheduleBatchIntegrationTests : IDisposable
 
         Assert.Equal(initialSchedulesCount, finalSchedulesCount);
         Assert.Equal(initialSessionsCount, finalSessionsCount);
+    }
+
+    [Fact]
+    public async Task CreateBatch_WhenSyncFailsAfterSchedulesAreSaved_RollsBackSchedulesAndClassSessions()
+    {
+        var provider = await BuildProviderAsync(services =>
+        {
+            services.AddScoped<ClassSessionScheduleSync>();
+            services.AddScoped<IClassSessionScheduleSync>(sp =>
+                new FailOnSecondCallScheduleSync(sp.GetRequiredService<ClassSessionScheduleSync>()));
+        });
+
+        Guid activityId;
+        using (var scope = provider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SmartGymDbContext>();
+            var scheduleService = scope.ServiceProvider.GetRequiredService<IRecurringScheduleService>();
+
+            var (activity, room, instructor) = await SeedBaseEntitiesAsync(db);
+            activityId = activity.Id;
+
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var nextMonday = today.AddDays(((int)DayOfWeek.Monday - (int)today.DayOfWeek + 7) % 7);
+            if (nextMonday == today) nextMonday = today.AddDays(7);
+
+            var slots = new List<BatchScheduleSlotRequest>
+            {
+                new(new[] { DayOfWeek.Monday, DayOfWeek.Wednesday }, new TimeOnly(9, 30), new TimeOnly(10, 30))
+            };
+
+            var request = new CreateBatchRecurringScheduleRequest(
+                activity.Id, room.Id, instructor.Id, null,
+                nextMonday, nextMonday.AddDays(14), 20, slots);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => scheduleService.CreateBatchAsync(request));
+        }
+
+        using (var verifyScope = provider.CreateScope())
+        {
+            var db = verifyScope.ServiceProvider.GetRequiredService<SmartGymDbContext>();
+            Assert.Equal(0, await db.RecurringSchedules.CountAsync(s => s.ActivityId == activityId));
+            Assert.Equal(0, await db.ClassSessions.CountAsync(cs => cs.ActivityId == activityId));
+        }
+    }
+
+    // Delega en la sincronización real y falla en la segunda llamada, cuando el primer
+    // horario ya tiene sus clases guardadas dentro de la transacción del lote.
+    private sealed class FailOnSecondCallScheduleSync : IClassSessionScheduleSync
+    {
+        private readonly IClassSessionScheduleSync _inner;
+        private int _calls;
+
+        public FailOnSecondCallScheduleSync(IClassSessionScheduleSync inner) => _inner = inner;
+
+        public Task<List<Guid>> SyncAsync(Guid scheduleId, DateTime? nowUtc = null, CancellationToken cancellationToken = default)
+        {
+            if (++_calls == 2)
+            {
+                throw new InvalidOperationException("Fallo simulado durante la sincronización de clases.");
+            }
+
+            return _inner.SyncAsync(scheduleId, nowUtc, cancellationToken);
+        }
     }
 }

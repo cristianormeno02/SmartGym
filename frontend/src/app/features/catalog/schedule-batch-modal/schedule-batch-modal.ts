@@ -15,6 +15,7 @@ import {
 } from '../../../core/models/gym.models';
 import { PersonStatus, PersonSummary } from '../../../core/models/person.model';
 import { WEEK_DAYS, formatTimeForApi, formatTimeForInput, todayIsoDate, getDayOfWeekName } from '../../../core/utils/catalog-mappings';
+import { loadSecretaryCandidates, toPersonOptions } from '../schedule-secretary-options';
 
 export interface PreviewSlotItem {
   dayOfWeek: number;
@@ -136,8 +137,8 @@ function batchFormValidator(control: AbstractControl): ValidationErrors | null {
         }
 
         <form [formGroup]="form" (ngSubmit)="onSubmit()" class="space-y-6">
-          <!-- Actividad, Sala e Instructor Grid -->
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <!-- Actividad, Sala, Instructor y Secretario Grid -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <!-- Actividad -->
             <div>
               <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
@@ -194,6 +195,22 @@ function batchFormValidator(control: AbstractControl): ValidationErrors | null {
               @if (form.get('instructorId')?.touched && form.get('instructorId')?.hasError('required')) {
                 <span class="text-xs text-rose-400 mt-1 block">El instructor es obligatorio.</span>
               }
+            </div>
+
+            <!-- Secretario -->
+            <div>
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
+                Secretario (Opcional)
+              </label>
+              <select
+                formControlName="secretaryId"
+                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-cyan-500 transition text-sm"
+              >
+                <option value="">Sin secretario asignado</option>
+                @for (sec of secretaryOptions(); track sec.id) {
+                  <option [value]="sec.id">{{ sec.label }}</option>
+                }
+              </select>
             </div>
           </div>
 
@@ -460,6 +477,7 @@ export class ScheduleBatchModalComponent implements OnInit {
   readonly activities = signal<Activity[]>([]);
   readonly rooms = signal<Room[]>([]);
   readonly instructors = signal<PersonSummary[]>([]);
+  readonly secretaries = signal<PersonSummary[]>([]);
 
   readonly roomOptions = computed(() => {
     return this.rooms().filter(r => r.isActive);
@@ -469,12 +487,15 @@ export class ScheduleBatchModalComponent implements OnInit {
     return this.instructors().map(i => ({ id: i.id, label: `${i.lastName}, ${i.firstName}` }));
   });
 
+  readonly secretaryOptions = computed(() => toPersonOptions(this.secretaries()));
+
   readonly formRevision = signal(0);
 
   form: FormGroup = this.fb.group({
     activityId: ['', [Validators.required]],
     roomId: ['', [Validators.required]],
     instructorId: ['', [Validators.required]],
+    secretaryId: [''],
     validFrom: [todayIsoDate(), [Validators.required]],
     validTo: [''],
     maxCapacity: [null, [Validators.min(1)]],
@@ -559,6 +580,10 @@ export class ScheduleBatchModalComponent implements OnInit {
       next: (res) => {
         this.instructors.set(res.items || []);
       }
+    });
+
+    loadSecretaryCandidates(this.peopleService).subscribe({
+      next: (people) => this.secretaries.set(people)
     });
   }
 
@@ -690,7 +715,7 @@ export class ScheduleBatchModalComponent implements OnInit {
       activityId: val.activityId,
       roomId: val.roomId,
       instructorId: val.instructorId,
-      secretaryId: null,
+      secretaryId: val.secretaryId || null,
       validFrom: val.validFrom,
       validTo: val.validTo || null,
       maxCapacity: val.maxCapacity ? Number(val.maxCapacity) : null,

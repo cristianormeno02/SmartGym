@@ -66,7 +66,8 @@ public class RecurringScheduleService : IRecurringScheduleService
 
     public async Task<RecurringScheduleDto> CreateAsync(CreateRecurringScheduleRequest request, CancellationToken cancellationToken = default)
     {
-        var entities = await ValidateEntitiesAsync(request.ActivityId, request.RoomId, request.InstructorId, request.SecretaryId, cancellationToken);
+        var activity = await GetActiveActivityAsync(request.ActivityId, cancellationToken);
+        var entities = await ValidateResourcesAsync(request.RoomId, request.InstructorId, request.SecretaryId, cancellationToken);
 
         var conflicts = await DetectCollisionsAsync(Guid.Empty, request.RoomId, request.InstructorId, request.DayOfWeek, request.StartTime, request.EndTime, request.ValidFrom, request.ValidTo, cancellationToken);
         if (conflicts.Count > 0)
@@ -85,7 +86,7 @@ public class RecurringScheduleService : IRecurringScheduleService
             InstructorId = request.InstructorId,
             SecretaryId = request.SecretaryId,
             DayOfWeek = request.DayOfWeek,
-            MaxCapacity = entities.Activity.ResolveCapacity(request.MaxCapacity),
+            MaxCapacity = activity.ResolveCapacity(request.MaxCapacity),
             CreatedAtUtc = DateTime.UtcNow,
             IsActive = true
         };
@@ -96,7 +97,7 @@ public class RecurringScheduleService : IRecurringScheduleService
         _dbContext.RecurringSchedules.Add(schedule);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        schedule.Activity = entities.Activity;
+        schedule.Activity = activity;
         schedule.Room = entities.Room;
         schedule.Instructor = entities.Instructor;
         schedule.Secretary = entities.Secretary;
@@ -137,8 +138,9 @@ public class RecurringScheduleService : IRecurringScheduleService
             }
         }
 
-        var entities = await ValidateEntitiesAsync(request.ActivityId, request.RoomId, request.InstructorId, request.SecretaryId, cancellationToken);
-        var resolvedCapacity = entities.Activity.ResolveCapacity(request.MaxCapacity);
+        var activity = await GetActiveActivityAsync(request.ActivityId, cancellationToken);
+        var entities = await ValidateResourcesAsync(request.RoomId, request.InstructorId, request.SecretaryId, cancellationToken);
+        var resolvedCapacity = activity.ResolveCapacity(request.MaxCapacity);
 
         var expandedTuples = new List<(DayOfWeek Day, TimeOnly StartTime, TimeOnly EndTime)>();
         foreach (var slot in request.Slots)
@@ -174,7 +176,7 @@ public class RecurringScheduleService : IRecurringScheduleService
                         EndTime: b.EndTime,
                         Kind: ScheduleConflictKind.WithinBatch,
                         ConflictingScheduleId: null,
-                        ConflictingActivityName: entities.Activity.Name,
+                        ConflictingActivityName: activity.Name,
                         ConflictingStartTime: a.StartTime,
                         ConflictingEndTime: a.EndTime
                     ));
@@ -262,7 +264,7 @@ public class RecurringScheduleService : IRecurringScheduleService
             schedule.SetTimeSlot(t.StartTime, t.EndTime);
             schedule.SetValidityPeriod(request.ValidFrom, request.ValidTo);
 
-            schedule.Activity = entities.Activity;
+            schedule.Activity = activity;
             schedule.Room = entities.Room;
             schedule.Instructor = entities.Instructor;
             schedule.Secretary = entities.Secretary;
@@ -306,7 +308,7 @@ public class RecurringScheduleService : IRecurringScheduleService
 
         var resolvedCapacity = schedule.Activity.ResolveCapacity(request.MaxCapacity);
 
-        var entities = await ValidateEntitiesAsync(schedule.ActivityId, request.RoomId, request.InstructorId, request.SecretaryId, cancellationToken);
+        var entities = await ValidateResourcesAsync(request.RoomId, request.InstructorId, request.SecretaryId, cancellationToken);
 
         if (request.IsActive)
         {
@@ -359,19 +361,13 @@ public class RecurringScheduleService : IRecurringScheduleService
         return true;
     }
 
-    private record ValidatedScheduleEntities(
-        Activity Activity,
+    private record ValidatedScheduleResources(
         Room Room,
         Person Instructor,
         Person? Secretary
     );
 
-    private async Task<ValidatedScheduleEntities> ValidateEntitiesAsync(
-        Guid activityId,
-        Guid roomId,
-        Guid instructorId,
-        Guid? secretaryId,
-        CancellationToken cancellationToken)
+    private async Task<Activity> GetActiveActivityAsync(Guid activityId, CancellationToken cancellationToken)
     {
         var activity = await _dbContext.Activities.FirstOrDefaultAsync(a => a.Id == activityId && a.IsActive, cancellationToken);
         if (activity == null)
@@ -379,6 +375,15 @@ public class RecurringScheduleService : IRecurringScheduleService
             throw new ArgumentException("La actividad especificada no existe o no está activa.");
         }
 
+        return activity;
+    }
+
+    private async Task<ValidatedScheduleResources> ValidateResourcesAsync(
+        Guid roomId,
+        Guid instructorId,
+        Guid? secretaryId,
+        CancellationToken cancellationToken)
+    {
         var room = await _dbContext.Rooms.FirstOrDefaultAsync(r => r.Id == roomId && r.IsActive, cancellationToken);
         if (room == null)
         {
@@ -409,7 +414,7 @@ public class RecurringScheduleService : IRecurringScheduleService
             }
         }
 
-        return new ValidatedScheduleEntities(activity, room, instructor, secretary);
+        return new ValidatedScheduleResources(room, instructor, secretary);
     }
 
     private async Task<List<ScheduleConflictDto>> DetectCollisionsAsync(
@@ -470,34 +475,6 @@ public class RecurringScheduleService : IRecurringScheduleService
         }
 
         return conflicts;
-    }
-
-    private async Task<bool> HasRoomCollisionAsync(
-        Guid currentId,
-        Guid roomId,
-        DayOfWeek dayOfWeek,
-        TimeOnly startTime,
-        TimeOnly endTime,
-        DateOnly validFrom,
-        DateOnly? validTo,
-        CancellationToken cancellationToken)
-    {
-        var conflicts = await DetectCollisionsAsync(currentId, roomId, Guid.Empty, dayOfWeek, startTime, endTime, validFrom, validTo, cancellationToken);
-        return conflicts.Any(c => c.Kind == ScheduleConflictKind.Room);
-    }
-
-    private async Task<bool> HasInstructorCollisionAsync(
-        Guid currentId,
-        Guid instructorId,
-        DayOfWeek dayOfWeek,
-        TimeOnly startTime,
-        TimeOnly endTime,
-        DateOnly validFrom,
-        DateOnly? validTo,
-        CancellationToken cancellationToken)
-    {
-        var conflicts = await DetectCollisionsAsync(currentId, Guid.Empty, instructorId, dayOfWeek, startTime, endTime, validFrom, validTo, cancellationToken);
-        return conflicts.Any(c => c.Kind == ScheduleConflictKind.Instructor);
     }
 
     private static RecurringScheduleDto MapToDto(RecurringSchedule s, IReadOnlyList<Guid>? divergentSessionIds = null) =>

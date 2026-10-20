@@ -179,6 +179,8 @@ export interface RecurringSchedule {
   roomName: string;
   instructorId: string;
   instructorName: string;
+  secretaryId?: string | null;
+  secretaryName?: string | null;
   dayOfWeek: number;
   startTime: string;
   endTime: string;

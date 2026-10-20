@@ -349,4 +349,29 @@ describe('ScheduleBatchModalComponent', () => {
     component.onCancel();
     expect(cancelSpy).toHaveBeenCalled();
   });
+
+  describe('secretary', () => {
+    it('should load secretary options from people with Secretary and Administrator roles', () => {
+      expect(peopleServiceSpy.search).toHaveBeenCalledWith(expect.objectContaining({ role: 'Secretary', status: PersonStatus.Active }));
+      expect(peopleServiceSpy.search).toHaveBeenCalledWith(expect.objectContaining({ role: 'Administrator', status: PersonStatus.Active }));
+    });
+
+    it('should send the selected secretary in the batch request', () => {
+      gymApiSpy.createBatchSchedules.mockReturnValue(of([]));
+
+      component.form.patchValue({
+        activityId: 'act-1',
+        roomId: 'room-1',
+        instructorId: 'inst-1',
+        secretaryId: 'inst-1',
+        validFrom: '2026-03-01',
+        maxCapacity: 20
+      });
+      component.slotGroups.at(0).patchValue({ days: [1], startTime: '09:30', endTime: '10:30' });
+
+      component.onSubmit();
+
+      expect(gymApiSpy.createBatchSchedules).toHaveBeenCalledWith(expect.objectContaining({ secretaryId: 'inst-1' }));
+    });
+  });
 });
