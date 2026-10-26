@@ -7,8 +7,10 @@ import { PersonDetailComponent } from './person-detail';
 import { PeopleService } from '../../core/services/people.service';
 import { AuthService } from '../../core/services/auth.service';
 import { UserManagementService } from '../../core/services/user-management.service';
+import { GymApiService } from '../../core/services/gym-api.service';
 import { PersonDetail, PersonStatus, DocumentType } from '../../core/models/person.model';
 import { UserAccountDto } from '../../core/models/user-management.models';
+import { Membership, MembershipDetail, MembershipStatus } from '../../core/models/gym.models';
 
 describe('PersonDetailComponent', () => {
   let component: PersonDetailComponent;
@@ -16,6 +18,7 @@ describe('PersonDetailComponent', () => {
   let mockPeopleService: any;
   let mockAuthService: any;
   let mockUserManagementService: any;
+  let mockGymApiService: any;
 
   const mockPerson: PersonDetail = {
     id: 'test-person-id',
@@ -36,8 +39,26 @@ describe('PersonDetailComponent', () => {
     username: 'martin@example.com',
     isActive: true,
     lastLoginUtc: '2026-10-14T10:00:00Z',
-    roles: ['Administrator', 'Secretary']
+    roles: ['Administrator', 'Secretary', 'Student']
   };
+
+  const mockMemberships: Membership[] = [
+    {
+      id: 'mem-1',
+      studentId: 'test-person-id',
+      studentName: 'Martín López',
+      membershipPlanId: 'plan-1',
+      membershipPlanName: 'Pase Libre Full',
+      startDate: '2026-10-01',
+      endDate: '2026-10-30',
+      totalCredits: 0,
+      availableCredits: 0,
+      isUnlimited: true,
+      status: MembershipStatus.Active,
+      isValidToday: true,
+      purchasePrice: 35000
+    }
+  ];
 
   beforeEach(async () => {
     mockPeopleService = {
@@ -50,6 +71,7 @@ describe('PersonDetailComponent', () => {
 
     mockAuthService = {
       isAdmin: signal(false),
+      isStaff: signal(true),
       currentUser: signal({ userId: 'admin-user-id', personId: 'admin-person-id', email: 'admin@gym.com', roles: ['Administrator'] })
     };
 
@@ -61,6 +83,12 @@ describe('PersonDetailComponent', () => {
       resetPassword: vi.fn().mockReturnValue(of(undefined))
     };
 
+    mockGymApiService = {
+      getStudentMemberships: vi.fn().mockReturnValue(of(mockMemberships)),
+      getMembershipPlans: vi.fn().mockReturnValue(of([])),
+      assignMembership: vi.fn()
+    };
+
     await TestBed.configureTestingModule({
       imports: [PersonDetailComponent],
       providers: [
@@ -68,6 +96,7 @@ describe('PersonDetailComponent', () => {
         { provide: PeopleService, useValue: mockPeopleService },
         { provide: AuthService, useValue: mockAuthService },
         { provide: UserManagementService, useValue: mockUserManagementService },
+        { provide: GymApiService, useValue: mockGymApiService },
         {
           provide: ActivatedRoute,
           useValue: {
@@ -221,13 +250,14 @@ describe('PersonDetailComponent', () => {
       expect(component.manageRoleIds[1]).toBe(true); // Administrator
       expect(component.manageRoleIds[2]).toBe(true); // Secretary
       expect(component.manageRoleIds[3]).toBe(false); // Instructor
-      expect(component.manageRoleIds[4]).toBe(false); // Student
+      expect(component.manageRoleIds[4]).toBe(true); // Student
     });
 
     it('should submit role updates and close modal on success', () => {
       component.openRolesModal();
       component.manageRoleIds[2] = false;
       component.manageRoleIds[3] = true;
+      component.manageRoleIds[4] = false;
 
       component.submitUpdateRoles();
 
@@ -303,6 +333,79 @@ describe('PersonDetailComponent', () => {
 
       expect(component.showStatusAccountModal()).toBe(true);
       expect(component.statusAccountError()).toContain('último administrador');
+    });
+  });
+
+  describe('Student Memberships section', () => {
+    it('should load and display student memberships on init', () => {
+      expect(mockGymApiService.getStudentMemberships).toHaveBeenCalledWith('test-person-id');
+      expect(component.memberships().length).toBe(1);
+
+      const card = fixture.nativeElement.querySelector('[data-testid="student-memberships-card"]');
+      expect(card).not.toBeNull();
+      expect(card.textContent).toContain('Membresías del Alumno');
+      expect(card.textContent).toContain('Pase Libre Full');
+      expect(card.textContent).toContain('Activa');
+      expect(card.textContent).toContain('2026-10-01');
+      expect(card.textContent).toContain('2026-10-30');
+
+      const assignBtn = fixture.nativeElement.querySelector('[data-testid="btn-assign-membership"]');
+      expect(assignBtn).not.toBeNull();
+      expect(assignBtn.disabled).toBe(false);
+    });
+
+    it('should disable assign membership button and show warning when person is not ACTIVE', () => {
+      component.person.set({ ...mockPerson, status: PersonStatus.Blocked });
+      fixture.detectChanges();
+
+      const assignBtn = fixture.nativeElement.querySelector('[data-testid="btn-assign-membership"]') as HTMLButtonElement;
+      expect(assignBtn.disabled).toBe(true);
+
+      const warning = fixture.nativeElement.querySelector('[data-testid="inactive-person-membership-warning"]');
+      expect(warning).not.toBeNull();
+    });
+
+    it('should open AssignMembershipModalComponent when clicking + Asignar Membresía', () => {
+      const assignBtn = fixture.nativeElement.querySelector('[data-testid="btn-assign-membership"]') as HTMLButtonElement;
+      assignBtn.click();
+      fixture.detectChanges();
+
+      expect(component.showAssignMembershipModal()).toBe(true);
+      const modal = fixture.nativeElement.querySelector('app-assign-membership-modal');
+      expect(modal).not.toBeNull();
+    });
+
+    it('should close modal, display success feedback, and reload memberships when assignment completes', () => {
+      component.openAssignMembershipModal();
+      expect(component.showAssignMembershipModal()).toBe(true);
+
+      const newMembershipDetail: MembershipDetail = {
+        id: 'mem-2',
+        studentId: 'test-person-id',
+        studentName: 'Martín López',
+        membershipPlanId: 'plan-1',
+        membershipPlanName: 'Pase Libre Full',
+        startDate: '2026-10-25',
+        endDate: '2026-11-23',
+        totalCredits: 0,
+        availableCredits: 0,
+        isUnlimited: true,
+        status: MembershipStatus.Active,
+        isValidToday: true,
+        allowedActivityIds: [],
+        payments: [],
+        suspensions: [],
+        statusHistory: []
+      };
+
+      mockGymApiService.getStudentMemberships.mockClear();
+      component.onMembershipAssigned(newMembershipDetail);
+      fixture.detectChanges();
+
+      expect(component.showAssignMembershipModal()).toBe(false);
+      expect(component.feedbackSuccess()).toBe(true);
+      expect(component.feedback()).toContain('Membresía asignada exitosamente');
+      expect(mockGymApiService.getStudentMemberships).toHaveBeenCalledWith('test-person-id');
     });
   });
 

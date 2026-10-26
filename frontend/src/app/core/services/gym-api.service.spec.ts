@@ -14,7 +14,9 @@ import {
   CreateBatchRecurringScheduleRequest,
   UpdateRecurringScheduleRequest,
   CreateMembershipPlanRequest,
-  UpdateMembershipPlanRequest
+  UpdateMembershipPlanRequest,
+  AssignMembershipRequest,
+  MembershipStatus
 } from '../models/gym.models';
 
 describe('GymApiService - Catalog Management', () => {
@@ -255,6 +257,47 @@ describe('GymApiService - Catalog Management', () => {
       const req = httpMock.expectOne(`${apiUrl}/membershipplans/p1`);
       expect(req.request.method).toBe('DELETE');
       req.flush(null, { status: 204, statusText: 'No Content' });
+    });
+  });
+
+  describe('Memberships', () => {
+    it('assignMembership should send POST to /memberships/assign with request body and return MembershipDetail', () => {
+      const request: AssignMembershipRequest = {
+        studentId: 'student-123',
+        membershipPlanId: 'plan-456',
+        startDate: '2026-10-25'
+      };
+
+      let result: any;
+      service.assignMembership(request).subscribe((res) => {
+        result = res;
+      });
+
+      const req = httpMock.expectOne(`${apiUrl}/memberships/assign`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(request);
+
+      const mockDetail = {
+        id: 'mem-789',
+        studentId: 'student-123',
+        studentName: 'Martín López',
+        membershipPlanId: 'plan-456',
+        membershipPlanName: 'Pase Libre Full',
+        startDate: '2026-10-25',
+        endDate: '2026-11-23',
+        totalCredits: 0,
+        availableCredits: 0,
+        isUnlimited: true,
+        status: MembershipStatus.Active,
+        isValidToday: true,
+        allowedActivityIds: [],
+        payments: [],
+        suspensions: [],
+        statusHistory: []
+      };
+      req.flush(mockDetail);
+
+      expect(result).toEqual(mockDetail);
     });
   });
 });

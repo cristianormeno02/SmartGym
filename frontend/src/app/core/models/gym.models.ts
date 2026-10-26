@@ -954,3 +954,10 @@ export interface AdminUserOverview {
   isActive: boolean;
   roles: string[];
 }
+
+
+export interface AssignMembershipRequest {
+  studentId: string;
+  membershipPlanId: string;
+  startDate?: string;
+}

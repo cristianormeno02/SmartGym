@@ -5,7 +5,11 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { PeopleService } from '../../core/services/people.service';
 import { AuthService } from '../../core/services/auth.service';
 import { UserManagementService } from '../../core/services/user-management.service';
+import { GymApiService } from '../../core/services/gym-api.service';
 import { UserAccountDto, ROLE_DEFINITIONS } from '../../core/models/user-management.models';
+import { Membership, MembershipDetail, MembershipStatus } from '../../core/models/gym.models';
+import { AssignMembershipModalComponent } from '../catalog/assign-membership-modal/assign-membership-modal';
+import { MoneyAmountPipe } from '../../shared/pipes/money-amount.pipe';
 import {
   PersonDetail,
   PersonStatus,
@@ -20,7 +24,7 @@ import { apiErrorMessage } from '../../core/utils/api-error';
 @Component({
   selector: 'app-person-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, AssignMembershipModalComponent, MoneyAmountPipe],
   template: `
     <div class="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8">
       <div class="max-w-5xl mx-auto space-y-6">
@@ -260,6 +264,74 @@ import { apiErrorMessage } from '../../core/utils/api-error';
               }
             </div>
           }
+
+          <!-- Card: Membresías del Alumno -->
+          <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4" data-testid="student-memberships-card">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800/80 pb-4">
+              <div>
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                  <span class="text-xl">💳</span> Membresías del Alumno
+                </h3>
+                <p class="text-xs text-slate-400 mt-0.5">
+                  Historial de planes contratados, estado de vigencia y asignación directa de membresías.
+                </p>
+              </div>
+
+              <div>
+                <button (click)="openAssignMembershipModal()"
+                        data-testid="btn-assign-membership"
+                        [disabled]="p.status !== PersonStatus.Active"
+                        [title]="p.status !== PersonStatus.Active ? 'Solo se pueden asignar membresías a personas en estado ACTIVA' : 'Asignar plan de membresía'"
+                        class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition shadow">
+                  + Asignar Membresía
+                </button>
+              </div>
+            </div>
+
+            @if (p.status !== PersonStatus.Active) {
+              <div class="p-3 bg-amber-950/40 border border-amber-800/60 text-amber-300 rounded-xl text-xs font-medium" data-testid="inactive-person-membership-warning">
+                ⚠️ Solo se pueden asignar nuevas membresías a personas que se encuentren en estado <strong>ACTIVA</strong>.
+              </div>
+            }
+
+            @if (isLoadingMemberships()) {
+              <div class="py-4 text-xs text-slate-400 animate-pulse">
+                Cargando membresías del alumno...
+              </div>
+            } @else if (memberships().length === 0) {
+              <div class="py-4 text-xs text-slate-400 italic" data-testid="no-memberships-notice">
+                No registra membresías contratadas actualmente.
+              </div>
+            } @else {
+              <div class="space-y-3">
+                @for (mem of memberships(); track mem.id) {
+                  <div class="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div class="space-y-1">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-sm font-bold text-white">{{ mem.membershipPlanName }}</span>
+                        <span class="text-[11px] px-2.5 py-0.5 rounded-full font-bold border"
+                              [ngClass]="getMembershipStatusBadgeClass(mem)">
+                          {{ getMembershipStatusLabel(mem) }}
+                        </span>
+                      </div>
+                      <div class="text-xs text-slate-400 flex flex-wrap items-center gap-4">
+                        <span>Vigencia: <strong class="text-slate-200 font-mono">{{ mem.startDate }}</strong> al <strong class="text-slate-200 font-mono">{{ mem.endDate }}</strong></span>
+                        <span>
+                          Cupo:
+                          <strong class="text-cyan-400">
+                            {{ (mem.isUnlimited || (mem.totalCredits === 0 && mem.availableCredits === 0)) ? 'Pase Libre Ilimitado (∞)' : (mem.availableCredits + ' / ' + mem.totalCredits + ' créditos') }}
+                          </strong>
+                        </span>
+                        @if (mem.purchasePrice !== undefined && mem.purchasePrice !== null) {
+                          <span>Importe: <strong class="text-emerald-400">\${{ mem.purchasePrice | moneyAmount }}</strong></span>
+                        }
+                      </div>
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+          </div>
 
           <!-- Master Data Grid -->
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -618,6 +690,16 @@ import { apiErrorMessage } from '../../core/utils/api-error';
           </div>
         }
 
+        <!-- Assign Membership Modal -->
+        @if (showAssignMembershipModal() && person(); as p) {
+          <app-assign-membership-modal
+            [studentId]="p.id"
+            [studentName]="p.lastName + ', ' + p.firstName"
+            (assigned)="onMembershipAssigned($event)"
+            (cancelled)="closeAssignMembershipModal()"
+          />
+        }
+
       </div>
     </div>
   `
@@ -628,6 +710,7 @@ export class PersonDetailComponent implements OnInit {
   readonly peopleService = inject(PeopleService);
   readonly authService = inject(AuthService);
   readonly userManagementService = inject(UserManagementService);
+  readonly gymApi = inject(GymApiService);
 
   readonly PersonStatus = PersonStatus;
   readonly DocumentType = DocumentType;
@@ -637,6 +720,11 @@ export class PersonDetailComponent implements OnInit {
   readonly feedback = signal<string | null>(null);
   readonly feedbackSuccess = signal<boolean>(true);
   readonly isUploadingPhoto = signal<boolean>(false);
+
+  // Student Memberships
+  readonly memberships = signal<Membership[]>([]);
+  readonly isLoadingMemberships = signal<boolean>(false);
+  readonly showAssignMembershipModal = signal<boolean>(false);
 
   // User Account & Roles
   readonly userAccount = signal<UserAccountDto | null>(null);
@@ -695,6 +783,7 @@ export class PersonDetailComponent implements OnInit {
       next: (p) => {
         this.person.set(p);
         this.newStatus = p.status;
+        this.loadMemberships(id);
         if (this.authService.isAdmin()) {
           this.loadAccount(id);
         }
@@ -1021,6 +1110,71 @@ export class PersonDetailComponent implements OnInit {
       case 'Instructor': return 'bg-emerald-950/60 text-emerald-300 border-emerald-800';
       case 'Student': return 'bg-amber-950/60 text-amber-300 border-amber-800';
       default: return 'bg-slate-800 text-slate-300 border-slate-700';
+    }
+  }
+
+  // Student Memberships Actions
+  loadMemberships(personId: string): void {
+    this.isLoadingMemberships.set(true);
+    this.gymApi.getStudentMemberships(personId).subscribe({
+      next: (list) => {
+        this.memberships.set(list ?? []);
+        this.isLoadingMemberships.set(false);
+      },
+      error: () => {
+        this.memberships.set([]);
+        this.isLoadingMemberships.set(false);
+      }
+    });
+  }
+
+  openAssignMembershipModal(): void {
+    const p = this.person();
+    if (!p || p.status !== PersonStatus.Active) return;
+    this.showAssignMembershipModal.set(true);
+  }
+
+  closeAssignMembershipModal(): void {
+    this.showAssignMembershipModal.set(false);
+  }
+
+  onMembershipAssigned(_created: MembershipDetail): void {
+    const p = this.person();
+    this.showAssignMembershipModal.set(false);
+    this.feedback.set('Membresía asignada exitosamente.');
+    this.feedbackSuccess.set(true);
+    if (p) {
+      this.loadMemberships(p.id);
+    }
+  }
+
+  getMembershipStatusLabel(mem: Membership): string {
+    const status = mem.effectiveStatus ?? mem.status;
+    switch (status) {
+      case MembershipStatus.Active: return 'Activa';
+      case MembershipStatus.Pending: return 'Pendiente';
+      case MembershipStatus.Expired: return 'Vencida';
+      case MembershipStatus.Suspended: return 'Suspendida';
+      case MembershipStatus.Cancelled: return 'Cancelada';
+      default: return 'Desconocido';
+    }
+  }
+
+  getMembershipStatusBadgeClass(mem: Membership): string {
+    const status = mem.effectiveStatus ?? mem.status;
+    switch (status) {
+      case MembershipStatus.Active:
+        return 'bg-emerald-950/50 text-emerald-400 border-emerald-800';
+      case MembershipStatus.Pending:
+        return 'bg-amber-950/50 text-amber-400 border-amber-800';
+      case MembershipStatus.Expired:
+        return 'bg-slate-800 text-slate-400 border-slate-700';
+      case MembershipStatus.Suspended:
+        return 'bg-indigo-950/50 text-indigo-400 border-indigo-800';
+      case MembershipStatus.Cancelled:
+        return 'bg-rose-950/50 text-rose-400 border-rose-800';
+      default:
+        return 'bg-slate-800 text-slate-400 border-slate-700';
     }
   }
 }

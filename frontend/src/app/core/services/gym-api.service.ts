@@ -46,7 +46,8 @@ import {
   CreateBatchRecurringScheduleRequest,
   UpdateRecurringScheduleRequest,
   CreateMembershipPlanRequest,
-  UpdateMembershipPlanRequest
+  UpdateMembershipPlanRequest,
+  AssignMembershipRequest
 } from '../models/gym.models';
 import { environment } from '../../../environments/environment';
 
@@ -186,6 +187,10 @@ export class GymApiService {
 
   getMembershipById(membershipId: string): Observable<MembershipDetail> {
     return this.http.get<MembershipDetail>(`${this.apiUrl}/memberships/${membershipId}`);
+  }
+
+  assignMembership(request: AssignMembershipRequest): Observable<MembershipDetail> {
+    return this.http.post<MembershipDetail>(`${this.apiUrl}/memberships/assign`, request);
   }
 
   getMembershipEligibility(
