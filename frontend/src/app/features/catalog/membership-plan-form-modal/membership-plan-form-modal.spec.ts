@@ -194,4 +194,21 @@ describe('MembershipPlanFormModalComponent', () => {
 
     expect(component.errorMessage()).toBe('Nombre ya existente.');
   });
+
+  it('should display formatted monetary price in input (35.000,00) in edit mode and when typing', () => {
+    component.plan = mockPlan;
+    component.ngOnChanges();
+    fixture.detectChanges();
+
+    const priceInput = fixture.nativeElement.querySelector('input[formControlName="price"]') as HTMLInputElement;
+    expect(priceInput.value).toBe('35.000,00');
+
+    priceInput.value = '20000,5';
+    priceInput.dispatchEvent(new Event('input'));
+    priceInput.dispatchEvent(new Event('blur'));
+    fixture.detectChanges();
+
+    expect(priceInput.value).toBe('20.000,50');
+    expect(component.form.get('price')?.value).toBe(20000.5);
+  });
 });

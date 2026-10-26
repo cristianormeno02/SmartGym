@@ -3,11 +3,12 @@ import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { GymApiService } from '../../../core/services/gym-api.service';
 import { PublicActivity, MembershipPlan } from '../../../core/models/gym.models';
+import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
 
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, MoneyAmountPipe],
   template: `
     <div class="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       <!-- Hero Section -->
@@ -97,7 +98,7 @@ import { PublicActivity, MembershipPlan } from '../../../core/models/gym.models'
                 <h3 class="text-xl font-bold text-white">{{ plan.name }}</h3>
                 <p class="text-slate-400 text-sm mt-2">{{ plan.description || 'Acceso garantizado a actividades dirigidas.' }}</p>
                 <div class="mt-6 flex items-baseline">
-                  <span class="text-4xl font-extrabold text-white">\${{ plan.price }}</span>
+                  <span class="text-4xl font-extrabold text-white">\${{ plan.price | moneyAmount }}</span>
                   <span class="text-slate-400 text-sm ml-2">/ {{ plan.durationDays }} días</span>
                 </div>
                 <ul class="mt-6 space-y-3 text-sm text-slate-300">

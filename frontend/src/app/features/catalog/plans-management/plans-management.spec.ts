@@ -60,6 +60,10 @@ describe('PlansManagementComponent', () => {
     expect(component).toBeTruthy();
     expect(gymApiSpy.getMembershipPlans).toHaveBeenCalledWith(false);
     expect(component.plans().length).toBe(2);
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('$35.000,00');
+    expect(text).toContain('$20.000,00');
   });
 
   it('should toggle plan status from active to inactive and reload', () => {

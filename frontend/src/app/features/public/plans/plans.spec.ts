@@ -78,6 +78,8 @@ describe('PlansComponent (Public with staff controls)', () => {
     expect(compiled.querySelector('.btn-new-plan')).toBeNull();
     expect(compiled.querySelector('.btn-edit-plan')).toBeNull();
     expect(compiled.querySelector('.btn-toggle-plan')).toBeNull();
+    expect(compiled.textContent).toContain('$35.000,00');
+    expect(compiled.textContent).toContain('$20.000,00');
   });
 
   it('for Staff: calls getMembershipPlans(false) and shows + Nuevo Plan button and per-plan actions', async () => {

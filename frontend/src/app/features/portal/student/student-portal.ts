@@ -15,11 +15,12 @@ import {
   NotificationItem,
   CreditMovement
 } from '../../../core/models/gym.models';
+import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
 
 @Component({
   selector: 'app-student-portal',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, MoneyAmountPipe],
   template: `
     <div class="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8">
       <div class="max-w-7xl mx-auto space-y-8">
@@ -276,7 +277,7 @@ import {
                   @if (mem.hasOutstandingBalance || (mem.pendingBalance ?? 0) > 0) {
                     <div class="flex justify-between py-1 text-amber-300">
                       <span>Saldo pendiente:</span>
-                      <span class="font-bold">\${{ mem.pendingBalance | number:'1.2-2' }}</span>
+                      <span class="font-bold">\${{ mem.pendingBalance | moneyAmount }}</span>
                     </div>
                   }
                 </div>

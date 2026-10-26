@@ -26,11 +26,13 @@ import { ActivitiesManagementComponent } from '../../catalog/activities-manageme
 import { SchedulesManagementComponent } from '../../catalog/schedules-management/schedules-management';
 import { PlansManagementComponent } from '../../catalog/plans-management/plans-management';
 import { apiErrorMessage } from '../../../core/utils/api-error';
+import { formatMonetaryAmount } from '../../../core/utils/monetary-format';
+import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
 
 @Component({
   selector: 'app-admin-portal',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, RoomsManagementComponent, ActivitiesManagementComponent, SchedulesManagementComponent, PlansManagementComponent],
+  imports: [CommonModule, FormsModule, RouterLink, RoomsManagementComponent, ActivitiesManagementComponent, SchedulesManagementComponent, PlansManagementComponent, MoneyAmountPipe],
   template: `
     <div class="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8">
       <div class="max-w-7xl mx-auto space-y-8">
@@ -115,7 +117,7 @@ import { apiErrorMessage } from '../../../core/utils/api-error';
               <!-- Card 3 -->
               <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
                 <span class="text-xs uppercase font-semibold text-slate-400">Ingresos del Mes</span>
-                <div class="text-3xl font-black text-emerald-400 mt-2">\${{ metrics()?.monthlyRevenue ?? 0 | number:'1.2-2' }}</div>
+                <div class="text-3xl font-black text-emerald-400 mt-2">\${{ metrics()?.monthlyRevenue ?? 0 | moneyAmount }}</div>
                 <div class="text-xs text-slate-400 mt-2">Facturación consolidada</div>
               </div>
 
@@ -585,7 +587,7 @@ export class AdminPortalComponent implements OnInit {
   promotionBenefitLabel(p: Promotion): string {
     switch (p.benefitType) {
       case PromotionBenefitType.PercentageDiscount: return `${p.benefitValue}% de descuento`;
-      case PromotionBenefitType.FixedAmountDiscount: return `$${p.benefitValue} de descuento`;
+      case PromotionBenefitType.FixedAmountDiscount: return `$${formatMonetaryAmount(p.benefitValue)} de descuento`;
       default: return `${p.benefitValue} créditos extra`;
     }
   }

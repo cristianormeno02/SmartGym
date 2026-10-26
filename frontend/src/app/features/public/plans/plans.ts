@@ -5,11 +5,12 @@ import { GymApiService } from '../../../core/services/gym-api.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { MembershipPlan, UpdateMembershipPlanRequest } from '../../../core/models/gym.models';
 import { MembershipPlanFormModalComponent } from '../../catalog/membership-plan-form-modal/membership-plan-form-modal';
+import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
 
 @Component({
   selector: 'app-plans',
   standalone: true,
-  imports: [CommonModule, RouterLink, MembershipPlanFormModalComponent],
+  imports: [CommonModule, RouterLink, MembershipPlanFormModalComponent, MoneyAmountPipe],
   template: `
     <div class="min-h-screen bg-slate-950 text-slate-100 py-12 px-4 sm:px-6 lg:px-8">
       <div class="max-w-7xl mx-auto space-y-8">
@@ -56,7 +57,7 @@ import { MembershipPlanFormModalComponent } from '../../catalog/membership-plan-
                 <p class="text-slate-400 text-sm mt-2">{{ plan.description || 'Pase con acceso garantizado y reserva web.' }}</p>
 
                 <div class="mt-6 flex items-baseline">
-                  <span class="text-4xl font-extrabold text-white">\${{ plan.price }}</span>
+                  <span class="text-4xl font-extrabold text-white">\${{ plan.price | moneyAmount }}</span>
                   <span class="text-slate-400 text-sm ml-2">/ {{ plan.durationDays }} días</span>
                 </div>
 

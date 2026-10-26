@@ -3,11 +3,12 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, AbstractControl, ValidationErrors } from '@angular/forms';
 import { GymApiService } from '../../../core/services/gym-api.service';
 import { Activity, ActivityStatus, CreateMembershipPlanRequest, MembershipPlan, UpdateMembershipPlanRequest } from '../../../core/models/gym.models';
+import { MonetaryInputDirective } from '../../../shared/directives/monetary-input.directive';
 
 @Component({
   selector: 'app-membership-plan-form-modal',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, MonetaryInputDirective],
   template: `
     <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
       <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl p-6 sm:p-8 shadow-2xl space-y-6 my-8">
@@ -72,11 +73,11 @@ import { Activity, ActivityStatus, CreateMembershipPlanRequest, MembershipPlan, 
                 Precio ($) <span class="text-rose-400">*</span>
               </label>
               <input
-                type="number"
-                step="0.01"
-                min="0.01"
+                type="text"
+                inputmode="decimal"
+                appMonetaryInput
                 formControlName="price"
-                placeholder="35000"
+                placeholder="35.000,00"
                 class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
               />
               @if (form.get('price')?.touched && form.get('price')?.hasError('min')) {

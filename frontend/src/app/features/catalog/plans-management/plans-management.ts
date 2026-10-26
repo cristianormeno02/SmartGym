@@ -4,11 +4,12 @@ import { FormsModule } from '@angular/forms';
 import { GymApiService } from '../../../core/services/gym-api.service';
 import { MembershipPlan, UpdateMembershipPlanRequest } from '../../../core/models/gym.models';
 import { MembershipPlanFormModalComponent } from '../membership-plan-form-modal/membership-plan-form-modal';
+import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
 
 @Component({
   selector: 'app-plans-management',
   standalone: true,
-  imports: [CommonModule, FormsModule, MembershipPlanFormModalComponent],
+  imports: [CommonModule, FormsModule, MembershipPlanFormModalComponent, MoneyAmountPipe],
   template: `
     <div class="space-y-6">
       <!-- Header bar -->
@@ -94,7 +95,7 @@ import { MembershipPlanFormModalComponent } from '../membership-plan-form-modal/
               <p class="text-xs text-slate-400 mt-1 line-clamp-2">{{ plan.description || 'Sin descripción comercial.' }}</p>
 
               <div class="mt-4 flex items-baseline">
-                <span class="text-3xl font-black text-white">\${{ plan.price }}</span>
+                <span class="text-3xl font-black text-white">\${{ plan.price | moneyAmount }}</span>
                 <span class="text-xs text-slate-400 ml-2">/ {{ plan.durationDays }} días</span>
               </div>
 

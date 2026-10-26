@@ -249,4 +249,42 @@ describe('AdminPortalComponent', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.querySelector('app-activities-management')).not.toBeNull();
   });
+
+  it('should format monthlyRevenue in KPIs and FixedAmountDiscount in Promotions with 2 decimals, comma decimal and dot thousands', async () => {
+    gymApiSpy.getDashboardMetrics.mockReturnValue(of({
+      totalActiveStudents: 120,
+      totalActiveInstructors: 8,
+      totalClassesToday: 12,
+      totalReservationsToday: 80,
+      totalAttendanceToday: 60,
+      attendanceRateTodayPercent: 75,
+      monthlyRevenue: 150000,
+      expiringMembershipsNext7Days: 5,
+      pendingMedicalCertificatesCount: 2
+    }));
+    gymApiSpy.getPromotions.mockReturnValue(of([
+      {
+        id: 'promo-1',
+        code: 'DESC5000',
+        name: 'Bono Primavera',
+        conditionType: 5,
+        benefitType: 2, // FixedAmountDiscount
+        benefitValue: 5000,
+        validFrom: '2026-10-01',
+        currentUsesTotal: 0,
+        maxUsesPerPerson: 1,
+        isActive: true,
+        status: 1,
+        version: 1
+      }
+    ]));
+
+    await setupComponent(true);
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.textContent).toContain('$150.000,00');
+
+    component.setActiveTab('promotions');
+    fixture.detectChanges();
+    expect(compiled.textContent).toContain('$5.000,00 de descuento');
+  });
 });
