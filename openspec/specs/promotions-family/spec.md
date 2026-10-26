@@ -5,7 +5,7 @@ Proporciona un motor flexible de reglas promocionales basado en condiciones y be
 ## Requirements
 
 ### Requirement: Motor de Condiciones y Beneficios
-El sistema SHALL modelar las promociones como un conjunto de condiciones configurables (alumno nuevo, pertenencia a grupo familiar, alumno referido, plan, actividad, horario, fecha) que al cumplirse disparan beneficios específicos (descuento porcentual, descuento fijo, clase gratis, 2x1, segundo alumno gratis o créditos adicionales).
+El sistema SHALL modelar las promociones como un conjunto de condiciones configurables (alumno nuevo, pertenencia a grupo familiar, alumno referido, plan, actividad, horario, fecha) que al cumplirse disparan beneficios específicos (descuento porcentual, descuento fijo, clase gratis, 2x1, segundo alumno gratis o créditos adicionales). Cuando un beneficio corresponda a un importe monetario (descuento de monto fijo), la interfaz SHALL mostrarlo con 2 decimales, coma (`,`) como separador de decimales y punto (`.`) como separador de miles (ej. `$5.000,00 de descuento`).
 
 #### Scenario: Evaluación de promoción Primera Clase Gratis
 - **WHEN** un alumno sin historial previo de asistencias ni membresías adquiere su primera clase de prueba
@@ -14,6 +14,10 @@ El sistema SHALL modelar las promociones como un conjunto de condiciones configu
 #### Scenario: Aplicación de promoción 2x1
 - **WHEN** dos alumnos reservan una clase sujeta a una promoción 2x1
 - **THEN** el sistema calcula el cobro de una sola plaza y genera el derecho de acceso para ambos alumnos
+
+#### Scenario: Visualización de promoción con beneficio de descuento fijo
+- **WHEN** el personal consulta en el panel de administración una promoción cuyo beneficio es de descuento fijo por un valor de `5000`
+- **THEN** la interfaz muestra el beneficio con formato monetario `$5.000,00 de descuento`
 
 ### Requirement: Gestión de Grupos Familiares
 El sistema SHALL permitir agrupar múltiples Personas bajo una entidad Grupo Familiar de forma independiente a las promociones, permitiendo que las reglas comerciales consulten la cantidad de integrantes activos para activar beneficios familiares.
