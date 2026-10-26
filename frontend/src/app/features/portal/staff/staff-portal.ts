@@ -1,6 +1,8 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { AppDatePipe } from '../../../shared/pipes/app-date.pipe';
+import { DateInputDirective } from '../../../shared/directives/date-input.directive';
 import { AuthService } from '../../../core/services/auth.service';
 import { GymApiService } from '../../../core/services/gym-api.service';
 import {
@@ -19,7 +21,7 @@ import {
 @Component({
   selector: 'app-staff-portal',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, AppDatePipe, DateInputDirective],
   template: `
     <div class="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8">
       <div class="max-w-7xl mx-auto space-y-8">
@@ -215,8 +217,8 @@ import {
                           </span>
                           <span class="text-xs text-slate-500">
                             {{ w.status === ReservationStatus.Pending
-                                ? 'vence ' + (w.waitlistOfferExpiresAtUtc | date:'short')
-                                : 'desde ' + (w.waitlistEnteredAtUtc | date:'short') }}
+                                ? 'vence ' + (w.waitlistOfferExpiresAtUtc | appDate:'time')
+                                : 'desde ' + (w.waitlistEnteredAtUtc | appDate:'time') }}
                           </span>
                         </li>
                       }
@@ -280,10 +282,10 @@ import {
                 </select>
               </label>
               <label class="flex flex-col gap-1 text-slate-400">Desde
-                <input type="date" [(ngModel)]="filterFrom" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200" />
+                <input type="text" [(ngModel)]="filterFrom" appDateInput placeholder="DD/MM/AAAA" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200" />
               </label>
               <label class="flex flex-col gap-1 text-slate-400">Hasta
-                <input type="date" [(ngModel)]="filterTo" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200" />
+                <input type="text" [(ngModel)]="filterTo" appDateInput placeholder="DD/MM/AAAA" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200" />
               </label>
               <label class="flex items-center gap-2 text-slate-300 pb-2">
                 <input type="checkbox" [(ngModel)]="filterAffectedBySessionChange" /> Afectadas por cambio de clase
@@ -326,7 +328,7 @@ import {
                       </td>
                       <td class="py-3 px-4 text-xs text-slate-300">
                         {{ r.activityName }}<br />
-                        <span class="text-slate-500">{{ r.classDate | date:'shortDate' }} {{ r.startTime }} · {{ r.roomName }}</span>
+                        <span class="text-slate-500">{{ r.classDate | appDate }} {{ r.startTime | appDate:'timeOnly' }} · {{ r.roomName }}</span>
                       </td>
                       <td class="py-3 px-4 text-xs text-slate-300">{{ getAccessTypeText(r.accessType) }}</td>
                       <td class="py-3 px-4">
@@ -373,7 +375,7 @@ import {
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
               <h3 class="text-xl font-bold text-white">Cancelar Reserva</h3>
               <p class="text-xs text-slate-400">
-                {{ target.studentName }} · {{ target.activityName }} · {{ target.classDate | date:'shortDate' }} {{ target.startTime }}
+                {{ target.studentName }} · {{ target.activityName }} · {{ target.classDate | appDate }} {{ target.startTime | appDate:'timeOnly' }}
               </p>
               <div>
                 <label class="block text-xs font-semibold text-slate-300 mb-1">Motivo</label>

@@ -17,6 +17,8 @@ import {
  * Replica las reglas de DocumentNormalizer (backend) para dar feedback inmediato.
  * Devuelve el mensaje de error o null si el documento es válido.
  */
+import { DateInputDirective } from '../../shared/directives/date-input.directive';
+
 export function documentNumberError(
   type: DocumentType | null | undefined,
   number: string | null | undefined,
@@ -75,7 +77,7 @@ export function isMinor(birthDateStr: string | null | undefined): boolean {
 @Component({
   selector: 'app-person-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink],
+  imports: [CommonModule, ReactiveFormsModule, RouterLink, DateInputDirective],
   template: `
     <div class="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8">
       <div class="max-w-4xl mx-auto space-y-6">
@@ -188,7 +190,7 @@ export function isMinor(birthDateStr: string | null | undefined): boolean {
 
               <div>
                 <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Fecha de Nacimiento</label>
-                <input type="date" formControlName="birthDate"
+                <input type="text" formControlName="birthDate" appDateInput placeholder="DD/MM/AAAA"
                        class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500" />
                 @if (isMinorSelected()) {
                   <p class="text-xs text-amber-400 mt-1 font-semibold">

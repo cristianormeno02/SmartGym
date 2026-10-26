@@ -2,11 +2,12 @@ import { Component, Input, Output, EventEmitter, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RecurringSchedule } from '../../../core/models/gym.models';
 import { getDayOfWeekName } from '../../../core/utils/catalog-mappings';
+import { AppDatePipe } from '../../../shared/pipes/app-date.pipe';
 
 @Component({
   selector: 'app-schedule-detail-modal',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, AppDatePipe],
   template: `
     @if (schedule) {
       <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
@@ -93,8 +94,8 @@ import { getDayOfWeekName } from '../../../core/utils/catalog-mappings';
             <div class="p-3.5 bg-slate-950/40 border border-slate-800/60 rounded-xl text-xs text-slate-400">
               <span class="uppercase tracking-wider font-semibold block text-slate-300 mb-1">Periodo de Vigencia</span>
               <span>
-                Desde <strong>{{ schedule.validFrom.substring(0, 10) }}</strong>
-                {{ schedule.validTo ? ' hasta ' + schedule.validTo.substring(0, 10) : ' (vigencia indefinida)' }}
+                Desde <strong>{{ schedule.validFrom | appDate }}</strong>
+                {{ schedule.validTo ? ' hasta ' + (schedule.validTo | appDate) : ' (vigencia indefinida)' }}
               </span>
             </div>
           </div>

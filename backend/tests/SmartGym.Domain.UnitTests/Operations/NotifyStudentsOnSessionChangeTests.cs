@@ -359,7 +359,7 @@ public class NotifyStudentsOnSessionChangeTests
     [Fact]
     public async Task CancelAndRescheduleSession_EmitSpecificNotificationTypesWithIdempotencyKey()
     {
-        var startsUtc = new DateTime(2026, 10, 20, 21, 0, 0, DateTimeKind.Utc);
+        var startsUtc = DateTime.UtcNow.AddDays(2);
         var endsUtc = startsUtc.AddHours(1);
         Guid cancelledSessionId;
         Guid rescheduledSessionId;

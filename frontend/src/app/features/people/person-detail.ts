@@ -10,6 +10,7 @@ import { UserAccountDto, ROLE_DEFINITIONS } from '../../core/models/user-managem
 import { Membership, MembershipDetail, MembershipStatus } from '../../core/models/gym.models';
 import { AssignMembershipModalComponent } from '../catalog/assign-membership-modal/assign-membership-modal';
 import { MoneyAmountPipe } from '../../shared/pipes/money-amount.pipe';
+import { AppDatePipe } from '../../shared/pipes/app-date.pipe';
 import {
   PersonDetail,
   PersonStatus,
@@ -24,7 +25,7 @@ import { apiErrorMessage } from '../../core/utils/api-error';
 @Component({
   selector: 'app-person-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, AssignMembershipModalComponent, MoneyAmountPipe],
+  imports: [CommonModule, FormsModule, RouterLink, AssignMembershipModalComponent, MoneyAmountPipe, AppDatePipe],
   template: `
     <div class="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8">
       <div class="max-w-5xl mx-auto space-y-6">
@@ -226,7 +227,7 @@ import { apiErrorMessage } from '../../core/utils/api-error';
                     <div>
                       <span class="text-slate-500 uppercase font-semibold block">Último Acceso</span>
                       <span class="text-slate-300 mt-1 block">
-                        {{ acc.lastLoginUtc ? (acc.lastLoginUtc | date:'medium') : 'Nunca ha iniciado sesión' }}
+                        {{ acc.lastLoginUtc ? (acc.lastLoginUtc | appDate:'time') : 'Nunca ha iniciado sesión' }}
                       </span>
                     </div>
                   </div>
@@ -315,7 +316,7 @@ import { apiErrorMessage } from '../../core/utils/api-error';
                         </span>
                       </div>
                       <div class="text-xs text-slate-400 flex flex-wrap items-center gap-4">
-                        <span>Vigencia: <strong class="text-slate-200 font-mono">{{ mem.startDate }}</strong> al <strong class="text-slate-200 font-mono">{{ mem.endDate }}</strong></span>
+                        <span>Vigencia: <strong class="text-slate-200 font-mono">{{ mem.startDate | appDate }}</strong> al <strong class="text-slate-200 font-mono">{{ mem.endDate | appDate }}</strong></span>
                         <span>
                           Cupo:
                           <strong class="text-cyan-400">
@@ -360,7 +361,7 @@ import { apiErrorMessage } from '../../core/utils/api-error';
                 </div>
                 <div>
                   <dt class="text-slate-500 uppercase font-semibold">Fecha de Nacimiento</dt>
-                  <dd class="text-slate-200 mt-0.5">{{ p.birthDate ?? '—' }}</dd>
+                  <dd class="text-slate-200 mt-0.5">{{ (p.birthDate | appDate) || '—' }}</dd>
                 </div>
                 <div>
                   <dt class="text-slate-500 uppercase font-semibold">Género</dt>
@@ -437,7 +438,7 @@ import { apiErrorMessage } from '../../core/utils/api-error';
                 </div>
                 <div>
                   <dt class="text-slate-500 uppercase font-semibold">Fecha de Alta</dt>
-                  <dd class="text-slate-200 mt-0.5">{{ p.createdAtUtc | date:'medium' }}</dd>
+                  <dd class="text-slate-200 mt-0.5">{{ p.createdAtUtc | appDate:'time' }}</dd>
                 </div>
                 @if (p.statusReason) {
                   <div class="col-span-2">
@@ -448,7 +449,7 @@ import { apiErrorMessage } from '../../core/utils/api-error';
                 @if (p.statusChangedAtUtc) {
                   <div>
                     <dt class="text-slate-500 uppercase font-semibold">Fecha Cambio de Estado</dt>
-                    <dd class="text-slate-200 mt-0.5">{{ p.statusChangedAtUtc | date:'medium' }}</dd>
+                    <dd class="text-slate-200 mt-0.5">{{ p.statusChangedAtUtc | appDate:'time' }}</dd>
                   </div>
                 }
               </dl>

@@ -11,11 +11,12 @@ import {
   DocumentTypeLabels,
   UpdateOwnContactRequest
 } from '../../core/models/person.model';
+import { AppDatePipe } from '../../shared/pipes/app-date.pipe';
 
 @Component({
   selector: 'app-my-profile',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, AppDatePipe],
   template: `
     <div class="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8">
       <div class="max-w-4xl mx-auto space-y-6">
@@ -113,7 +114,7 @@ import {
                   </div>
                   <div>
                     <span class="text-slate-500 uppercase font-semibold">Fecha de Nac.:</span>
-                    <span class="text-slate-200 ml-1">{{ p.birthDate ?? 'No informada' }}</span>
+                    <span class="text-slate-200 ml-1">{{ (p.birthDate | appDate) || 'No informada' }}</span>
                   </div>
                   <div class="sm:col-span-2">
                     <span class="text-slate-500 uppercase font-semibold">Email:</span>

@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -16,11 +16,14 @@ import {
   CreditMovement
 } from '../../../core/models/gym.models';
 import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
+import { AppDatePipe } from '../../../shared/pipes/app-date.pipe';
+import { DateInputDirective } from '../../../shared/directives/date-input.directive';
+import { formatDateDisplay } from '../../../core/utils/date-format';
 
 @Component({
   selector: 'app-student-portal',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, MoneyAmountPipe],
+  imports: [CommonModule, FormsModule, RouterLink, MoneyAmountPipe, AppDatePipe, DateInputDirective],
   template: `
     <div class="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8">
       <div class="max-w-7xl mx-auto space-y-8">
@@ -83,7 +86,7 @@ import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
               </div>
             </div>
             <div class="flex items-center gap-2">
-              <input type="date" [(ngModel)]="uploadExpiryDate" class="bg-slate-900 border border-slate-700 text-xs px-2 py-1.5 rounded text-slate-200 focus:outline-none focus:border-rose-500" />
+              <input type="text" [(ngModel)]="uploadExpiryDate" appDateInput placeholder="DD/MM/AAAA" class="bg-slate-900 border border-slate-700 text-xs px-2.5 py-1.5 rounded text-slate-200 focus:outline-none focus:border-rose-500 w-32" />
               <input #fileInput type="file" (change)="onFileSelected($event)" class="hidden" accept=".pdf,.png,.jpg,.jpeg" />
               <button (click)="fileInput.click()" [disabled]="isUploadingCert()" class="bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold px-3 py-1.5 rounded transition">
                 {{ isUploadingCert() ? 'Subiendo...' : 'Adjuntar Apto' }}
@@ -131,11 +134,11 @@ import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
                           </span>
                         </div>
                         <div class="text-xs text-slate-400 mt-1">
-                          📆 {{ r.classDate | date:'mediumDate' }} | ⏰ {{ r.startTime }} - {{ r.endTime }} | 📍 {{ r.roomName }}
+                          📆 {{ r.classDate | appDate }} | ⏰ {{ r.startTime | appDate:'timeOnly' }} - {{ r.endTime | appDate:'timeOnly' }} | 📍 {{ r.roomName }}
                         </div>
                         @if (r.status === ReservationStatus.Pending) {
                           <div class="text-xs text-emerald-300 mt-1">
-                            Se liberó un cupo para vos. Aceptalo antes del {{ r.waitlistOfferExpiresAtUtc | date:'short' }}.
+                            Se liberó un cupo para vos. Aceptalo antes del {{ r.waitlistOfferExpiresAtUtc | appDate:'time' }}.
                           </div>
                         } @else if (isLateCancellation(r)) {
                           <div class="text-xs text-amber-400 mt-1">
@@ -168,21 +171,129 @@ import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
             </div>
 
             <!-- Available Sessions Schedule -->
-            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
-              <div class="flex items-center justify-between mb-4">
-                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                  <span class="text-cyan-400">⚡</span> Clases Disponibles para Reservar
-                </h2>
-                <button (click)="loadAvailableSessions()" class="text-xs text-cyan-400 hover:text-cyan-300">Actualizar</button>
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg space-y-4">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span class="text-cyan-400">⚡</span> Clases Disponibles para Reservar
+                  </h2>
+                  <p class="text-xs text-slate-400 mt-0.5">Explorá y reservá clases abiertas de los próximos 7 días.</p>
+                </div>
+                <div class="flex items-center gap-3">
+                  <span class="text-xs text-slate-400">
+                    Mostrando <strong class="text-cyan-300">{{ filteredAvailableClasses().length }}</strong> de {{ availableClasses().length }} clases
+                  </span>
+                  <button (click)="loadAvailableSessions()" class="text-xs text-cyan-400 hover:text-cyan-300 font-semibold transition">
+                    ↻ Actualizar
+                  </button>
+                </div>
               </div>
 
+              <!-- Interactive Filters Bar -->
+              <div class="bg-slate-950/70 border border-slate-800/80 rounded-xl p-4 space-y-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <!-- Search input -->
+                  <div>
+                    <label class="block text-[11px] font-semibold text-slate-400 mb-1">Buscar actividad o profe</label>
+                    <input type="text"
+                           [ngModel]="filterSearchText()"
+                           (ngModelChange)="filterSearchText.set($event)"
+                           placeholder="Ej. Funcional, Laura..."
+                           class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500" />
+                  </div>
+
+                  <!-- Activity Filter -->
+                  <div>
+                    <label class="block text-[11px] font-semibold text-slate-400 mb-1">Actividad</label>
+                    <select [ngModel]="filterActivityId()"
+                            (ngModelChange)="filterActivityId.set($event)"
+                            class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
+                      <option value="ALL">Todas las actividades</option>
+                      @for (act of availableActivities(); track act.id) {
+                        <option [value]="act.id">{{ act.name }}</option>
+                      }
+                    </select>
+                  </div>
+
+                  <!-- Date Filter -->
+                  <div>
+                    <label class="block text-[11px] font-semibold text-slate-400 mb-1">Fecha</label>
+                    <select [ngModel]="filterDate()"
+                            (ngModelChange)="filterDate.set($event)"
+                            class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
+                      <option value="ALL">Todas las fechas</option>
+                      @for (d of availableDateOptions(); track d.date) {
+                        <option [value]="d.date">{{ d.display }}</option>
+                      }
+                    </select>
+                  </div>
+
+                  <!-- Time Slot Filter -->
+                  <div>
+                    <label class="block text-[11px] font-semibold text-slate-400 mb-1">Franja Horaria</label>
+                    <select [ngModel]="filterTimeSlot()"
+                            (ngModelChange)="filterTimeSlot.set($event)"
+                            class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
+                      <option value="ALL">Todas las franjas</option>
+                      <option value="MORNING">Mañana (antes de 12:00)</option>
+                      <option value="AFTERNOON">Tarde (12:00 a 18:00)</option>
+                      <option value="NIGHT">Noche (a partir de 18:00)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- Secondary filters and actions -->
+                <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/60">
+                  <div class="flex flex-wrap items-center gap-4">
+                    <!-- Room filter -->
+                    @if (availableRooms().length > 1) {
+                      <div class="flex items-center gap-2">
+                        <span class="text-[11px] text-slate-400">Sala:</span>
+                        <select [ngModel]="filterRoomId()"
+                                (ngModelChange)="filterRoomId.set($event)"
+                                class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
+                          <option value="ALL">Todas las salas</option>
+                          @for (r of availableRooms(); track r.id) {
+                            <option [value]="r.id">{{ r.name }}</option>
+                          }
+                        </select>
+                      </div>
+                    }
+
+                    <!-- Only available spots toggle -->
+                    <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                      <input type="checkbox"
+                             [checked]="filterOnlyAvailableSpots()"
+                             (change)="filterOnlyAvailableSpots.set($any($event.target).checked)"
+                             class="rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-0 focus:ring-offset-0" />
+                      <span>Solo con lugares disponibles</span>
+                    </label>
+                  </div>
+
+                  @if (hasActiveFilters()) {
+                    <button (click)="resetFilters()"
+                            class="text-xs text-rose-400 hover:text-rose-300 font-medium underline flex items-center gap-1 transition">
+                      ✕ Limpiar filtros
+                    </button>
+                  }
+                </div>
+              </div>
+
+              <!-- Classes Grid -->
               @if (availableClasses().length === 0) {
                 <div class="text-center py-8 text-slate-500 text-sm">
                   No hay clases abiertas para reservar en los próximos 7 días.
                 </div>
+              } @else if (filteredAvailableClasses().length === 0) {
+                <div class="text-center py-8 text-slate-400 text-sm bg-slate-950/40 rounded-xl border border-slate-800/60 space-y-2">
+                  <p>No se encontraron clases con los filtros seleccionados.</p>
+                  <button (click)="resetFilters()" class="text-xs bg-slate-800 hover:bg-slate-700 text-cyan-300 px-3 py-1.5 rounded-lg transition">
+                    Restablecer filtros
+                  </button>
+                </div>
               } @else {
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  @for (c of availableClasses(); track c.classSessionId) {
+                  @for (c of filteredAvailableClasses(); track c.classSessionId) {
                     <div class="bg-slate-950/70 border border-slate-800/80 rounded-xl p-4 flex flex-col justify-between hover:border-slate-700 transition">
                       <div>
                         <div class="flex items-center justify-between">
@@ -193,7 +304,7 @@ import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
                           </span>
                         </div>
                         <div class="text-xs text-slate-400 mt-2 space-y-0.5">
-                          <p>⏰ {{ c.startTime }} - {{ c.endTime }} | 📆 {{ c.classDate | date:'shortDate' }}</p>
+                          <p>⏰ {{ c.startTime | appDate:'timeOnly' }} - {{ c.endTime | appDate:'timeOnly' }} | 📆 {{ c.classDate | appDate }}</p>
                           <p>📍 {{ c.roomName }}</p>
                           <p>👤 {{ c.instructorName }}</p>
                         </div>
@@ -262,7 +373,7 @@ import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
                   </div>
                   <div class="flex justify-between py-1 border-b border-slate-800">
                     <span class="text-slate-400">Vigencia:</span>
-                    <span class="font-semibold text-slate-200">{{ mem.startDate | date:'shortDate' }} - {{ mem.endDate | date:'mediumDate' }}</span>
+                    <span class="font-semibold text-slate-200">{{ mem.startDate | appDate }} - {{ mem.endDate | appDate }}</span>
                   </div>
                   <div class="flex justify-between py-1 border-b border-slate-800">
                     <span class="text-slate-400">Créditos totales:</span>
@@ -307,7 +418,7 @@ import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
                          [ngClass]="n.isRead ? 'bg-slate-950/40 border-slate-800/60 text-slate-400' : 'bg-cyan-950/30 border-cyan-800/50 text-slate-200'">
                       <div class="flex items-center justify-between font-bold">
                         <span>{{ n.title }}</span>
-                        <span class="text-[10px] text-slate-500">{{ (n.sentAtUtc || n.createdAtUtc) | date:'short' }}</span>
+                        <span class="text-[10px] text-slate-500">{{ (n.sentAtUtc || n.createdAtUtc) | appDate:'time' }}</span>
                       </div>
                       <p class="mt-1 text-slate-300">{{ n.body || n.message }}</p>
                       @if (!n.isRead) {
@@ -332,7 +443,7 @@ import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
                     <div class="p-2.5 bg-slate-950/60 rounded-lg border border-slate-800/80 text-xs flex items-center justify-between">
                       <div>
                         <div class="font-semibold text-slate-200">{{ m.concept }}</div>
-                        <div class="text-[10px] text-slate-500">{{ m.createdAtUtc | date:'short' }}</div>
+                        <div class="text-[10px] text-slate-500">{{ m.createdAtUtc | appDate:'time' }}</div>
                       </div>
                       <div class="text-right">
                         <span class="font-bold text-sm" [ngClass]="m.amount > 0 ? 'text-emerald-400' : 'text-rose-400'">
@@ -363,6 +474,14 @@ export class StudentPortalComponent implements OnInit {
   myReservations = signal<Reservation[]>([]);
   availableClasses = signal<ReservableClassSession[]>([]);
 
+  // Filter signals for available classes
+  filterActivityId = signal<string>('ALL');
+  filterDate = signal<string>('ALL');
+  filterTimeSlot = signal<string>('ALL');
+  filterOnlyAvailableSpots = signal<boolean>(false);
+  filterRoomId = signal<string>('ALL');
+  filterSearchText = signal<string>('');
+
   readonly ReservationStatus = ReservationStatus;
   /** Debe coincidir con Reservations:FreeCancellationHoursBeforeStart del backend; sólo se usa para avisar. */
   readonly freeCancellationHours = 2;
@@ -376,11 +495,117 @@ export class StudentPortalComponent implements OnInit {
   feedbackMessage = signal<string | null>(null);
   feedbackSuccess = signal(true);
 
+  // Computeds for filter options
+  readonly availableActivities = computed(() => {
+    const map = new Map<string, string>();
+    for (const c of this.availableClasses()) {
+      map.set(c.activityId, c.activityName);
+    }
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  });
+
+  readonly availableRooms = computed(() => {
+    const map = new Map<string, string>();
+    for (const c of this.availableClasses()) {
+      map.set(c.roomId, c.roomName);
+    }
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  });
+
+  readonly availableDateOptions = computed(() => {
+    const dates = new Set<string>();
+    for (const c of this.availableClasses()) {
+      if (c.classDate) dates.add(c.classDate);
+    }
+    return Array.from(dates)
+      .sort()
+      .map(d => ({ date: d, display: formatDateDisplay(d) }));
+  });
+
+  readonly hasActiveFilters = computed(() => {
+    return (
+      this.filterActivityId() !== 'ALL' ||
+      this.filterDate() !== 'ALL' ||
+      this.filterTimeSlot() !== 'ALL' ||
+      this.filterOnlyAvailableSpots() ||
+      this.filterRoomId() !== 'ALL' ||
+      this.filterSearchText().trim().length > 0
+    );
+  });
+
+  readonly filteredAvailableClasses = computed(() => {
+    const all = this.availableClasses();
+    const actId = this.filterActivityId();
+    const date = this.filterDate();
+    const slot = this.filterTimeSlot();
+    const onlyAvailable = this.filterOnlyAvailableSpots();
+    const roomId = this.filterRoomId();
+    const search = this.filterSearchText().trim().toLowerCase();
+
+    return all.filter(c => {
+      // Activity
+      if (actId !== 'ALL' && c.activityId !== actId) {
+        return false;
+      }
+
+      // Room
+      if (roomId !== 'ALL' && c.roomId !== roomId) {
+        return false;
+      }
+
+      // Availability
+      if (onlyAvailable && c.availableSpots <= 0) {
+        return false;
+      }
+
+      // Date
+      if (date !== 'ALL' && c.classDate !== date) {
+        return false;
+      }
+
+      // Time slot
+      if (slot !== 'ALL') {
+        const time = c.startTime || '';
+        // Comparar horas en formato HH:mm
+        const hour = parseInt(time.split(':')[0], 10);
+        if (!isNaN(hour)) {
+          if (slot === 'MORNING' && hour >= 12) return false;
+          if (slot === 'AFTERNOON' && (hour < 12 || hour >= 18)) return false;
+          if (slot === 'NIGHT' && hour < 18) return false;
+        }
+      }
+
+      // Search text
+      if (search) {
+        const actMatch = c.activityName?.toLowerCase().includes(search);
+        const instMatch = c.instructorName?.toLowerCase().includes(search);
+        if (!actMatch && !instMatch) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  });
+
   ngOnInit(): void {
     const studentId = this.authService.currentUser()?.personId;
     if (studentId) {
       this.loadStudentData(studentId);
     }
+  }
+
+  resetFilters(): void {
+    this.filterActivityId.set('ALL');
+    this.filterDate.set('ALL');
+    this.filterTimeSlot.set('ALL');
+    this.filterOnlyAvailableSpots.set(false);
+    this.filterRoomId.set('ALL');
+    this.filterSearchText.set('');
   }
 
   loadStudentData(studentId: string): void {

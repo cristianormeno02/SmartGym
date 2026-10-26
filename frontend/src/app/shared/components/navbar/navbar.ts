@@ -4,11 +4,12 @@ import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { NotificationsService } from '../../../core/services/notifications.service';
 import { NotificationItem } from '../../../core/models/gym.models';
+import { AppDatePipe } from '../../pipes/app-date.pipe';
 
 @Component({
   selector: 'app-navbar',
   standalone: true,
-  imports: [CommonModule, RouterLink, RouterLinkActive],
+  imports: [CommonModule, RouterLink, RouterLinkActive, AppDatePipe],
   template: `
     <nav class="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-50 shadow-md">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -96,7 +97,7 @@ import { NotificationItem } from '../../../core/models/gym.models';
                             <div class="flex items-start justify-between gap-2">
                               <span class="font-bold text-xs">{{ notif.title }}</span>
                               <span class="text-[10px] text-slate-500 whitespace-nowrap">
-                                {{ (notif.sentAtUtc || notif.createdAtUtc) | date:'short' }}
+                                {{ (notif.sentAtUtc || notif.createdAtUtc) | appDate:'time' }}
                               </span>
                             </div>
                             <p class="text-xs text-slate-300 mt-1 line-clamp-2">{{ notif.body || notif.message }}</p>

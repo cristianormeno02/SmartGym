@@ -28,11 +28,12 @@ import { PlansManagementComponent } from '../../catalog/plans-management/plans-m
 import { apiErrorMessage } from '../../../core/utils/api-error';
 import { formatMonetaryAmount } from '../../../core/utils/monetary-format';
 import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
+import { AppDatePipe } from '../../../shared/pipes/app-date.pipe';
 
 @Component({
   selector: 'app-admin-portal',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, RoomsManagementComponent, ActivitiesManagementComponent, SchedulesManagementComponent, PlansManagementComponent, MoneyAmountPipe],
+  imports: [CommonModule, FormsModule, RouterLink, RoomsManagementComponent, ActivitiesManagementComponent, SchedulesManagementComponent, PlansManagementComponent, MoneyAmountPipe, AppDatePipe],
   template: `
     <div class="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8">
       <div class="max-w-7xl mx-auto space-y-8">
@@ -310,7 +311,7 @@ import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
                     <div class="text-xs text-slate-400 space-y-1">
                       <p>Beneficio: <strong class="text-slate-200">{{ promotionBenefitLabel(p) }}</strong></p>
                       <p>Canjes realizados: <strong class="text-slate-200">{{ p.currentUsesTotal }}</strong> {{ p.maxUsesTotal ? '/ ' + p.maxUsesTotal : '' }}</p>
-                      <p>Vigencia: {{ p.validFrom | date:'shortDate' }}{{ p.validTo ? ' al ' + (p.validTo | date:'shortDate') : '' }}</p>
+                      <p>Vigencia: {{ p.validFrom | appDate }}{{ p.validTo ? ' al ' + (p.validTo | appDate) : '' }}</p>
                     </div>
                   </div>
                 }
@@ -477,7 +478,7 @@ import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
                   <tbody class="divide-y divide-slate-800/80">
                     @for (log of auditLogs(); track log.id) {
                       <tr class="hover:bg-slate-800/30 transition">
-                        <td class="py-2.5 px-4 text-slate-400 whitespace-nowrap">{{ log.timestampUtc | date:'medium' }}</td>
+                        <td class="py-2.5 px-4 text-slate-400 whitespace-nowrap">{{ log.timestampUtc | appDate:'time' }}</td>
                         <td class="py-2.5 px-4 font-bold text-amber-300">{{ log.action }}</td>
                         <td class="py-2.5 px-4 text-slate-300">{{ log.entityName }}</td>
                         <td class="py-2.5 px-4 text-slate-400">{{ log.performedByEmail || 'Sistema / Anónimo' }}</td>

@@ -4,12 +4,14 @@ import { FormsModule } from '@angular/forms';
 import { GymApiService } from '../../../core/services/gym-api.service';
 import { MembershipDetail, MembershipPlan } from '../../../core/models/gym.models';
 import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
+import { AppDatePipe } from '../../../shared/pipes/app-date.pipe';
+import { DateInputDirective } from '../../../shared/directives/date-input.directive';
 import { apiErrorMessage } from '../../../core/utils/api-error';
 
 @Component({
   selector: 'app-assign-membership-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, MoneyAmountPipe],
+  imports: [CommonModule, FormsModule, MoneyAmountPipe, AppDatePipe, DateInputDirective],
   template: `
     <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto" data-testid="modal-assign-membership">
       <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-xl p-6 sm:p-8 shadow-2xl space-y-6 my-8">
@@ -74,8 +76,9 @@ import { apiErrorMessage } from '../../../core/utils/api-error';
                 Fecha de Inicio <span class="text-rose-400">*</span>
               </label>
               <input
-                type="date"
-                [min]="todayIso"
+                type="text"
+                appDateInput
+                placeholder="DD/MM/AAAA"
                 [ngModel]="startDate()"
                 (ngModelChange)="startDate.set($event)"
                 data-testid="input-start-date"
@@ -108,7 +111,7 @@ import { apiErrorMessage } from '../../../core/utils/api-error';
                   </div>
                   <div>
                     <span class="text-slate-500 uppercase font-semibold block">Vencimiento Estimado</span>
-                    <span class="text-slate-200 font-mono font-bold">{{ projectedEndDate() || '—' }}</span>
+                    <span class="text-slate-200 font-mono font-bold">{{ (projectedEndDate() | appDate) || '—' }}</span>
                   </div>
                   <div>
                     <span class="text-slate-500 uppercase font-semibold block">Modalidad / Cupo</span>

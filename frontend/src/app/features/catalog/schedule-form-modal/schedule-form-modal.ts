@@ -7,6 +7,7 @@ import { Activity, ActivityStatus, CreateRecurringScheduleRequest, RecurringSche
 import { PersonStatus, PersonSummary } from '../../../core/models/person.model';
 import { WEEK_DAYS, formatTimeForApi, formatTimeForInput, todayIsoDate } from '../../../core/utils/catalog-mappings';
 import { PersonOption, loadSecretaryCandidates, toPersonOptions } from '../schedule-secretary-options';
+import { DateInputDirective } from '../../../shared/directives/date-input.directive';
 
 function timeRangeValidator(group: AbstractControl): ValidationErrors | null {
   const start = group.get('startTime')?.value;
@@ -29,7 +30,7 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
 @Component({
   selector: 'app-schedule-form-modal',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, DateInputDirective],
   template: `
     <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
       <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl p-6 sm:p-8 shadow-2xl space-y-6 my-8">
@@ -199,7 +200,9 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
                 Vigencia Desde <span class="text-rose-400">*</span>
               </label>
               <input
-                type="date"
+                type="text"
+                appDateInput
+                placeholder="DD/MM/AAAA"
                 formControlName="validFrom"
                 class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-cyan-500 transition"
               />
@@ -214,7 +217,9 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
                 Vigencia Hasta (Opcional)
               </label>
               <input
-                type="date"
+                type="text"
+                appDateInput
+                placeholder="DD/MM/AAAA"
                 formControlName="validTo"
                 class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-cyan-500 transition"
               />

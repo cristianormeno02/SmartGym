@@ -84,9 +84,9 @@ describe('AssignMembershipModalComponent', () => {
     expect(component.plans().length).toBe(2);
     expect(component.startDate()).toBe(component.todayIso);
 
-    const dateInput = fixture.nativeElement.querySelector('input[type="date"]') as HTMLInputElement;
+    const dateInput = fixture.nativeElement.querySelector('[data-testid="input-start-date"]') as HTMLInputElement;
     expect(dateInput).toBeTruthy();
-    expect(dateInput.min).toBe(component.todayIso);
+    expect(dateInput.placeholder).toBe('DD/MM/AAAA');
   });
 
   it('should reject past startDate as invalid', () => {

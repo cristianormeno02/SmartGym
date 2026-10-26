@@ -346,8 +346,8 @@ describe('PersonDetailComponent', () => {
       expect(card.textContent).toContain('Membresías del Alumno');
       expect(card.textContent).toContain('Pase Libre Full');
       expect(card.textContent).toContain('Activa');
-      expect(card.textContent).toContain('2026-10-01');
-      expect(card.textContent).toContain('2026-10-30');
+      expect(card.textContent).toContain('01/10/2026');
+      expect(card.textContent).toContain('30/10/2026');
 
       const assignBtn = fixture.nativeElement.querySelector('[data-testid="btn-assign-membership"]');
       expect(assignBtn).not.toBeNull();

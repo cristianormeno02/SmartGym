@@ -4,11 +4,12 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { NotificationsService } from '../../../core/services/notifications.service';
 import { NotificationCategory, NotificationItem } from '../../../core/models/gym.models';
+import { AppDatePipe } from '../../../shared/pipes/app-date.pipe';
 
 @Component({
   selector: 'app-notifications-center',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, AppDatePipe],
   template: `
     <div class="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8">
       <div class="max-w-5xl mx-auto space-y-6">
@@ -85,9 +86,9 @@ import { NotificationCategory, NotificationItem } from '../../../core/models/gym
                   </div>
                   <p class="text-xs text-slate-300">{{ item.body || item.message }}</p>
                   <div class="text-[11px] text-slate-500">
-                    Enviada: {{ (item.sentAtUtc || item.createdAtUtc) | date:'medium' }}
+                    Enviada: {{ (item.sentAtUtc || item.createdAtUtc) | appDate:'time' }}
                     @if (item.readAtUtc) {
-                      <span> · Leída: {{ item.readAtUtc | date:'short' }}</span>
+                      <span> · Leída: {{ item.readAtUtc | appDate:'time' }}</span>
                     }
                   </div>
                 </div>
