@@ -38,7 +38,12 @@ import {
           </div>
 
           <div class="flex items-center gap-3">
-            <button (click)="openCompensatoryModal()" class="text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-slate-950 px-3 py-2 rounded-lg transition">
+            @if (authService.isStaff()) {
+              <button (click)="generateTodaySessions()" [disabled]="isGenerating()" class="text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-slate-950 px-3 py-2 rounded-lg transition disabled:opacity-50">
+                ⚡ Generar Clases de Hoy
+              </button>
+            }
+            <button (click)="openCompensatoryModal()" class="text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-2 rounded-lg transition">
               + Emitir Crédito Compensatorio
             </button>
             <button (click)="loadSessions()" class="text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg transition border border-slate-700">
@@ -66,8 +71,15 @@ import {
             </h2>
 
             @if (sessions().length === 0) {
-              <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 text-center text-slate-500 text-sm">
-                No hay clases programadas para hoy.
+              <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 text-center text-slate-400 text-sm space-y-3">
+                <p>No hay clases programadas para hoy.</p>
+                @if (authService.isStaff()) {
+                  <p class="text-xs text-slate-500">Si configuraste horarios para el día de hoy en el catálogo, podés generar las sesiones directamente:</p>
+                  <button (click)="generateTodaySessions()" [disabled]="isGenerating()"
+                          class="mt-2 inline-flex items-center gap-2 text-xs font-bold bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-slate-950 px-4 py-2 rounded-lg transition shadow-md">
+                    <span>⚡ Generar Clases del Día</span>
+                  </button>
+                }
               </div>
             } @else {
               <div class="space-y-3">
@@ -494,6 +506,7 @@ export class StaffPortalComponent implements OnInit {
 
   waitlist = signal<WaitlistEntry[]>([]);
   isSubmitting = signal(false);
+  isGenerating = signal(false);
 
   // Reserva en mostrador
   deskStudentId = '';
@@ -630,16 +643,51 @@ export class StaffPortalComponent implements OnInit {
     }
   }
 
+  getTodayString(): string {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  generateTodaySessions(): void {
+    const today = this.getTodayString();
+    this.isGenerating.set(true);
+    this.gymApi.generateClassSessions(today, today).subscribe({
+      next: (res) => {
+        this.isGenerating.set(false);
+        const count = res?.created ?? 0;
+        this.showFeedback(`Se generaron ${count} clases para hoy.`, true);
+        this.loadSessions();
+      },
+      error: (err) => {
+        this.isGenerating.set(false);
+        const msg = err?.error?.message || 'Error al generar sesiones para hoy.';
+        this.showFeedback(msg, false);
+      }
+    });
+  }
+
   loadSessions(): void {
-    const today = new Date().toISOString().split('T')[0];
+    const today = this.getTodayString();
     this.gymApi.getClassSessions({ fromDate: today, toDate: today }).subscribe({
       next: (data) => {
         this.sessions.set(data);
-        if (data.length > 0 && !this.selectedSession()) {
-          this.selectSession(data[0]);
+        if (data.length > 0) {
+          const current = this.selectedSession();
+          const match = current ? data.find(s => s.id === current.id) : null;
+          this.selectSession(match || data[0]);
+        } else {
+          this.selectedSession.set(null);
+          this.roster.set([]);
         }
       },
-      error: () => this.sessions.set([])
+      error: () => {
+        this.sessions.set([]);
+        this.selectedSession.set(null);
+        this.roster.set([]);
+      }
     });
   }
 
@@ -759,9 +807,12 @@ export class StaffPortalComponent implements OnInit {
   getStatusBadgeClass(status: number): string {
     switch (status) {
       case 0: return 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
-      case 1: return 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
-      case 2: return 'bg-slate-700 text-slate-300';
-      case 3: return 'bg-rose-500/20 text-rose-300 border border-rose-500/30';
+      case 1: return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+      case 2: return 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
+      case 3: return 'bg-slate-700 text-slate-300';
+      case 4: return 'bg-rose-500/20 text-rose-300 border border-rose-500/30';
+      case 5: return 'bg-rose-500/20 text-rose-300 border border-rose-500/30';
+      case 6: return 'bg-rose-500/20 text-rose-300 border border-rose-500/30';
       default: return 'bg-slate-800 text-slate-400';
     }
   }
@@ -769,11 +820,13 @@ export class StaffPortalComponent implements OnInit {
   getStatusText(status: number): string {
     switch (status) {
       case 0: return 'Programada';
-      case 1: return 'En Curso';
-      case 2: return 'Finalizada';
-      case 3: return 'Suspendida';
-      case 4: return 'Cancelada';
-      default: return 'Desconocido';
+      case 1: return 'Abierta';
+      case 2: return 'En Curso';
+      case 3: return 'Finalizada';
+      case 4: return 'Suspendida';
+      case 5: return 'Cancelada';
+      case 6: return 'Cancelada';
+      default: return 'Programada';
     }
   }
 

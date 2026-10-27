@@ -135,16 +135,59 @@ export class GymApiService {
 
   getClassSessions(filters?: { fromDate?: string; toDate?: string; activityId?: string; instructorId?: string; status?: number }): Observable<ClassSession[]> {
     let params = new HttpParams();
-    if (filters?.fromDate) params = params.set('fromDate', filters.fromDate);
-    if (filters?.toDate) params = params.set('toDate', filters.toDate);
+    const from = filters?.fromDate;
+    const to = filters?.toDate;
+    if (from) params = params.set('from', from);
+    if (to) params = params.set('to', to);
     if (filters?.activityId) params = params.set('activityId', filters.activityId);
     if (filters?.instructorId) params = params.set('instructorId', filters.instructorId);
     if (filters?.status !== undefined) params = params.set('status', filters.status.toString());
-    return this.http.get<ClassSession[]>(`${this.apiUrl}/classsessions`, { params });
+    params = params.set('pageSize', '100');
+
+    return this.http.get<any>(`${this.apiUrl}/classsessions`, { params }).pipe(
+      map(res => {
+        const rawItems: any[] = Array.isArray(res) ? res : (res?.items ?? []);
+        return rawItems.map((raw: any) => {
+          const startTime = raw.startTime || (raw.startsAtLocal ? raw.startsAtLocal.substring(11, 16) : '');
+          const endTime = raw.endTime || (raw.endsAtLocal ? raw.endsAtLocal.substring(11, 16) : '');
+          const date = raw.date || (raw.startsAtLocal ? raw.startsAtLocal.substring(0, 10) : '');
+          return {
+            id: raw.id,
+            recurringScheduleId: raw.recurringScheduleId,
+            activityId: raw.activityId,
+            activityName: raw.activityName,
+            activityColorHex: raw.activityColorHex,
+            roomId: raw.roomId,
+            roomName: raw.roomName,
+            instructorId: raw.effectiveInstructorId || raw.scheduledInstructorId || raw.instructorId,
+            instructorName: raw.effectiveInstructorName || raw.scheduledInstructorName || raw.instructorName,
+            date,
+            startTime,
+            endTime,
+            maxCapacity: raw.capacity ?? raw.maxCapacity ?? 0,
+            reservedCount: raw.reservedCount ?? 0,
+            attendedCount: raw.attendedCount ?? 0,
+            availableSpots: raw.availableSpots ?? 0,
+            status: raw.displayStatus ?? raw.status ?? 0,
+            cancellationReason: raw.cancellationReason || raw.suspensionObservations,
+            suspendedAtUtc: raw.suspendedAtUtc
+          } as ClassSession;
+        });
+      })
+    );
+  }
+
+  generateClassSessions(from: string, to: string, recurringScheduleId?: string): Observable<any> {
+    const body: any = { from, to };
+    if (recurringScheduleId) body.recurringScheduleId = recurringScheduleId;
+    return this.http.post<any>(`${this.apiUrl}/classsessions/generate`, body);
   }
 
   suspendClassSession(id: string, reason: string): Observable<ClassSession> {
-    return this.http.post<ClassSession>(`${this.apiUrl}/classsessions/${id}/suspend`, { reason });
+    return this.http.post<ClassSession>(`${this.apiUrl}/classsessions/${id}/suspend`, {
+      reason: 'Other',
+      observations: reason
+    });
   }
 
   finishClassSession(id: string): Observable<ClassSession> {
