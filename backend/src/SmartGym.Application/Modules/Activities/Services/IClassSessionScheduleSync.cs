@@ -5,4 +5,5 @@ namespace SmartGym.Application.Modules.Activities.Services;
 public interface IClassSessionScheduleSync
 {
     Task<List<Guid>> SyncAsync(Guid scheduleId, DateTime? nowUtc = null, CancellationToken cancellationToken = default);
+    Task<int> SyncAllActiveAsync(DateTime? nowUtc = null, CancellationToken cancellationToken = default);
 }

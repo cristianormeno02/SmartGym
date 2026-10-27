@@ -48,16 +48,16 @@ public class ClassSessionScheduleSync : IClassSessionScheduleSync
 
         foreach (var session in futureSessions)
         {
-            // Candidate condition:
-            // Status == Scheduled AND ReservedCount == 0 AND !IsDetachedFromSchedule
-            bool isCandidate = session.Status == ClassSessionStatus.Scheduled &&
-                               session.ReservedCount == 0 &&
-                               !session.IsDetachedFromSchedule;
-
-            if (!isCandidate)
+            // Las sesiones modificadas puntualmente a mano deben respetarse como divergentes
+            if (session.IsDetachedFromSchedule)
             {
-                // Non-candidate sessions are left untouched and reported as divergent
                 divergentSessionIds.Add(session.Id);
+                continue;
+            }
+
+            // Solo sincronizamos ocurrencias vivas en estado Scheduled u Open
+            if (session.Status != ClassSessionStatus.Scheduled && session.Status != ClassSessionStatus.Open)
+            {
                 continue;
             }
 
@@ -72,26 +72,36 @@ public class ClassSessionScheduleSync : IClassSessionScheduleSync
 
             if (!matchesSchedule)
             {
-                // Cancel candidate with ScheduleEnded
-                session.Cancel(
-                    ClassSessionCancellationReason.ScheduleEnded,
-                    observations: "El horario recurrente fue modificado, desactivado o finalizó su vigencia.",
-                    byUserId: null,
-                    nowUtc: now);
-            }
-            else
-            {
-                // In-place update: recalculate start/end, room, staff, capacity
-                var newStartsAtUtc = _gymCalendar.ToUtc(localDate, schedule.StartTime);
-                var newEndsAtUtc = _gymCalendar.ToUtc(localDate, schedule.EndTime);
-                if (newEndsAtUtc <= newStartsAtUtc)
+                if (session.ReservedCount == 0)
                 {
-                    newEndsAtUtc = newEndsAtUtc.AddDays(1);
+                    // Cancel candidate with ScheduleEnded
+                    session.Cancel(
+                        ClassSessionCancellationReason.ScheduleEnded,
+                        observations: "El horario recurrente fue modificado, desactivado o finalizó su vigencia.",
+                        byUserId: null,
+                        nowUtc: now);
                 }
+                else
+                {
+                    divergentSessionIds.Add(session.Id);
+                }
+                continue;
+            }
 
-                var resolvedCapacity = schedule.MaxCapacity ?? schedule.Activity.DefaultCapacity ?? session.Capacity;
+            // In-place update: recalculate start/end, room, staff, capacity
+            var newStartsAtUtc = _gymCalendar.ToUtc(localDate, schedule.StartTime);
+            var newEndsAtUtc = _gymCalendar.ToUtc(localDate, schedule.EndTime);
+            if (newEndsAtUtc <= newStartsAtUtc)
+            {
+                newEndsAtUtc = newEndsAtUtc.AddDays(1);
+            }
 
-                // Check collision if (scheduleId, newStartsAtUtc) already exists on another session
+            var resolvedCapacity = schedule.MaxCapacity ?? schedule.Activity.DefaultCapacity ?? session.Capacity;
+            bool timeSlotChanged = session.StartsAtUtc != newStartsAtUtc || session.EndsAtUtc != newEndsAtUtc;
+
+            if (session.ReservedCount == 0)
+            {
+                // Sin reservas: actualización total in-place
                 bool collisionWithExisting = await _dbContext.ClassSessions
                     .AnyAsync(cs => cs.RecurringScheduleId == scheduleId &&
                                     cs.StartsAtUtc == newStartsAtUtc &&
@@ -116,6 +126,20 @@ public class ClassSessionScheduleSync : IClassSessionScheduleSync
                         schedule.SecretaryId);
                 }
             }
+            else
+            {
+                // Con reservas previas
+                if (timeSlotChanged)
+                {
+                    // No se puede mover el horario a espaldas de los alumnos ya inscriptos
+                    divergentSessionIds.Add(session.Id);
+                }
+                else
+                {
+                    // Misma fecha y franja horaria: se sincroniza el personal asignado
+                    session.SyncStaffFromSchedule(schedule.InstructorId, schedule.SecretaryId);
+                }
+            }
         }
 
         // Save modifications to candidates before calling generator to ensure consistent state
@@ -130,5 +154,25 @@ public class ClassSessionScheduleSync : IClassSessionScheduleSync
         }
 
         return divergentSessionIds;
+    }
+
+    public async Task<int> SyncAllActiveAsync(
+        DateTime? nowUtc = null,
+        CancellationToken cancellationToken = default)
+    {
+        var activeScheduleIds = await _dbContext.RecurringSchedules
+            .AsNoTracking()
+            .Where(s => s.IsActive && s.Activity.IsActive && s.Activity.Status == ActivityStatus.Active)
+            .Select(s => s.Id)
+            .ToListAsync(cancellationToken);
+
+        int count = 0;
+        foreach (var scheduleId in activeScheduleIds)
+        {
+            await SyncAsync(scheduleId, nowUtc, cancellationToken);
+            count++;
+        }
+
+        return count;
     }
 }

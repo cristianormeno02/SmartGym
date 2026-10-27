@@ -257,4 +257,99 @@ public class ClassSessionScheduleSyncTests
         Assert.Equal(ClassSessionStatus.Cancelled, updatedCandidate.Status);
         Assert.Equal(ClassSessionCancellationReason.ScheduleEnded, updatedCandidate.CancellationReason);
     }
+
+    [Fact]
+    public async Task SyncAsync_WhenSessionIsOpenAndNoReservations_ShouldUpdateInstructorAndDetails()
+    {
+        // Martes a las 20:00 (caso reportado por usuario)
+        var (activity, room, instructor1, schedule) = SeedData(DayOfWeek.Tuesday, new TimeOnly(20, 0), new TimeOnly(21, 0), 20);
+
+        var startsUtc = _gymCalendar.ToUtc(new DateOnly(2026, 10, 13), new TimeOnly(20, 0));
+        var endsUtc = _gymCalendar.ToUtc(new DateOnly(2026, 10, 13), new TimeOnly(21, 0));
+
+        var session = ClassSession.CreateFromSchedule(
+            schedule.Id, activity.Id, room.Id, startsUtc, endsUtc, 20, instructor1.Id, null);
+        session.Open(_baseNowUtc);
+        _dbContext.ClassSessions.Add(session);
+        await _dbContext.SaveChangesAsync();
+
+        // Se edita el horario asignando un nuevo instructor
+        var instructor2 = Person.Create("Carlos", "Gomez", "carlos@gym.com");
+        _dbContext.People.Add(instructor2);
+        schedule.InstructorId = instructor2.Id;
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var divergent = await _sync.SyncAsync(schedule.Id, _baseNowUtc);
+
+        // Assert
+        Assert.Empty(divergent);
+        var updated = await _dbContext.ClassSessions.FindAsync(session.Id);
+        Assert.NotNull(updated);
+        Assert.Equal(ClassSessionStatus.Open, updated.Status);
+        Assert.Equal(instructor2.Id, updated.EffectiveInstructorId);
+        Assert.Equal(instructor2.Id, updated.ScheduledInstructorId);
+    }
+
+    [Fact]
+    public async Task SyncAsync_WhenSessionIsOpenWithReservationsAndInstructorChanges_ShouldUpdateInstructorPreservingReservations()
+    {
+        var (activity, room, instructor1, schedule) = SeedData(DayOfWeek.Tuesday, new TimeOnly(20, 0), new TimeOnly(21, 0), 20);
+
+        var startsUtc = _gymCalendar.ToUtc(new DateOnly(2026, 10, 13), new TimeOnly(20, 0));
+        var endsUtc = _gymCalendar.ToUtc(new DateOnly(2026, 10, 13), new TimeOnly(21, 0));
+
+        var session = ClassSession.CreateFromSchedule(
+            schedule.Id, activity.Id, room.Id, startsUtc, endsUtc, 20, instructor1.Id, null);
+        session.Open(_baseNowUtc);
+        session.IncrementReservedCount(); // Ya tiene reservas
+        _dbContext.ClassSessions.Add(session);
+        await _dbContext.SaveChangesAsync();
+
+        // Modifica solo el instructor en el horario recurrente (misma hora)
+        var instructor2 = Person.Create("Laura", "Fernandez", "laura@gym.com");
+        _dbContext.People.Add(instructor2);
+        schedule.InstructorId = instructor2.Id;
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var divergent = await _sync.SyncAsync(schedule.Id, _baseNowUtc);
+
+        // Assert
+        Assert.Empty(divergent); // La hora no cambió, por lo que no es divergente en horario
+        var updated = await _dbContext.ClassSessions.FindAsync(session.Id);
+        Assert.NotNull(updated);
+        Assert.Equal(1, updated.ReservedCount);
+        Assert.Equal(instructor2.Id, updated.EffectiveInstructorId);
+        Assert.Equal(instructor2.Id, updated.ScheduledInstructorId);
+    }
+
+    [Fact]
+    public async Task SyncAllActiveAsync_ShouldSyncAllActiveSchedulesInDatabase()
+    {
+        var (activity, room, instructor1, schedule) = SeedData(DayOfWeek.Tuesday, new TimeOnly(20, 0), new TimeOnly(21, 0), 20);
+
+        var startsUtc = _gymCalendar.ToUtc(new DateOnly(2026, 10, 13), new TimeOnly(20, 0));
+        var endsUtc = _gymCalendar.ToUtc(new DateOnly(2026, 10, 13), new TimeOnly(21, 0));
+
+        var session = ClassSession.CreateFromSchedule(
+            schedule.Id, activity.Id, room.Id, startsUtc, endsUtc, 20, instructor1.Id, null);
+        session.Open(_baseNowUtc);
+        _dbContext.ClassSessions.Add(session);
+        await _dbContext.SaveChangesAsync();
+
+        var instructor2 = Person.Create("Laura", "Fernandez", "laura@gym.com");
+        _dbContext.People.Add(instructor2);
+        schedule.InstructorId = instructor2.Id;
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var count = await _sync.SyncAllActiveAsync(_baseNowUtc);
+
+        // Assert
+        Assert.True(count >= 1);
+        var updated = await _dbContext.ClassSessions.FindAsync(session.Id);
+        Assert.NotNull(updated);
+        Assert.Equal(instructor2.Id, updated.EffectiveInstructorId);
+    }
 }

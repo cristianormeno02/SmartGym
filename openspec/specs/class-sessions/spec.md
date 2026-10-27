@@ -39,19 +39,23 @@ El sistema SHALL generar periódicamente clases concretas en estado PROGRAMADA a
 - **THEN** esa ocurrencia se omite y el resultado de la generación la informa como conflicto `ROOM_OVERLAP`, sin abortar el resto de la generación
 
 ### Requirement: Propagación de cambios del horario recurrente
-Al modificar, cerrar la vigencia o desactivar un horario recurrente, el sistema SHALL actualizar o cancelar (con motivo de sistema `ScheduleEnded`) las clases futuras de ese horario que sigan PROGRAMADAS, sin reservas y sin modificaciones manuales, y SHALL generar las nuevas ocurrencias que correspondan. Las clases abiertas, con reservas o modificadas manualmente SHALL quedar intactas y devolverse como divergentes.
+Al modificar, cerrar la vigencia o desactivar un horario recurrente, el sistema SHALL actualizar o cancelar (con motivo de sistema `ScheduleEnded`) las clases futuras de ese horario que no hayan sido modificadas manualmente (`!IsDetachedFromSchedule`). Para clases sin reservas (tanto PROGRAMADAS como ABIERTAS), SHALL sincronizar el horario, sala, cupo y personal; si el horario ya no es válido, SHALL cancelarlas con `ScheduleEnded`. Para clases que ya cuentan con reservas activas pero mantienen su fecha y franja horaria idénticas, SHALL sincronizar el personal programado y efectivo (instructor y secretaría). Las clases con reservas cuyo horario o día fue modificado, o aquellas con modificaciones manuales puntuales, SHALL quedar intactas y devolverse como divergentes.
+
+#### Scenario: Cambio de instructor del horario
+- **WHEN** un horario recurrente cambia su instructor asignado manteniendo su día y hora
+- **THEN** las clases futuras abiertas o programadas no desvinculadas manualmente actualizan su instructor programado y efectivo al nuevo instructor
 
 #### Scenario: Cambio de hora del horario
-- **WHEN** un horario de las 08:30 pasa a las 09:00 y tiene clases futuras PROGRAMADAS sin reservas
+- **WHEN** un horario de las 08:30 pasa a las 09:00 y tiene clases futuras PROGRAMADAS o ABIERTAS sin reservas
 - **THEN** esas clases se actualizan a las 09:00 en el mismo lugar
 
 #### Scenario: Cierre de vigencia
-- **WHEN** se adelanta el fin de vigencia de un horario al 31/10 y existen clases PROGRAMADAS sin reservas en noviembre
+- **WHEN** se adelanta el fin de vigencia de un horario al 31/10 y existen clases sin reservas en noviembre
 - **THEN** esas clases pasan a CANCELADA con motivo `ScheduleEnded`
 
-#### Scenario: Clase con reservas no se modifica
-- **WHEN** se cambia la sala de un horario y una de sus clases futuras está ABIERTA con reservas
-- **THEN** esa clase conserva su sala y se informa como divergente en la respuesta de la edición del horario
+#### Scenario: Clase con reservas ante cambio de horario
+- **WHEN** se cambia el horario o sala de un turno y una de sus clases futuras está ABIERTA con reservas
+- **THEN** esa clase conserva su horario y se informa como divergente en la respuesta de la edición del horario
 
 ### Requirement: Clases extraordinarias
 El sistema SHALL permitir crear clases concretas sin horario recurrente asociado. SHALL exigir una actividad `ACTIVE`, sala, instructor, inicio y fin futuros, y un cupo explícito o resoluble desde la capacidad por defecto de la actividad. La secretaría y las notas son opcionales.

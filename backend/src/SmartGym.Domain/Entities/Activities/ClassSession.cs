@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using SmartGym.Domain.Common;
 using SmartGym.Domain.Entities.Identity;
@@ -418,6 +418,15 @@ public class ClassSession : BaseEntity, IHasDomainEvents
         EndsAtUtc = endsAtUtc;
         RoomId = roomId;
         Capacity = capacity;
+        ScheduledInstructorId = scheduledInstructorId;
+        EffectiveInstructorId = scheduledInstructorId;
+        ScheduledSecretaryId = scheduledSecretaryId;
+        EffectiveSecretaryId = scheduledSecretaryId;
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    public void SyncStaffFromSchedule(Guid scheduledInstructorId, Guid? scheduledSecretaryId)
+    {
         ScheduledInstructorId = scheduledInstructorId;
         EffectiveInstructorId = scheduledInstructorId;
         ScheduledSecretaryId = scheduledSecretaryId;

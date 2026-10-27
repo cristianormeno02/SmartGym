@@ -110,4 +110,60 @@ public class ClassSessionGenerationWorkerTests
         var exception = await Record.ExceptionAsync(() => worker.RunGenerationAndAutoOpenAsync(CancellationToken.None));
         Assert.Null(exception);
     }
+
+    [Fact]
+    public async Task RunGenerationAndAutoOpenAsync_WhenScheduleSyncAvailable_InvokesSyncAllActive()
+    {
+        // Arrange
+        var mockGenerator = new Mock<IClassSessionGenerator>();
+        mockGenerator.Setup(g => g.GenerateAsync(
+                It.IsAny<DateOnly>(),
+                It.IsAny<DateOnly>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GenerationResultDto(Created: 1, Skipped: 0, Conflicts: new List<GenerationConflictDto>()));
+
+        var mockSync = new Mock<IClassSessionScheduleSync>();
+        mockSync.Setup(s => s.SyncAllActiveAsync(It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(2);
+
+        var serviceProviderMock = new Mock<IServiceProvider>();
+        serviceProviderMock.Setup(sp => sp.GetService(typeof(IClassSessionGenerator)))
+            .Returns(mockGenerator.Object);
+        serviceProviderMock.Setup(sp => sp.GetService(typeof(IClassSessionScheduleSync)))
+            .Returns(mockSync.Object);
+
+        var scopeMock = new Mock<IServiceScope>();
+        scopeMock.Setup(s => s.ServiceProvider).Returns(serviceProviderMock.Object);
+
+        var scopeFactoryMock = new Mock<IServiceScopeFactory>();
+        scopeFactoryMock.Setup(sf => sf.CreateScope()).Returns(scopeMock.Object);
+
+        var options = Options.Create(new ClassSessionsOptions
+        {
+            WindowDays = 60,
+            GenerationInterval = TimeSpan.FromHours(1),
+            AutoOpenLeadTime = TimeSpan.FromDays(7)
+        });
+
+        var gymCalendarMock = new Mock<IGymCalendar>();
+        gymCalendarMock.Setup(c => c.Today).Returns(new DateOnly(2026, 10, 15));
+
+        var worker = new ClassSessionGenerationWorker(
+            scopeFactoryMock.Object,
+            options,
+            gymCalendarMock.Object,
+            NullLogger<ClassSessionGenerationWorker>.Instance);
+
+        // Act
+        await worker.RunGenerationAndAutoOpenAsync(CancellationToken.None);
+
+        // Assert
+        mockSync.Verify(s => s.SyncAllActiveAsync(null, It.IsAny<CancellationToken>()), Times.Once);
+        mockGenerator.Verify(g => g.GenerateAsync(
+            new DateOnly(2026, 10, 15),
+            new DateOnly(2026, 10, 15).AddDays(60),
+            null,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

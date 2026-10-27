@@ -55,10 +55,18 @@ public class ClassSessionGenerationWorker : BackgroundService
         {
             using var scope = _scopeFactory.CreateScope();
             var generator = scope.ServiceProvider.GetRequiredService<IClassSessionGenerator>();
+            var scheduleSync = scope.ServiceProvider.GetService<IClassSessionScheduleSync>();
 
             var today = _gymCalendar.Today;
             var windowDays = _options.Value.WindowDays;
             var windowEnd = today.AddDays(windowDays);
+
+            if (scheduleSync != null)
+            {
+                _logger.LogInformation("Sincronizando sesiones futuras con horarios activos...");
+                var syncedCount = await scheduleSync.SyncAllActiveAsync(cancellationToken: cancellationToken);
+                _logger.LogInformation("Sincronización de horarios completada para {Count} horarios activos.", syncedCount);
+            }
 
             _logger.LogInformation("Iniciando generación de sesiones de clase [{From} a {To}]...", today, windowEnd);
             var result = await generator.GenerateAsync(today, windowEnd, scheduleId: null, cancellationToken);
