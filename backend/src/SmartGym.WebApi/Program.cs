@@ -1,5 +1,7 @@
+using Microsoft.EntityFrameworkCore;
 using SmartGym.Application;
 using SmartGym.Infrastructure;
+using SmartGym.Infrastructure.Persistence;
 using SmartGym.Infrastructure.Services.FileStorage;
 using SmartGym.WebApi.Common;
 
@@ -84,6 +86,18 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+
+// Aplicar migraciones pendientes automáticamente al iniciar si la base de datos es relacional (ej. PostgreSQL en Render)
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<SmartGymDbContext>();
+    if (dbContext.Database.IsRelational())
+    {
+        app.Logger.LogInformation("Verificando y aplicando migraciones pendientes de la base de datos...");
+        await dbContext.Database.MigrateAsync();
+        app.Logger.LogInformation("Migraciones de base de datos aplicadas exitosamente.");
+    }
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
