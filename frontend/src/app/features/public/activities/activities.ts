@@ -100,7 +100,11 @@ import { ActivityStatusActionsComponent } from '../../catalog/activity-status-ac
                     </span>
                     @if (act.requiresBooking === false) {
                       <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                        Sin reserva
+                        Acceso libre sin reserva
+                      </span>
+                    } @else {
+                      <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                        Con reserva previa
                       </span>
                     }
                     @if (authService.isStaff() && isActivityItem(act)) {

@@ -289,6 +289,7 @@ interface StudentSearchResult {
                         <input type="text"
                                [ngModel]="deskSearchInput()"
                                (ngModelChange)="onDeskStudentSearch($event)"
+                               (keydown)="onDeskSearchKeydown($event)"
                                placeholder="🔍 Buscar por DNI, Nombre o Apellido..."
                                class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition shadow-inner" />
                         @if (isSearchingStudents()) {
@@ -299,9 +300,10 @@ interface StudentSearchResult {
                       <!-- Sugerencias de búsqueda -->
                       @if (studentSearchResults().length > 0) {
                         <div class="absolute z-20 w-full mt-2 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden divide-y divide-slate-800">
-                          @for (st of studentSearchResults(); track st.id) {
+                          @for (st of studentSearchResults(); track st.id; let idx = $index) {
                             <div (click)="selectDeskStudent(st)"
-                                 class="p-3 hover:bg-slate-800/80 cursor-pointer transition flex items-center justify-between">
+                                 [ngClass]="highlightedStudentIndex() === idx ? 'bg-slate-800' : 'hover:bg-slate-800/80'"
+                                 class="p-3 cursor-pointer transition flex items-center justify-between">
                               <div>
                                 <p class="text-sm font-bold text-white">{{ st.fullName }}</p>
                                 <p class="text-xs text-slate-400">DNI: {{ st.documentNumber ?? st.dni ?? 'Sin documento' }} · {{ st.email }}</p>
@@ -386,20 +388,20 @@ interface StudentSearchResult {
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                               <div>
                                 <label class="block text-slate-400 mb-1">Plan de Pase Individual</label>
-                                <select [(ngModel)]="selectedSingleClassPlanId" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200">
+                                <select [(ngModel)]="selectedSingleClassPlanId" (ngModelChange)="onSingleClassPlanChange()" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200">
                                   @for (opt of el.singleClassPassOptions; track opt.planId) {
-                                    <option [value]="opt.planId">{{ opt.planName }} - $ {{ opt.price }}</option>
+                                    <option [ngValue]="opt.planId">{{ opt.planName }} - $ {{ opt.price }}</option>
                                   }
                                 </select>
                               </div>
                               <div>
                                 <label class="block text-slate-400 mb-1">Forma de Pago</label>
                                 <select [(ngModel)]="selectedPaymentMethod" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200">
-                                  <option [value]="PaymentMethodType.Cash">Efectivo</option>
-                                  <option [value]="PaymentMethodType.DebitCard">Tarjeta de Débito</option>
-                                  <option [value]="PaymentMethodType.CreditCard">Tarjeta de Crédito</option>
-                                  <option [value]="PaymentMethodType.BankTransfer">Transferencia Bancaria</option>
-                                  <option [value]="PaymentMethodType.DigitalWallet">Billetera Virtual</option>
+                                  <option [ngValue]="PaymentMethodType.Cash">Efectivo</option>
+                                  <option [ngValue]="PaymentMethodType.DebitCard">Tarjeta de Débito</option>
+                                  <option [ngValue]="PaymentMethodType.CreditCard">Tarjeta de Crédito</option>
+                                  <option [ngValue]="PaymentMethodType.BankTransfer">Transferencia Bancaria</option>
+                                  <option [ngValue]="PaymentMethodType.Other">Otro</option>
                                 </select>
                               </div>
                             </div>
@@ -576,19 +578,19 @@ interface StudentSearchResult {
                 <div>
                   <label class="block text-xs font-semibold text-slate-300 mb-1">Motivo de la anulación</label>
                   <select [(ngModel)]="revokeReasonValue" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:border-cyan-500">
-                    <option [value]="AttendanceRevocationReason.StaffError">Error de recepción / carga errónea (Restituye crédito)</option>
-                    <option [value]="AttendanceRevocationReason.StudentWithdrew">Alumno se retiró antes de iniciar (Restituye crédito)</option>
+                    <option [ngValue]="AttendanceRevocationReason.StaffError">Error de recepción / carga errónea</option>
+                    <option [ngValue]="AttendanceRevocationReason.StudentWithdrew">Alumno se retiró antes de finalizar (Restituye derecho de acceso)</option>
                   </select>
                 </div>
                 <div>
-                  <label class="block text-xs font-semibold text-slate-300 mb-1">Observación / Justificación</label>
-                  <textarea [(ngModel)]="revokeNotes" rows="2" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:border-cyan-500" placeholder="Ej: Se marcó por equivocación de fila"></textarea>
+                  <label class="block text-xs font-semibold text-slate-300 mb-1">Observación / Justificación (obligatoria)</label>
+                  <textarea [(ngModel)]="revokeNotes" maxlength="500" rows="2" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:border-cyan-500" placeholder="Ej: Se marcó por equivocación de fila"></textarea>
                 </div>
               </div>
               <div class="flex justify-end gap-3 pt-2">
                 <button (click)="reservationToRevoke.set(null)" class="text-xs bg-slate-800 text-slate-300 px-4 py-2 rounded-lg">Volver</button>
                 <button (click)="confirmRevokeAttendance()"
-                        [disabled]="isSubmitting()"
+                        [disabled]="isSubmitting() || !revokeNotes.trim()"
                         class="text-xs bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-2 rounded-lg transition disabled:opacity-40">
                   Confirmar Anulación
                 </button>
@@ -657,8 +659,38 @@ interface StudentSearchResult {
               <p class="text-xs text-slate-400">Agrega créditos de forma auditable al saldo de una membresía de alumno.</p>
               <div class="space-y-3">
                 <div>
-                  <label class="block text-xs font-semibold text-slate-300 mb-1">ID de Membresía del Alumno</label>
-                  <input [(ngModel)]="compensatoryMembershipId" type="text" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:border-cyan-500" placeholder="Guid de la membresía" />
+                  <label class="block text-xs font-semibold text-slate-300 mb-1">Alumno</label>
+                  @if (!selectedCompensatoryStudent()) {
+                    <input type="text"
+                           [ngModel]="compensatorySearchInput()"
+                           (ngModelChange)="onCompensatoryStudentSearch($event)"
+                           placeholder="Buscar alumno por DNI, Nombre o Apellido..."
+                           class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:border-cyan-500" />
+                    @if (compensatoryStudentResults().length > 0) {
+                      <div class="mt-1 bg-slate-950 border border-slate-700 rounded-lg max-h-40 overflow-y-auto divide-y divide-slate-800">
+                        @for (st of compensatoryStudentResults(); track st.id) {
+                          <div (click)="selectCompensatoryStudent(st)" class="p-2 hover:bg-slate-800 cursor-pointer text-xs">
+                            <span class="font-bold text-white">{{ st.fullName }}</span>
+                            <span class="text-slate-400 ml-2">{{ st.documentNumber ?? st.dni ?? '' }}</span>
+                          </div>
+                        }
+                      </div>
+                    }
+                  } @else {
+                    <div class="flex items-center justify-between bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs">
+                      <span class="font-semibold text-white">{{ selectedCompensatoryStudent()?.fullName }}</span>
+                      <button (click)="clearCompensatoryStudent()" class="text-slate-400 hover:text-white underline">Cambiar</button>
+                    </div>
+                  }
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-300 mb-1">Membresía del Alumno</label>
+                  <select [(ngModel)]="compensatoryMembershipId" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:border-cyan-500">
+                    <option value="">Seleccione una membresía...</option>
+                    @for (mem of compensatoryMemberships(); track mem.id) {
+                      <option [ngValue]="mem.id">{{ mem.membershipPlanName }} ({{ getMembershipStatusText(mem) }})</option>
+                    }
+                  </select>
                 </div>
                 <div>
                   <label class="block text-xs font-semibold text-slate-300 mb-1">Cantidad de Créditos</label>
@@ -671,7 +703,7 @@ interface StudentSearchResult {
               </div>
               <div class="flex justify-end gap-3 pt-2">
                 <button (click)="showCompensatoryModal.set(false)" class="text-xs bg-slate-800 text-slate-300 px-4 py-2 rounded-lg">Cerrar</button>
-                <button (click)="confirmCompensatoryCredit()" class="text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-4 py-2 rounded-lg transition">Emitir Crédito</button>
+                <button (click)="confirmCompensatoryCredit()" [disabled]="!compensatoryMembershipId || !compensatoryReason.trim()" class="text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-4 py-2 rounded-lg transition disabled:opacity-40">Emitir Crédito</button>
               </div>
             </div>
           </div>
@@ -693,6 +725,10 @@ export class StaffPortalComponent implements OnInit {
   suspendReason = '';
 
   showCompensatoryModal = signal(false);
+  compensatorySearchInput = signal('');
+  compensatoryStudentResults = signal<StudentSearchResult[]>([]);
+  selectedCompensatoryStudent = signal<StudentSearchResult | null>(null);
+  compensatoryMemberships = signal<Membership[]>([]);
   compensatoryMembershipId = '';
   compensatoryAmount = 1;
   compensatoryReason = '';
@@ -730,12 +766,15 @@ export class StaffPortalComponent implements OnInit {
   deskSearchInput = signal('');
   isSearchingStudents = signal(false);
   studentSearchResults = signal<StudentSearchResult[]>([]);
+  highlightedStudentIndex = signal(-1);
   selectedDeskStudent = signal<StudentSearchResult | null>(null);
   deskEligibility = signal<DeskEligibility | null>(null);
   isLoadingEligibility = signal(false);
 
   selectedSingleClassPlanId: string | null = null;
   selectedPaymentMethod: number = PaymentMethodType.Cash;
+  private pendingDropInIdempotencyKey: string | null = null;
+  private deskSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Anulación de asistencia (Revoke Attendance)
   reservationToRevoke = signal<Reservation | null>(null);
@@ -767,30 +806,72 @@ export class StaffPortalComponent implements OnInit {
   // --- Búsqueda de Alumno en Mostrador ---
   onDeskStudentSearch(term: string): void {
     this.deskSearchInput.set(term);
+    if (this.deskSearchDebounceTimer) {
+      clearTimeout(this.deskSearchDebounceTimer);
+      this.deskSearchDebounceTimer = null;
+    }
+
     const query = term?.trim() ?? '';
     if (query.length < 2) {
       this.studentSearchResults.set([]);
+      this.highlightedStudentIndex.set(-1);
       this.isSearchingStudents.set(false);
       return;
     }
 
-    this.isSearchingStudents.set(true);
-    this.gymApi.searchPeople({ role: 'Student', search: query, pageSize: 8 }).subscribe({
-      next: (res: PagedResult<any>) => {
-        this.isSearchingStudents.set(false);
-        this.studentSearchResults.set(res?.items ?? []);
-      },
-      error: () => {
-        this.isSearchingStudents.set(false);
-        this.studentSearchResults.set([]);
+    this.deskSearchDebounceTimer = setTimeout(() => {
+      this.isSearchingStudents.set(true);
+      this.gymApi.searchPeople({ role: 'Student', search: query, pageSize: 10 }).subscribe({
+        next: (res: PagedResult<any>) => {
+          this.isSearchingStudents.set(false);
+          const items = res?.items ?? [];
+          this.studentSearchResults.set(items);
+          this.highlightedStudentIndex.set(items.length > 0 ? 0 : -1);
+        },
+        error: () => {
+          this.isSearchingStudents.set(false);
+          this.studentSearchResults.set([]);
+          this.highlightedStudentIndex.set(-1);
+        }
+      });
+    }, 300);
+  }
+
+  onDeskSearchKeydown(event: KeyboardEvent): void {
+    const results = this.studentSearchResults();
+    if (event.key === 'Escape') {
+      this.studentSearchResults.set([]);
+      this.highlightedStudentIndex.set(-1);
+      return;
+    }
+    if (results.length === 0) return;
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      this.highlightedStudentIndex.set((this.highlightedStudentIndex() + 1) % results.length);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.highlightedStudentIndex.set((this.highlightedStudentIndex() - 1 + results.length) % results.length);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      const idx = this.highlightedStudentIndex();
+      const selected = idx >= 0 && idx < results.length ? results[idx] : results[0];
+      if (selected) {
+        this.selectDeskStudent(selected);
       }
-    });
+    }
   }
 
   selectDeskStudent(student: StudentSearchResult): void {
+    if (this.deskSearchDebounceTimer) {
+      clearTimeout(this.deskSearchDebounceTimer);
+      this.deskSearchDebounceTimer = null;
+    }
     this.selectedDeskStudent.set(student);
     this.studentSearchResults.set([]);
+    this.highlightedStudentIndex.set(-1);
     this.deskSearchInput.set('');
+    this.pendingDropInIdempotencyKey = null;
 
     const session = this.selectedSession();
     if (session) {
@@ -802,7 +883,13 @@ export class StaffPortalComponent implements OnInit {
     this.selectedDeskStudent.set(null);
     this.deskEligibility.set(null);
     this.selectedSingleClassPlanId = null;
+    this.pendingDropInIdempotencyKey = null;
     this.studentSearchResults.set([]);
+    this.highlightedStudentIndex.set(-1);
+  }
+
+  onSingleClassPlanChange(): void {
+    this.pendingDropInIdempotencyKey = null;
   }
 
   loadDeskEligibility(sessionId: string, studentId: string): void {
@@ -852,16 +939,21 @@ export class StaffPortalComponent implements OnInit {
     const student = this.selectedDeskStudent();
     if (!session || !student || !singleClassPlanId) return;
 
+    if (!this.pendingDropInIdempotencyKey) {
+      this.pendingDropInIdempotencyKey = crypto.randomUUID();
+    }
+
     this.isSubmitting.set(true);
     this.gymApi.deskDropInCheckIn({
       classSessionId: session.id,
       studentId: student.id,
       singleClassPlanId,
       paymentMethod,
-      idempotencyKey: crypto.randomUUID()
+      idempotencyKey: this.pendingDropInIdempotencyKey
     }).subscribe({
       next: (res) => {
         this.isSubmitting.set(false);
+        this.pendingDropInIdempotencyKey = null;
         this.showFeedback(`✓ Pase cobrado y presente registrado para ${res.reservation?.studentName ?? student.fullName}.`, true);
         this.clearSelectedDeskStudent();
         this.refreshAfterReservationChange();
@@ -929,7 +1021,8 @@ export class StaffPortalComponent implements OnInit {
     if (!target) return;
 
     const chosenReason = reason ?? this.revokeReasonValue;
-    const chosenNotes = (notes ?? this.revokeNotes).trim() || 'Anulación por personal administrativo';
+    const chosenNotes = (notes ?? this.revokeNotes).trim();
+    if (!chosenNotes) return;
 
     this.isSubmitting.set(true);
     this.gymApi.revokeAttendance(target.id, {
@@ -1171,7 +1264,46 @@ export class StaffPortalComponent implements OnInit {
     this.compensatoryMembershipId = '';
     this.compensatoryAmount = 1;
     this.compensatoryReason = '';
+    this.compensatorySearchInput.set('');
+    this.compensatoryStudentResults.set([]);
+    this.selectedCompensatoryStudent.set(null);
+    this.compensatoryMemberships.set([]);
     this.showCompensatoryModal.set(true);
+  }
+
+  onCompensatoryStudentSearch(term: string): void {
+    this.compensatorySearchInput.set(term);
+    const query = term?.trim() ?? '';
+    if (query.length < 2) {
+      this.compensatoryStudentResults.set([]);
+      return;
+    }
+    this.gymApi.searchPeople({ role: 'Student', search: query, pageSize: 10 }).subscribe({
+      next: (res: PagedResult<any>) => this.compensatoryStudentResults.set(res?.items ?? []),
+      error: () => this.compensatoryStudentResults.set([])
+    });
+  }
+
+  selectCompensatoryStudent(student: StudentSearchResult): void {
+    this.selectedCompensatoryStudent.set(student);
+    this.compensatoryStudentResults.set([]);
+    this.compensatorySearchInput.set('');
+    this.compensatoryMembershipId = '';
+    this.gymApi.getStudentMemberships(student.id).subscribe({
+      next: (memberships) => {
+        this.compensatoryMemberships.set(memberships ?? []);
+        if (memberships && memberships.length > 0) {
+          this.compensatoryMembershipId = memberships[0].id;
+        }
+      },
+      error: () => this.compensatoryMemberships.set([])
+    });
+  }
+
+  clearCompensatoryStudent(): void {
+    this.selectedCompensatoryStudent.set(null);
+    this.compensatoryMemberships.set([]);
+    this.compensatoryMembershipId = '';
   }
 
   confirmCompensatoryCredit(): void {

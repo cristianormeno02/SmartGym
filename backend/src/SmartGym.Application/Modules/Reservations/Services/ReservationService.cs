@@ -1985,6 +1985,11 @@ public class ReservationService : IReservationService
         Guid studentId,
         CancellationToken cancellationToken = default)
     {
+        if (_currentUserService != null && _currentUserService.IsAuthenticated && !IsStaffCaller)
+        {
+            throw new ForbiddenException("Solo el personal de recepción o administración puede consultar la ficha de mostrador.");
+        }
+
         var session = await _dbContext.ClassSessions
             .Include(cs => cs.Activity)
             .Include(cs => cs.Room)
@@ -1992,11 +1997,11 @@ public class ReservationService : IReservationService
             .FirstOrDefaultAsync(cs => cs.Id == classSessionId && cs.IsActive, cancellationToken)
             ?? throw new NotFoundException("Clase no encontrada.");
 
-        EnsureInstructorOrStaffScopeForSession(session);
-
         var student = await _dbContext.People
+            .Include(p => p.PersonRoles)
+                .ThenInclude(pr => pr.Role)
             .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == studentId && p.IsActive, cancellationToken)
+            .FirstOrDefaultAsync(p => p.Id == studentId, cancellationToken)
             ?? throw new NotFoundException("Alumno no encontrado.");
 
         var nowUtc = _gymCalendar.UtcNow;
@@ -2025,25 +2030,19 @@ public class ReservationService : IReservationService
                         m.Status == MembershipStatus.Active &&
                         m.StartDate <= classDate &&
                         m.EndDate >= classDate)
+            .OrderBy(m => m.EndDate)
             .ToListAsync(cancellationToken);
 
-        var eligibleMemberships = new List<DeskEligibleMembershipDto>();
-        foreach (var m in memberships)
-        {
-            if (m.MembershipPlan.AppliesToAllActivities || m.MembershipPlan.AllowedActivities.Any(a => a.ActivityId == session.ActivityId))
-            {
-                if (m.MembershipPlan.IsUnlimited || m.AvailableCredits > 0)
-                {
-                    eligibleMemberships.Add(new DeskEligibleMembershipDto(
-                        m.Id,
-                        m.MembershipPlan.Name,
-                        m.MembershipPlan.IsUnlimited,
-                        m.AvailableCredits,
-                        m.EndDate
-                    ));
-                }
-            }
-        }
+        // Todas las membresías vigentes se informan en la ficha (incluidas las que quedaron con 0 créditos)
+        var eligibleMemberships = memberships
+            .Select(m => new DeskEligibleMembershipDto(
+                m.Id,
+                m.MembershipPlan.Name,
+                m.IsUnlimited || m.MembershipPlan.IsUnlimited,
+                m.AvailableCredits,
+                m.EndDate
+            ))
+            .ToList();
 
         var singlePassPlans = await _dbContext.MembershipPlans
             .Include(p => p.AllowedActivities)
@@ -2058,6 +2057,54 @@ public class ReservationService : IReservationService
             .ToList();
 
         var issues = new List<SmartGym.Application.Modules.Memberships.Dtos.EligibilityIssueDto>();
+        bool studentAndActivityValid = true;
+        ReservationAccessType? suggestedAccessType = null;
+        bool hasUsableAccessRight = false;
+
+        try
+        {
+            var resolved = await _accessResolver.ResolveAsync(
+                student,
+                session,
+                classDate,
+                new AccessResolutionRequest(),
+                excludingReservationId: existingId,
+                cancellationToken: cancellationToken);
+
+            hasUsableAccessRight = true;
+            suggestedAccessType = resolved.AccessType;
+        }
+        catch (ConflictException ex)
+        {
+            if (ex.Code is SmartGym.Application.Modules.Memberships.Dtos.EligibilityIssueCodes.ActivityNotActive
+                        or SmartGym.Application.Modules.Memberships.Dtos.EligibilityIssueCodes.StudentNotActive
+                        or SmartGym.Application.Modules.Memberships.Dtos.EligibilityIssueCodes.AgeNotAllowed
+                        or SmartGym.Application.Modules.Memberships.Dtos.EligibilityIssueCodes.UnderageEmergencyContactRequired
+                        or SmartGym.Application.Modules.Memberships.Dtos.EligibilityIssueCodes.MedicalCertificateRequired)
+            {
+                studentAndActivityValid = false;
+            }
+
+            if (ex.Details is IReadOnlyList<SmartGym.Application.Modules.Memberships.Dtos.EligibilityIssueDto> detailIssues && detailIssues.Count > 0)
+            {
+                foreach (var r in detailIssues)
+                {
+                    if (!issues.Any(i => i.Code == r.Code))
+                    {
+                        issues.Add(r);
+                    }
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(ex.Code))
+            {
+                issues.Add(new(ex.Code, ex.Message));
+            }
+        }
+
+        var isSessionOpenForDropIn = (session.Status == ClassSessionStatus.Open || session.Status == ClassSessionStatus.Scheduled)
+            && session.Activity != null
+            && session.Activity.IsActive
+            && session.Activity.Status == ActivityStatus.Active;
 
         if (session.Status is ClassSessionStatus.Suspended or ClassSessionStatus.Cancelled or ClassSessionStatus.Rescheduled)
         {
@@ -2079,23 +2126,19 @@ public class ReservationService : IReservationService
             issues.Add(new(ReservationErrorCodes.AlreadyCheckedIn, "El alumno ya se encuentra registrado como presente en esta clase."));
         }
 
-        var isSessionOpen = session.Status == ClassSessionStatus.Open;
         var canCheckInWithMembership = false;
         var canPurchaseSingleClassPass = false;
         var canEnrollReservation = false;
 
-        if (isSessionOpen && existingStatus != ReservationStatus.Attended)
+        if (isSessionOpenForDropIn && studentAndActivityValid && existingReservation == null)
         {
-            if (existingStatus == ReservationStatus.Confirmed)
-            {
-                canCheckInWithMembership = isWithinDropInWindow;
-            }
-            else
-            {
-                canCheckInWithMembership = isWithinDropInWindow && availableSpots > 0 && eligibleMemberships.Count > 0;
-                canPurchaseSingleClassPass = isWithinDropInWindow && availableSpots > 0 && singleClassPassOptions.Count > 0;
-                canEnrollReservation = session.Activity.RequiresBooking && session.StartsAtUtc > nowUtc && availableSpots > 0;
-            }
+            canCheckInWithMembership = isWithinDropInWindow && availableSpots > 0 && hasUsableAccessRight;
+            canPurchaseSingleClassPass = isWithinDropInWindow && availableSpots > 0 && singleClassPassOptions.Count > 0;
+            canEnrollReservation = session.Status == ClassSessionStatus.Open
+                && session.Activity!.RequiresBooking
+                && session.StartsAtUtc > nowUtc
+                && availableSpots > 0
+                && hasUsableAccessRight;
         }
 
         return new DeskEligibilityDto(
@@ -2103,7 +2146,7 @@ public class ReservationService : IReservationService
             StudentId: studentId,
             StudentFullName: student.FullName,
             StudentDni: student.Dni ?? string.Empty,
-            RequiresBooking: session.Activity.RequiresBooking,
+            RequiresBooking: session.Activity?.RequiresBooking ?? true,
             IsWithinDropInWindow: isWithinDropInWindow,
             AvailableSpots: availableSpots,
             HasActiveReservation: hasActiveReservation,
@@ -2114,7 +2157,10 @@ public class ReservationService : IReservationService
             CanEnrollReservation: canEnrollReservation,
             EligibleMemberships: eligibleMemberships,
             SingleClassPassOptions: singleClassPassOptions,
-            IneligibilityReasons: issues
+            IneligibilityReasons: issues,
+            StudentPhotoUrl: student.ExternalAvatarUrl,
+            StudentStatus: student.Status,
+            SuggestedAccessType: suggestedAccessType
         );
     }
 
@@ -2128,13 +2174,16 @@ public class ReservationService : IReservationService
             throw new ForbiddenException("Solo el personal de recepción o administración puede realizar check-in directo.");
         }
 
-        Guid actorUserId = staffUserId != Guid.Empty ? staffUserId : (_currentUserService?.UserId ?? Guid.NewGuid());
+        Guid actorUserId = staffUserId != Guid.Empty ? staffUserId : (_currentUserService?.UserId ?? Guid.Empty);
+        Guid? nullableActorUserId = actorUserId != Guid.Empty ? actorUserId : null;
         var normalizedKey = string.IsNullOrWhiteSpace(request.IdempotencyKey) ? null : request.IdempotencyKey.Trim();
 
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
+        // 1. Orden único de bloqueo: primero ClassSessions
         await LockClassSessionTranslatingConcurrencyAsync(request.ClassSessionId, cancellationToken);
 
+        // 2. Verificar idempotencia antes de validaciones de negocio
         if (normalizedKey != null)
         {
             var existingByKey = await _dbContext.Reservations
@@ -2159,19 +2208,24 @@ public class ReservationService : IReservationService
             }
         }
 
+        // 3. Validar la sesión y su actividad
         var session = await _dbContext.ClassSessions
             .Include(cs => cs.Activity)
             .Include(cs => cs.Room)
             .FirstOrDefaultAsync(cs => cs.Id == request.ClassSessionId && cs.IsActive, cancellationToken)
             ?? throw new NotFoundException("Clase no encontrada.");
 
-        if (session.Status != ClassSessionStatus.Open)
+        if ((session.Status != ClassSessionStatus.Open && session.Status != ClassSessionStatus.Scheduled) ||
+            session.Activity == null ||
+            !session.Activity.IsActive ||
+            session.Activity.Status != ActivityStatus.Active)
         {
             throw ConflictException.WithCode(
                 ReservationErrorCodes.ClassNotOpen,
                 $"No se puede realizar check-in para una clase en estado {session.Status}.");
         }
 
+        // 4. Ventana horaria de drop-in: [StartsAtUtc - CheckInOpensMinutesBeforeStart, EndsAtUtc)
         var nowUtc = _gymCalendar.UtcNow;
         var windowStartUtc = session.StartsAtUtc.AddMinutes(-_options.CheckInOpensMinutesBeforeStart);
         var windowEndUtc = session.EndsAtUtc;
@@ -2182,12 +2236,24 @@ public class ReservationService : IReservationService
                 "El ingreso por mostrador se encuentra fuera del horario habilitado.");
         }
 
+        // 5. Obtener alumno y validar reglas de persona/actividad
         var student = await _dbContext.People
-            .FirstOrDefaultAsync(p => p.Id == request.StudentId && p.IsActive, cancellationToken)
+            .Include(p => p.PersonRoles)
+                .ThenInclude(pr => pr.Role)
+            .FirstOrDefaultAsync(p => p.Id == request.StudentId, cancellationToken)
             ?? throw new NotFoundException("Alumno no encontrado.");
 
+        var classDate = DateOnly.FromDateTime(_gymCalendar.ToLocal(session.StartsAtUtc).DateTime);
+        await _accessResolver.ValidateActivityAndStudentRulesAsync(student, session, classDate, cancellationToken);
+
+        // 6. Validar ausencia de reserva previa o asistencia ya registrada
         var existingReservation = await _dbContext.Reservations
-            .FirstOrDefaultAsync(r => r.ClassSessionId == request.ClassSessionId && r.StudentId == request.StudentId && r.IsActive && r.Status != ReservationStatus.Cancelled, cancellationToken);
+            .FirstOrDefaultAsync(
+                r => r.ClassSessionId == request.ClassSessionId &&
+                     r.StudentId == request.StudentId &&
+                     r.IsActive &&
+                     r.Status != ReservationStatus.Cancelled,
+                cancellationToken);
 
         if (existingReservation != null)
         {
@@ -2198,14 +2264,15 @@ public class ReservationService : IReservationService
                     "El alumno ya tiene asistencia registrada para esta clase.");
             }
 
-            if (existingReservation.Status == ReservationStatus.Confirmed)
+            if (existingReservation.Status is ReservationStatus.Confirmed or ReservationStatus.Pending or ReservationStatus.Waitlisted)
             {
                 throw ConflictException.WithCode(
                     ReservationErrorCodes.AlreadyReserved,
-                    "El alumno ya posee una reserva confirmada para esta clase. Utilice el registro de asistencia habitual.");
+                    "El alumno ya posee una reserva activa o se encuentra en lista de espera para esta clase.");
             }
         }
 
+        // 7. Validar cupo disponible
         if (session.ReservedCount >= session.Capacity)
         {
             throw ConflictException.WithCode(
@@ -2213,20 +2280,20 @@ public class ReservationService : IReservationService
                 "No hay cupos disponibles en la clase.");
         }
 
-        ReservationAccessType accessType;
-        Guid? membershipId = null;
-        Guid? creditMovementId = null;
-        Guid? singleClassTicketMovementId = null;
+        // 8. Bloquear membresías del alumno (orden único de bloqueo: ClassSessions -> Memberships)
+        await LockStudentMembershipsTranslatingConcurrencyAsync(student.Id, cancellationToken);
+
+        Reservation reservation;
         Guid? paymentId = null;
 
         if (request.SingleClassPlanId.HasValue)
         {
+            // Caso B: Cobro de pase individual in situ
             var plan = await _dbContext.MembershipPlans
                 .Include(p => p.AllowedActivities)
-                .FirstOrDefaultAsync(p => p.Id == request.SingleClassPlanId.Value && p.IsActive, cancellationToken)
-                ?? throw new NotFoundException("Plan de pase individual no encontrado.");
+                .FirstOrDefaultAsync(p => p.Id == request.SingleClassPlanId.Value, cancellationToken);
 
-            if (!plan.IsEligibleAsSingleClassPassFor(session.ActivityId))
+            if (plan == null || !plan.IsEligibleAsSingleClassPassFor(session.ActivityId))
             {
                 throw ConflictException.WithCode(
                     ReservationErrorCodes.SingleClassPlanNotAvailable,
@@ -2234,6 +2301,11 @@ public class ReservationService : IReservationService
             }
 
             var method = request.PaymentMethod ?? PaymentMethod.Cash;
+            if (method == PaymentMethod.DigitalWallet)
+            {
+                throw new ArgumentException("El cobro en mostrador sólo admite medios de pago manuales (Efectivo, Débito, Crédito, Transferencia u Otro).");
+            }
+
             var paymentResult = await _paymentService.RegisterPaymentAsync(
                 new SmartGym.Application.Modules.Operations.Dtos.RegisterPaymentRequest(
                     PayerPersonId: student.Id,
@@ -2261,86 +2333,57 @@ public class ReservationService : IReservationService
                 actorUserId,
                 cancellationToken);
 
-            singleClassTicketMovementId = ticketMovement.Id;
-            accessType = ReservationAccessType.SingleClassTicket;
+            reservation = Reservation.CreateDropInAttended(
+                classSessionId: session.Id,
+                studentId: student.Id,
+                accessType: ReservationAccessType.SingleClassTicket,
+                nowUtc: nowUtc,
+                staffUserId: nullableActorUserId,
+                membershipId: null,
+                creditMovementId: null,
+                singleClassTicketMovementId: ticketMovement.Id,
+                paymentId: paymentId,
+                notes: request.Notes,
+                idempotencyKey: normalizedKey);
         }
         else
         {
-            var classDate = DateOnly.FromDateTime(_gymCalendar.ToLocal(session.StartsAtUtc).DateTime);
-            var membershipQuery = _dbContext.Memberships
-                .Include(m => m.MembershipPlan)
-                    .ThenInclude(p => p.AllowedActivities)
-                .Where(m => m.StudentId == student.Id &&
-                            m.IsActive &&
-                            m.Status == MembershipStatus.Active &&
-                            m.StartDate <= classDate &&
-                            m.EndDate >= classDate);
+            // Caso A: Resolver derecho de acceso existente (membresía con crédito, ilimitada, pase previo/liberado o crédito compensatorio)
+            var resolvedAccess = await _accessResolver.ResolveAsync(
+                student,
+                session,
+                classDate,
+                new AccessResolutionRequest(MembershipId: request.MembershipId),
+                excludingReservationId: null,
+                cancellationToken: cancellationToken);
 
-            Membership? membership;
-            if (request.MembershipId.HasValue)
-            {
-                membership = await membershipQuery.FirstOrDefaultAsync(m => m.Id == request.MembershipId.Value, cancellationToken);
-            }
-            else
-            {
-                membership = await membershipQuery.OrderBy(m => m.MembershipPlan.IsUnlimited ? 1 : 0).FirstOrDefaultAsync(cancellationToken);
-            }
+            reservation = Reservation.CreateDropInAttended(
+                classSessionId: session.Id,
+                studentId: student.Id,
+                accessType: resolvedAccess.AccessType,
+                nowUtc: nowUtc,
+                staffUserId: nullableActorUserId,
+                membershipId: resolvedAccess.SelectedMembership?.Id,
+                notes: request.Notes,
+                idempotencyKey: normalizedKey);
 
-            if (membership == null)
-            {
-                throw ConflictException.WithCode(
-                    ReservationErrorCodes.NoAccessRight,
-                    "El alumno no posee una membresía activa válida para esta actividad.");
-            }
+            var consumed = await _accessResolver.ConsumeAsync(
+                resolvedAccess,
+                student,
+                session,
+                classDate,
+                reservation.Id,
+                nullableActorUserId,
+                cancellationToken);
 
-            if (!membership.MembershipPlan.AppliesToAllActivities &&
-                !membership.MembershipPlan.AllowedActivities.Any(a => a.ActivityId == session.ActivityId))
-            {
-                throw ConflictException.WithCode(
-                    ReservationErrorCodes.NoAccessRight,
-                    "La membresía del alumno no incluye la actividad de esta clase.");
-            }
-
-            membershipId = membership.Id;
-
-            if (membership.MembershipPlan.IsUnlimited)
-            {
-                accessType = ReservationAccessType.UnlimitedMembership;
-            }
-            else
-            {
-                if (membership.AvailableCredits <= 0)
-                {
-                    throw ConflictException.WithCode(
-                        ReservationErrorCodes.NoAccessRight,
-                        "La membresía no dispone de créditos restantes.");
-                }
-
-                var debitMovement = await _creditLedgerService.ConsumeCreditForReservationAsync(
-                    membership,
-                    session.Id,
-                    classDate,
-                    $"Ingreso directo en mostrador ({session.Activity?.Name ?? "Clase"})",
-                    actorUserId,
-                    cancellationToken: cancellationToken);
-
-                creditMovementId = debitMovement.Id;
-                accessType = ReservationAccessType.MembershipCredit;
-            }
+            reservation.AccessType = consumed.AccessType;
+            reservation.MembershipId = consumed.MembershipId;
+            reservation.CreditMovementId = consumed.CreditMovementId;
+            reservation.SingleClassTicketMovementId = consumed.SingleClassTicketMovementId;
+            reservation.PaymentId = consumed.PaymentId;
+            reservation.PromotionRedemptionId = consumed.PromotionRedemptionId;
+            paymentId = consumed.PaymentId;
         }
-
-        var reservation = Reservation.CreateDropInAttended(
-            classSessionId: session.Id,
-            studentId: student.Id,
-            accessType: accessType,
-            membershipId: membershipId,
-            creditMovementId: creditMovementId,
-            singleClassTicketMovementId: singleClassTicketMovementId,
-            paymentId: paymentId,
-            staffUserId: actorUserId,
-            nowUtc: nowUtc,
-            idempotencyKey: normalizedKey,
-            notes: request.Notes);
 
         session.IncrementReservedCount();
         session.IncrementAttendedCount();
@@ -2364,9 +2407,10 @@ public class ReservationService : IReservationService
                 reservation.MembershipId,
                 reservation.PaymentId,
                 reservation.SingleClassTicketMovementId,
-                reservation.CreditMovementId
+                reservation.CreditMovementId,
+                request.SingleClassPlanId
             }),
-            actorUserId,
+            nullableActorUserId,
             _currentUserService?.Email,
             null,
             cancellationToken);
@@ -2390,22 +2434,30 @@ public class ReservationService : IReservationService
             throw new ForbiddenException("Solo el personal de recepción o administración puede anular la asistencia.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.Notes) || request.Notes.Trim().Length < 5)
+        if (string.IsNullOrWhiteSpace(request.Notes))
         {
-            throw new ArgumentException("Debe proporcionar un motivo u observación de al menos 5 caracteres.");
+            throw new ArgumentException("Debe proporcionar un motivo u observación obligatoria para la anulación.");
         }
 
-        Guid actorUserId = staffUserId != Guid.Empty ? staffUserId : (_currentUserService?.UserId ?? Guid.NewGuid());
+        var trimmedNotes = request.Notes.Trim();
+        if (trimmedNotes.Length > 500)
+        {
+            throw new ArgumentException("La observación no puede superar los 500 caracteres.");
+        }
+
+        Guid? actorUserId = staffUserId != Guid.Empty ? staffUserId : _currentUserService?.UserId;
 
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         var sessionKey = await _dbContext.Reservations
             .Where(r => r.Id == reservationId && r.IsActive)
-            .Select(r => new { r.ClassSessionId })
+            .Select(r => new { r.ClassSessionId, r.StudentId })
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("Reserva no encontrada.");
 
+        // Orden único de bloqueo: ClassSessions -> Memberships
         await LockClassSessionTranslatingConcurrencyAsync(sessionKey.ClassSessionId, cancellationToken);
+        await LockStudentMembershipsTranslatingConcurrencyAsync(sessionKey.StudentId, cancellationToken);
 
         var reservation = await _dbContext.Reservations
             .Include(r => r.ClassSession)
@@ -2414,6 +2466,7 @@ public class ReservationService : IReservationService
                 .ThenInclude(cs => cs.Room)
             .Include(r => r.Student)
             .Include(r => r.Membership)
+                .ThenInclude(m => m!.MembershipPlan)
             .Include(r => r.StatusChanges)
             .FirstOrDefaultAsync(r => r.Id == reservationId && r.IsActive, cancellationToken)
             ?? throw new NotFoundException("Reserva no encontrada.");
@@ -2429,15 +2482,27 @@ public class ReservationService : IReservationService
         }
 
         var nowUtc = _gymCalendar.UtcNow;
-        var maxRevocationEndUtc = session.EndsAtUtc.AddHours(_options.AttendanceRegistrationHoursAfterEnd);
-        if (nowUtc > maxRevocationEndUtc)
+        if (request.Reason == AttendanceRevocationReason.StudentWithdrew)
         {
-            throw ConflictException.WithCode(
-                ReservationErrorCodes.AttendanceRevocationWindowClosed,
-                "El plazo máximo para anular o corregir la asistencia de esta clase ha expirado.");
+            if (nowUtc >= session.EndsAtUtc)
+            {
+                throw ConflictException.WithCode(
+                    ReservationErrorCodes.AttendanceRevocationWindowClosed,
+                    "La anulación por desistimiento del alumno sólo se permite antes de que finalice la clase.");
+            }
+        }
+        else
+        {
+            var maxRevocationEndUtc = session.EndsAtUtc.AddHours(_options.AttendanceRegistrationHoursAfterEnd);
+            if (nowUtc > maxRevocationEndUtc)
+            {
+                throw ConflictException.WithCode(
+                    ReservationErrorCodes.AttendanceRevocationWindowClosed,
+                    "El plazo máximo para anular o corregir la asistencia de esta clase ha expirado.");
+            }
         }
 
-        reservation.RevokeAttendance(request.Reason, request.Notes, actorUserId, nowUtc);
+        reservation.RevokeAttendance(request.Reason, trimmedNotes, actorUserId, nowUtc);
 
         string actionTaken;
         bool rightsRestored = false;
@@ -2454,19 +2519,21 @@ public class ReservationService : IReservationService
             session.DecrementReservedCount();
             actionTaken = "Cancelled";
 
-            if (reservation.AccessType == ReservationAccessType.MembershipCredit &&
-                reservation.MembershipId.HasValue &&
-                reservation.CreditMovementId.HasValue)
+            if ((reservation.AccessType == ReservationAccessType.MembershipCredit ||
+                 reservation.AccessType == ReservationAccessType.UnlimitedMembership) &&
+                reservation.MembershipId.HasValue)
             {
                 var membership = reservation.Membership ??
-                    await _dbContext.Memberships.FirstOrDefaultAsync(m => m.Id == reservation.MembershipId.Value, cancellationToken);
+                    await _dbContext.Memberships
+                        .Include(m => m.MembershipPlan)
+                        .FirstOrDefaultAsync(m => m.Id == reservation.MembershipId.Value, cancellationToken);
 
                 if (membership != null)
                 {
                     var refundMovement = await _creditLedgerService.RefundCreditForReservationAsync(
                         membership,
                         session.Id,
-                        $"Anulación de presente ({request.Notes.Trim()})",
+                        $"Anulación de presente ({trimmedNotes})",
                         actorUserId,
                         reservation.Id,
                         cancellationToken);
@@ -2476,16 +2543,18 @@ public class ReservationService : IReservationService
                     rightsRestored = true;
                 }
             }
-            else if (reservation.AccessType == ReservationAccessType.SingleClassTicket &&
-                     reservation.SingleClassTicketMovementId.HasValue)
+            else if (reservation.AccessType == ReservationAccessType.SingleClassTicket ||
+                     reservation.AccessType == ReservationAccessType.CompensatoryCredit)
             {
-                var ticketMovement = await _dbContext.MembershipCreditMovements
-                    .FirstOrDefaultAsync(m => m.Id == reservation.SingleClassTicketMovementId.Value, cancellationToken);
-                if (ticketMovement != null)
-                {
-                    ticketMovement.IsActive = false;
-                    rightsRestored = true;
-                }
+                // Al pasar la reserva a Cancelled con IsLateCancellation = false,
+                // el movimiento SingleClassTicket / CompensatoryCredit queda desvinculado de reservas que lo retienen y vuelve a estar disponible.
+                rightsRestored = true;
+            }
+            else if (reservation.AccessType == ReservationAccessType.PromotionalBenefit &&
+                     reservation.PromotionRedemptionId.HasValue)
+            {
+                await _promotionService.VoidRedemptionAsync(reservation.PromotionRedemptionId.Value, cancellationToken);
+                rightsRestored = true;
             }
         }
 

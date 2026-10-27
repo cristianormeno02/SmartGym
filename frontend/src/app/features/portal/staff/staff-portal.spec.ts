@@ -157,21 +157,34 @@ describe('StaffPortalComponent - Recepción, Mostrador y Asistencia', () => {
     fixture.detectChanges();
   });
 
-  it('no debe contener ningún input que solicite GUID del alumno', () => {
+  it('no debe contener ningún input que solicite GUID del alumno ni de membresía', () => {
+    component.openCompensatoryModal();
+    fixture.detectChanges();
     const compiled = fixture.nativeElement as HTMLElement;
     const deskGuidInput = compiled.querySelector('input[placeholder*="ID del alumno"]');
+    const anyGuidInput = compiled.querySelector('input[placeholder*="Guid"]');
     expect(deskGuidInput).toBeNull();
+    expect(anyGuidInput).toBeNull();
   });
 
-  it('debe buscar alumnos al ingresar texto en el buscador de recepción', () => {
-    component.selectSession(mockSession);
-    fixture.detectChanges();
+  it('debe buscar alumnos con debounce de 300ms al ingresar texto en el buscador de recepción', () => {
+    vi.useFakeTimers();
+    try {
+      component.selectSession(mockSession);
+      fixture.detectChanges();
 
-    component.onDeskStudentSearch('Pérez');
-    expect(gymApiSpy.searchPeople).toHaveBeenCalledWith(expect.objectContaining({
-      role: 'Student',
-      search: 'Pérez'
-    }));
+      component.onDeskStudentSearch('Pérez');
+      expect(gymApiSpy.searchPeople).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(300);
+      expect(gymApiSpy.searchPeople).toHaveBeenCalledWith(expect.objectContaining({
+        role: 'Student',
+        search: 'Pérez',
+        pageSize: 10
+      }));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('al seleccionar un alumno, debe cargar su elegibilidad para la clase', () => {
@@ -275,6 +288,35 @@ describe('StaffPortalComponent - Recepción, Mostrador y Asistencia', () => {
       reason: AttendanceRevocationReason.StaffError,
       notes: 'Carga duplicada por error'
     }));
+  });
+
+  it('no debe permitir confirmar la anulación de asistencia si la observación está vacía', () => {
+    const attendedReservation: Reservation = {
+      id: 'res-att-2',
+      studentId: mockStudent.id,
+      studentName: mockStudent.fullName,
+      documentNumber: '35123456',
+      classSessionId: mockSession.id,
+      activityName: mockSession.activityName,
+      roomName: mockSession.roomName,
+      classDate: mockSession.date,
+      startTime: mockSession.startTime,
+      endTime: mockSession.endTime,
+      status: ReservationStatus.Attended,
+      origin: ReservationOrigin.StaffDesk,
+      accessType: ReservationAccessType.MembershipCredit,
+      reservedAtUtc: '2026-10-27T10:00:00Z',
+      isDropIn: true,
+      isLateCancellation: false,
+      isPolicyOverride: false,
+      affectedBySessionChange: false
+    };
+
+    component.openRevokeAttendanceModal(attendedReservation);
+    component.revokeNotes = '   ';
+    component.confirmRevokeAttendance();
+
+    expect(gymApiSpy.revokeAttendance).not.toHaveBeenCalled();
   });
 
   it('debe ocultar los controles de recepción de mostrador para usuarios que solo son Instructor', () => {

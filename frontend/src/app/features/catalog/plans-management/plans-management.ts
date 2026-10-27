@@ -77,12 +77,19 @@ import { MoneyAmountPipe } from '../../../shared/pipes/money-amount.pipe';
           >
             <div>
               <div class="flex justify-between items-start mb-3">
-                <span
-                  class="text-[10px] uppercase tracking-wider font-bold px-2.5 py-0.5 rounded-full border"
-                  [ngClass]="plan.isUnlimited ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' : 'bg-purple-500/10 text-purple-400 border-purple-500/20'"
-                >
-                  {{ plan.isUnlimited ? 'Pase Ilimitado' : plan.credits + ' Créditos' }}
-                </span>
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <span
+                    class="text-[10px] uppercase tracking-wider font-bold px-2.5 py-0.5 rounded-full border"
+                    [ngClass]="plan.isUnlimited ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' : 'bg-purple-500/10 text-purple-400 border-purple-500/20'"
+                  >
+                    {{ plan.isUnlimited ? 'Pase Ilimitado' : plan.credits + ' Créditos' }}
+                  </span>
+                  @if (plan.isSingleClassPass || (!plan.isUnlimited && plan.credits === 1)) {
+                    <span class="text-[10px] uppercase tracking-wider font-bold px-2.5 py-0.5 rounded-full border bg-amber-500/10 text-amber-400 border-amber-500/20">
+                      Pase de clase
+                    </span>
+                  }
+                </div>
                 <span
                   class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border"
                   [ngClass]="plan.isActive ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-slate-800 text-slate-400 border-slate-700'"
@@ -202,6 +209,7 @@ export class PlansManagementComponent implements OnInit {
       price: plan.price,
       credits: plan.credits,
       isUnlimited: plan.isUnlimited,
+      isSingleClassPass: plan.isSingleClassPass,
       appliesToAllActivities: plan.appliesToAllActivities,
       allowedActivityIds: plan.allowedActivityIds,
       isActive: !plan.isActive

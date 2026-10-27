@@ -581,6 +581,11 @@ public class Reservation : BaseEntity, IHasDomainEvents
         }
 
         var normalizedNotes = notes.Trim();
+        if (normalizedNotes.Length > 500)
+        {
+            throw new ArgumentException("La observación no puede superar los 500 caracteres.", nameof(notes));
+        }
+
         AttendanceRevokedAtUtc = nowUtc;
         AttendanceRevokedByUserId = byUserId;
         AttendanceRevocationReason = reason;
@@ -622,6 +627,16 @@ public class Reservation : BaseEntity, IHasDomainEvents
                 changedByUserId: byUserId,
                 trigger: ReservationChangeTrigger.Attendance,
                 changedAtUtc: nowUtc);
+
+            AddDomainEvent(new ReservationCancelledEvent(
+                Id,
+                ClassSessionId,
+                StudentId,
+                previousStatus,
+                ReservationCancellationSource.AttendanceRevoked,
+                normalizedNotes,
+                false,
+                nowUtc));
         }
     }
 

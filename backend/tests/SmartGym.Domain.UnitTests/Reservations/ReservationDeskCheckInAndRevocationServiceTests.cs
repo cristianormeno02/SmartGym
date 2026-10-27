@@ -402,6 +402,261 @@ public class ReservationDeskCheckInAndRevocationServiceTests
         Assert.Equal(ReservationErrorCodes.AlreadyCheckedIn, ex.Code);
     }
 
+    [Fact]
+    public async Task CheckInDeskDropIn_WithUnlimitedMembership_RecordsZeroAmountLedgerMovementLinkedToReservation()
+    {
+        await using var context = CreateInMemoryDbContext();
+        var startsAtUtc = BaseNowUtc.AddMinutes(15);
+        var (student, session, membership, _) = await SeedDropInScenarioAsync(context, startsAtUtc);
+
+        membership.MembershipPlan.IsUnlimited = true;
+        membership.IsUnlimited = true;
+        await context.SaveChangesAsync();
+
+        var staffUser = new StubCurrentUserService
+        {
+            IsAuthenticated = true,
+            UserId = Guid.NewGuid(),
+            Roles = [Roles.Secretary]
+        };
+        var service = CreateReservationService(context, BaseNowUtc, staffUser);
+
+        var response = await service.CheckInDeskDropInAsync(new DeskDropInRequest(
+            ClassSessionId: session.Id,
+            StudentId: student.Id,
+            MembershipId: membership.Id
+        ), staffUser.UserId!.Value);
+
+        Assert.Equal(ReservationAccessType.UnlimitedMembership, response.Reservation.AccessType);
+        Assert.NotNull(response.Reservation.CreditMovementId);
+
+        var movement = await context.MembershipCreditMovements.FindAsync(response.Reservation.CreditMovementId.Value);
+        Assert.NotNull(movement);
+        Assert.Equal(0, movement.Amount);
+        Assert.Equal(response.Reservation.Id, movement.ReservationId);
+    }
+
+    [Fact]
+    public async Task RevokeAttendance_OnDropInWithSingleClassPass_ReleasesTicketSoItCanBeReusedAndKeepsPaymentCompleted()
+    {
+        await using var context = CreateInMemoryDbContext();
+        var startsAtUtc = BaseNowUtc.AddMinutes(15);
+        var (student, session, membership, passPlan) = await SeedDropInScenarioAsync(context, startsAtUtc);
+
+        // Agotar membresía para probar reutilización del SingleClassTicket liberado
+        membership.AvailableCredits = 0;
+        await context.SaveChangesAsync();
+
+        var staffUser = new StubCurrentUserService
+        {
+            IsAuthenticated = true,
+            UserId = Guid.NewGuid(),
+            Roles = [Roles.Secretary]
+        };
+        var service = CreateReservationService(context, BaseNowUtc, staffUser);
+
+        // 1. Cobrar pase individual y dar presente
+        var firstDropIn = await service.CheckInDeskDropInAsync(new DeskDropInRequest(
+            ClassSessionId: session.Id,
+            StudentId: student.Id,
+            SingleClassPlanId: passPlan.Id,
+            PaymentMethod: PaymentMethod.Cash
+        ), staffUser.UserId!.Value);
+
+        Assert.NotNull(firstDropIn.PaymentId);
+        var ticketMovementId = firstDropIn.Reservation.SingleClassTicketMovementId;
+        Assert.NotNull(ticketMovementId);
+
+        // 2. Anular presente por error de operador
+        var revoked = await service.RevokeAttendanceAsync(
+            firstDropIn.Reservation.Id,
+            new RevokeAttendanceRequest(AttendanceRevocationReason.StaffError, "Error de fila"),
+            staffUser.UserId!.Value);
+
+        Assert.Equal("Cancelled", revoked.ActionTaken);
+        Assert.True(revoked.RightsRestored);
+        Assert.Equal(firstDropIn.PaymentId, revoked.PaymentId);
+
+        var ticketAfterRevoke = await context.MembershipCreditMovements.FindAsync(ticketMovementId.Value);
+        Assert.True(ticketAfterRevoke!.IsActive); // El pase sigue activo y liberado
+
+        var payment = await context.Payments.FindAsync(firstDropIn.PaymentId.Value);
+        Assert.Equal(PaymentStatus.Completed, payment!.Status);
+
+        // 3. Reingresar al alumno a la misma clase reutilizando el pase liberado (sin volver a cobrar)
+        var secondDropIn = await service.CheckInDeskDropInAsync(new DeskDropInRequest(
+            ClassSessionId: session.Id,
+            StudentId: student.Id
+        ), staffUser.UserId!.Value);
+
+        Assert.Equal(ReservationStatus.Attended, secondDropIn.Reservation.Status);
+        Assert.Equal(ReservationAccessType.SingleClassTicket, secondDropIn.Reservation.AccessType);
+        Assert.Equal(ticketMovementId, secondDropIn.Reservation.SingleClassTicketMovementId);
+    }
+
+    [Fact]
+    public async Task RevokeAttendance_OnPriorReservationWithStudentWithdrew_CancelsAndRestoresCredit()
+    {
+        await using var context = CreateInMemoryDbContext();
+        var startsAtUtc = BaseNowUtc.AddMinutes(15);
+        var (student, session, membership, _) = await SeedDropInScenarioAsync(context, startsAtUtc);
+
+        var staffUser = new StubCurrentUserService
+        {
+            IsAuthenticated = true,
+            UserId = Guid.NewGuid(),
+            Roles = [Roles.Secretary]
+        };
+        var service = CreateReservationService(context, BaseNowUtc, staffUser);
+
+        var resDto = await service.CreateReservationAsync(new CreateReservationRequest(
+            ClassSessionId: session.Id,
+            StudentId: student.Id,
+            MembershipId: membership.Id
+        ), staffUser.UserId!.Value);
+
+        await service.RecordAttendanceAsync(new RecordAttendanceRequest(resDto.Id, AttendanceSource.SecretaryDesk), staffUser.UserId!.Value);
+
+        var revocation = await service.RevokeAttendanceAsync(
+            resDto.Id,
+            new RevokeAttendanceRequest(AttendanceRevocationReason.StudentWithdrew, "Se descompuso antes de empezar"),
+            staffUser.UserId!.Value);
+
+        Assert.Equal("Cancelled", revocation.ActionTaken);
+        Assert.True(revocation.RightsRestored);
+        Assert.Equal(ReservationStatus.Cancelled, revocation.Reservation.Status);
+
+        var updatedMembership = await context.Memberships.FindAsync(membership.Id);
+        Assert.Equal(8, updatedMembership!.AvailableCredits);
+    }
+
+    [Fact]
+    public async Task RevokeAttendance_StudentWithdrewAfterClassEnded_RejectsWithWindowClosed()
+    {
+        await using var context = CreateInMemoryDbContext();
+        var startsAtUtc = BaseNowUtc.AddMinutes(15);
+        var (student, session, membership, _) = await SeedDropInScenarioAsync(context, startsAtUtc);
+
+        var staffUser = new StubCurrentUserService
+        {
+            IsAuthenticated = true,
+            UserId = Guid.NewGuid(),
+            Roles = [Roles.Secretary]
+        };
+        var serviceDuringWindow = CreateReservationService(context, BaseNowUtc, staffUser);
+
+        var checkIn = await serviceDuringWindow.CheckInDeskDropInAsync(new DeskDropInRequest(
+            ClassSessionId: session.Id,
+            StudentId: student.Id,
+            MembershipId: membership.Id
+        ), staffUser.UserId!.Value);
+
+        // Avanzar el reloj 10 minutos después de finalizada la clase
+        var afterClassEndUtc = session.EndsAtUtc.AddMinutes(10);
+        var serviceAfterEnd = CreateReservationService(context, afterClassEndUtc, staffUser);
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            serviceAfterEnd.RevokeAttendanceAsync(
+                checkIn.Reservation.Id,
+                new RevokeAttendanceRequest(AttendanceRevocationReason.StudentWithdrew, "Intenta anular tras finalizar"),
+                staffUser.UserId!.Value));
+
+        Assert.Equal(ReservationErrorCodes.AttendanceRevocationWindowClosed, ex.Code);
+    }
+
+    [Fact]
+    public async Task CheckInDeskDropIn_WithIneligibleOrInactivePlan_RejectsWithSingleClassPlanNotAvailable()
+    {
+        await using var context = CreateInMemoryDbContext();
+        var startsAtUtc = BaseNowUtc.AddMinutes(15);
+        var (student, session, membership, _) = await SeedDropInScenarioAsync(context, startsAtUtc);
+
+        var staffUser = new StubCurrentUserService
+        {
+            IsAuthenticated = true,
+            UserId = Guid.NewGuid(),
+            Roles = [Roles.Secretary]
+        };
+        var service = CreateReservationService(context, BaseNowUtc, staffUser);
+
+        // Plan de 8 créditos sin IsSingleClassPass no es elegible como pase individual
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            service.CheckInDeskDropInAsync(new DeskDropInRequest(
+                ClassSessionId: session.Id,
+                StudentId: student.Id,
+                SingleClassPlanId: membership.MembershipPlanId,
+                PaymentMethod: PaymentMethod.Cash
+            ), staffUser.UserId!.Value));
+
+        Assert.Equal(ReservationErrorCodes.SingleClassPlanNotAvailable, ex.Code);
+    }
+
+    [Fact]
+    public async Task CheckInDeskDropIn_WhenCallerIsInstructorOnly_ThrowsForbidden()
+    {
+        await using var context = CreateInMemoryDbContext();
+        var startsAtUtc = BaseNowUtc.AddMinutes(15);
+        var (student, session, membership, _) = await SeedDropInScenarioAsync(context, startsAtUtc);
+
+        var instructorUser = new StubCurrentUserService
+        {
+            IsAuthenticated = true,
+            UserId = Guid.NewGuid(),
+            Roles = [Roles.Instructor]
+        };
+        var service = CreateReservationService(context, BaseNowUtc, instructorUser);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            service.CheckInDeskDropInAsync(new DeskDropInRequest(
+                ClassSessionId: session.Id,
+                StudentId: student.Id,
+                MembershipId: membership.Id
+            ), instructorUser.UserId!.Value));
+    }
+
+    [Fact]
+    public async Task ChangingActivityRequiresBookingToFalse_PreservesExistingConfirmedReservations()
+    {
+        await using var context = CreateInMemoryDbContext();
+        var startsAtUtc = BaseNowUtc.AddHours(3);
+        var (student, session, membership, _) = await SeedDropInScenarioAsync(context, startsAtUtc);
+
+        var staffUser = new StubCurrentUserService
+        {
+            IsAuthenticated = true,
+            UserId = Guid.NewGuid(),
+            Roles = [Roles.Secretary]
+        };
+        var service = CreateReservationService(context, BaseNowUtc, staffUser);
+
+        var created = await service.CreateReservationAsync(new CreateReservationRequest(
+            ClassSessionId: session.Id,
+            StudentId: student.Id,
+            MembershipId: membership.Id
+        ), staffUser.UserId!.Value);
+
+        var activity = await context.Activities.FindAsync(session.ActivityId);
+        activity!.SetRequiresBooking(false);
+        await context.SaveChangesAsync();
+
+        var existing = await context.Reservations.FindAsync(created.Id);
+        Assert.Equal(ReservationStatus.Confirmed, existing!.Status);
+
+        var secondStudent = Person.Create("Ana", "Gomez", "40111222");
+        var studentRole = await context.Roles.FindAsync((int)RoleType.Student);
+        secondStudent.AddRole(studentRole!);
+        context.People.Add(secondStudent);
+        await context.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            service.CreateReservationAsync(new CreateReservationRequest(
+                ClassSessionId: session.Id,
+                StudentId: secondStudent.Id
+            ), staffUser.UserId!.Value));
+
+        Assert.Equal(ReservationErrorCodes.BookingNotRequired, ex.Code);
+    }
+
     // --- Helpers de Infraestructura y Sembrado ---
 
     private static SmartGymDbContext CreateInMemoryDbContext()

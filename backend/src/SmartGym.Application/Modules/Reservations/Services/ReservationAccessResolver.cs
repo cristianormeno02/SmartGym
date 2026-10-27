@@ -39,6 +39,12 @@ public record AccessResolutionRequest(
 
 public interface IReservationAccessResolver
 {
+    Task ValidateActivityAndStudentRulesAsync(
+        Person student,
+        ClassSession session,
+        DateOnly sessionLocalDate,
+        CancellationToken cancellationToken = default);
+
     Task<ResolvedReservationAccess> ResolveAsync(
         Person student,
         ClassSession session,
@@ -301,11 +307,11 @@ public class ReservationAccessResolver : IReservationAccessResolver
         }
     }
 
-    private Task ValidateActivityAndStudentRulesAsync(
+    public Task ValidateActivityAndStudentRulesAsync(
         Person student,
         ClassSession session,
         DateOnly sessionLocalDate,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         if (session.Activity == null || !session.Activity.IsActive || session.Activity.Status != ActivityStatus.Active)
         {

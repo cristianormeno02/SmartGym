@@ -22,6 +22,7 @@ describe('ActivitiesManagementComponent', () => {
       status: ActivityStatus.Active,
       colorHex: '#06B6D4',
       defaultCapacity: 20,
+      requiresBooking: true,
       version: 1,
       isActive: true
     },
@@ -32,6 +33,7 @@ describe('ActivitiesManagementComponent', () => {
       status: ActivityStatus.Inactive,
       colorHex: '#10B981',
       defaultCapacity: 15,
+      requiresBooking: false,
       version: 2,
       isActive: false
     }
@@ -84,6 +86,12 @@ describe('ActivitiesManagementComponent', () => {
   it('should render the shared status actions for each activity', () => {
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelectorAll('app-activity-status-actions').length).toBe(2);
+  });
+
+  it('should render requiresBooking badges ("Con reserva previa" and "Acceso libre sin reserva")', () => {
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('Con reserva previa');
+    expect(el.textContent).toContain('Acceso libre sin reserva');
   });
 
   it('should reload the list and show feedback after a status change', () => {

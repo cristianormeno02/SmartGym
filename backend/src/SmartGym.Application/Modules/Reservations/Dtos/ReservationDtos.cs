@@ -306,7 +306,10 @@ public record DeskEligibilityDto(
     bool CanEnrollReservation,
     List<DeskEligibleMembershipDto> EligibleMemberships,
     List<SingleClassPassOptionDto> SingleClassPassOptions,
-    List<EligibilityIssueDto> IneligibilityReasons
+    List<EligibilityIssueDto> IneligibilityReasons,
+    string? StudentPhotoUrl = null,
+    PersonStatus StudentStatus = PersonStatus.Active,
+    ReservationAccessType? SuggestedAccessType = null
 );
 
 public record DeskDropInRequest(
