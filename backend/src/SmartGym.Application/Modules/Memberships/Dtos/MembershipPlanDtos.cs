@@ -11,7 +11,8 @@ public record MembershipPlanDto(
     bool AppliesToAllActivities,
     List<Guid> AllowedActivityIds,
     List<string> AllowedActivityNames,
-    bool IsActive
+    bool IsActive,
+    bool IsSingleClassPass = false
 );
 
 public record CreateMembershipPlanRequest(
@@ -22,7 +23,8 @@ public record CreateMembershipPlanRequest(
     int Credits,
     bool IsUnlimited,
     bool AppliesToAllActivities,
-    List<Guid>? AllowedActivityIds
+    List<Guid>? AllowedActivityIds,
+    bool IsSingleClassPass = false
 );
 
 public record UpdateMembershipPlanRequest(
@@ -34,5 +36,6 @@ public record UpdateMembershipPlanRequest(
     bool IsUnlimited,
     bool AppliesToAllActivities,
     List<Guid>? AllowedActivityIds,
-    bool IsActive
+    bool IsActive,
+    bool IsSingleClassPass = false
 );

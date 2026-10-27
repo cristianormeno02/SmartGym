@@ -21,6 +21,11 @@ import {
   ReservationFilter,
   PagedResult,
   AttendanceSource,
+  DeskEligibility,
+  DeskDropInRequest,
+  DeskDropInResponse,
+  RevokeAttendanceRequest,
+  RevokeAttendanceResponse,
   DashboardMetrics,
   MedicalCertificateStatus,
   NotificationItem,
@@ -342,6 +347,24 @@ export class GymApiService {
     return this.http.post<Reservation>(`${this.apiUrl}/reservations/${reservationId}/no-show`, {});
   }
 
+  getDeskEligibility(classSessionId: string, studentId: string): Observable<DeskEligibility> {
+    return this.http.get<DeskEligibility>(`${this.apiUrl}/reservations/desk-eligibility`, {
+      params: new HttpParams().set('classSessionId', classSessionId).set('studentId', studentId)
+    });
+  }
+
+  deskDropInCheckIn(request: DeskDropInRequest): Observable<DeskDropInResponse> {
+    let headers = new HttpHeaders();
+    if (request.idempotencyKey) {
+      headers = headers.set('Idempotency-Key', request.idempotencyKey);
+    }
+    return this.http.post<DeskDropInResponse>(`${this.apiUrl}/reservations/desk-drop-in`, request, { headers });
+  }
+
+  revokeAttendance(reservationId: string, request: RevokeAttendanceRequest): Observable<RevokeAttendanceResponse> {
+    return this.http.post<RevokeAttendanceResponse>(`${this.apiUrl}/reservations/${reservationId}/revoke-attendance`, request);
+  }
+
   // --- Créditos Ledger ---
   getStudentCreditMovements(studentId: string): Observable<CreditMovement[]> {
     return this.http.get<CreditMovement[]>(`${this.apiUrl}/credits/student/${studentId}`);
@@ -498,5 +521,15 @@ export class GymApiService {
 
   getAdminUsers(): Observable<AdminUserOverview[]> {
     return this.http.get<AdminUserOverview[]>(`${this.apiUrl}/users/admin-overview`);
+  }
+
+  // --- Búsqueda de Alumnos / Personas para mostrador ---
+  searchPeople(paramsObj?: { role?: string; search?: string; pageNumber?: number; pageSize?: number }): Observable<PagedResult<any>> {
+    let params = new HttpParams();
+    if (paramsObj?.role) params = params.set('role', paramsObj.role);
+    if (paramsObj?.search) params = params.set('search', paramsObj.search);
+    if (paramsObj?.pageNumber) params = params.set('pageNumber', paramsObj.pageNumber.toString());
+    if (paramsObj?.pageSize) params = params.set('pageSize', paramsObj.pageSize.toString());
+    return this.http.get<PagedResult<any>>(`${this.apiUrl}/people`, { params });
   }
 }

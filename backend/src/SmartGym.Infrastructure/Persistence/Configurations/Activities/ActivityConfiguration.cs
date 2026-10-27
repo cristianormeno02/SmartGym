@@ -61,6 +61,10 @@ public class ActivityConfiguration : IEntityTypeConfiguration<Activity>
         builder.Property(a => a.ColorHex)
             .HasMaxLength(7);
 
+        builder.Property(a => a.RequiresBooking)
+            .IsRequired()
+            .HasDefaultValue(true);
+
         builder.Property(a => a.Status)
             .IsRequired();
 

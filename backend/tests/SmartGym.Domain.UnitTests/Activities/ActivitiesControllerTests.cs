@@ -38,7 +38,7 @@ public class ActivitiesControllerTests
         var paged = new PagedResult<ActivityListItemDto>(
             new List<ActivityListItemDto>
             {
-                new(Guid.NewGuid(), "ZUMBA", "Zumba", "Resumen", "#FFFFFF", 20, 10, 60, ActivityStatus.Active, null, null, DateTime.UtcNow)
+                new(Guid.NewGuid(), "ZUMBA", "Zumba", "Resumen", "#FFFFFF", 20, 10, 60, ActivityStatus.Active, true, null, null, DateTime.UtcNow)
             },
             1, 10, 1);
 
@@ -57,7 +57,7 @@ public class ActivitiesControllerTests
         var id = Guid.NewGuid();
         var detail = new ActivityDetailDto(
             id, "ZUMBA", "Zumba", null, null, null, null, null, null, null,
-            ActivityStatus.Active, 1, new List<ActivityMediaDto>(), DateTime.UtcNow, null);
+            ActivityStatus.Active, true, 1, new List<ActivityMediaDto>(), DateTime.UtcNow, null);
 
         _mockService.Setup(s => s.GetByIdAsync(id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(detail);
@@ -85,7 +85,7 @@ public class ActivitiesControllerTests
     {
         var detail = new ActivityDetailDto(
             Guid.NewGuid(), "ZUMBA", "Zumba", null, null, null, null, null, null, null,
-            ActivityStatus.Active, 1, new List<ActivityMediaDto>(), DateTime.UtcNow, null);
+            ActivityStatus.Active, true, 1, new List<ActivityMediaDto>(), DateTime.UtcNow, null);
 
         _mockService.Setup(s => s.GetByCodeAsync("ZUMBA", It.IsAny<CancellationToken>()))
             .ReturnsAsync(detail);
@@ -102,7 +102,7 @@ public class ActivitiesControllerTests
         var request = new CreateActivityRequest("ZUMBA", "Zumba", null, null, null, null, null, null, null);
         var created = new ActivityDetailDto(
             Guid.NewGuid(), "ZUMBA", "Zumba", null, null, null, null, null, null, null,
-            ActivityStatus.Active, 1, new List<ActivityMediaDto>(), DateTime.UtcNow, null);
+            ActivityStatus.Active, true, 1, new List<ActivityMediaDto>(), DateTime.UtcNow, null);
 
         _mockService.Setup(s => s.CreateAsync(request, It.IsAny<CancellationToken>()))
             .ReturnsAsync(created);

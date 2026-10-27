@@ -39,6 +39,7 @@ public class MembershipPlan : BaseEntity
     public int Credits { get; set; } = 8;
     public bool IsUnlimited { get; set; } = false;
     public bool AppliesToAllActivities { get; set; } = true;
+    public bool IsSingleClassPass { get; set; } = false;
 
     public ICollection<MembershipPlanActivity> AllowedActivities { get; set; } = new List<MembershipPlanActivity>();
 
@@ -67,5 +68,15 @@ public class MembershipPlan : BaseEntity
     {
         if (AppliesToAllActivities) return true;
         return AllowedActivities.Any(a => a.ActivityId == activityId);
+    }
+
+    public bool IsEligibleAsSingleClassPassFor(Guid activityId)
+    {
+        if (!IsActive || Price <= 0 || !AllowsActivity(activityId))
+        {
+            return false;
+        }
+
+        return IsSingleClassPass || (!IsUnlimited && Credits == 1);
     }
 }

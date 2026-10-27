@@ -16,6 +16,7 @@ export interface PublicActivity {
   colorHex?: string;
   minAge?: number;
   maxAge?: number;
+  requiresBooking?: boolean;
   logoUrl?: string;
   primaryImageUrl?: string;
   galleryImageUrls: string[];
@@ -50,6 +51,7 @@ export interface CreateActivityRequest {
   defaultCapacity?: number;
   minAge?: number;
   maxAge?: number;
+  requiresBooking?: boolean;
 }
 
 export interface UpdateActivityRequest {
@@ -61,6 +63,7 @@ export interface UpdateActivityRequest {
   defaultCapacity?: number;
   minAge?: number;
   maxAge?: number;
+  requiresBooking?: boolean;
   version: number;
 }
 
@@ -138,6 +141,7 @@ export interface CreateMembershipPlanRequest {
   isUnlimited: boolean;
   appliesToAllActivities: boolean;
   allowedActivityIds?: string[];
+  isSingleClassPass?: boolean;
 }
 
 export interface UpdateMembershipPlanRequest {
@@ -150,6 +154,7 @@ export interface UpdateMembershipPlanRequest {
   appliesToAllActivities: boolean;
   allowedActivityIds?: string[];
   isActive: boolean;
+  isSingleClassPass?: boolean;
 }
 
 export interface Activity {
@@ -164,6 +169,7 @@ export interface Activity {
   minAge?: number;
   maxAge?: number;
   status: number;
+  requiresBooking?: boolean;
   version?: number;
   logoUrl?: string;
   primaryImageUrl?: string;
@@ -215,6 +221,7 @@ export interface ClassSession {
   status: number; // 0=Scheduled, 1=InProgress, 2=Finished, 3=Suspended, 4=Cancelled
   cancellationReason?: string;
   suspendedAtUtc?: string;
+  requiresBooking?: boolean;
 }
 
 export interface MembershipPlan {
@@ -229,6 +236,7 @@ export interface MembershipPlan {
   allowedActivityIds: string[];
   allowedActivityNames: string[];
   isActive: boolean;
+  isSingleClassPass?: boolean;
 }
 
 export enum MembershipStatus {
@@ -309,6 +317,15 @@ export interface MembershipSuspension {
 
 /** Cash = 1, BankTransfer = 2, CreditCard = 3, DebitCard = 4, DigitalWallet = 5, Other = 6. */
 export type PaymentMethod = 1 | 2 | 3 | 4 | 5 | 6;
+
+export const PaymentMethodType = {
+  Cash: 1,
+  BankTransfer: 2,
+  CreditCard: 3,
+  DebitCard: 4,
+  DigitalWallet: 5,
+  Other: 6
+} as const;
 
 /** Pending = 1, Completed = 2, Failed = 3, Refunded = 4, Cancelled = 5, PartiallyRefunded = 6. */
 export type PaymentStatus = 1 | 2 | 3 | 4 | 5 | 6;
@@ -529,13 +546,20 @@ export enum ReservationCancellationSource {
   MembershipChange = 4,
   WaitlistOfferExpired = 5,
   WaitlistDeclined = 6,
-  WaitlistExpired = 7
+  WaitlistExpired = 7,
+  AttendanceRevoked = 8
 }
 
 export enum AttendanceSource {
   SecretaryDesk = 1,
   InstructorInRoom = 2,
-  SelfCheckIn = 3
+  SelfCheckIn = 3,
+  DeskDropIn = 4
+}
+
+export enum AttendanceRevocationReason {
+  StaffError = 1,
+  StudentWithdrew = 2
 }
 
 /** Estados que cuentan como reserva activa: ocupan cupo o esperan uno. */
@@ -599,6 +623,11 @@ export interface Reservation {
   promotionRedemptionId?: string;
   notes?: string;
   wasIdempotentReplay?: boolean;
+  isDropIn?: boolean;
+  attendanceRevokedAtUtc?: string;
+  attendanceRevokedByUserId?: string;
+  attendanceRevocationReason?: AttendanceRevocationReason;
+  attendanceRevocationNotes?: string;
 }
 
 export interface ReservationDetail extends Reservation {
@@ -640,6 +669,69 @@ export interface ReservableClassSession {
   selectedMembershipId?: string;
   usableCredits?: number;
   ineligibilityReasons: MembershipIneligibilityReason[];
+  requiresBooking?: boolean;
+}
+
+export interface DeskEligibleMembership {
+  membershipId: string;
+  planName: string;
+  isUnlimited: boolean;
+  usableCredits: number;
+  validUntil: string;
+}
+
+export interface SingleClassPassOption {
+  planId: string;
+  planName: string;
+  price: number;
+}
+
+export interface DeskEligibility {
+  classSessionId: string;
+  studentId: string;
+  studentFullName: string;
+  studentDni: string;
+  requiresBooking: boolean;
+  isWithinDropInWindow: boolean;
+  availableSpots: number;
+  hasActiveReservation: boolean;
+  existingReservationStatus?: ReservationStatus;
+  existingReservationId?: string;
+  canCheckInWithMembership: boolean;
+  canPurchaseSingleClassPass: boolean;
+  canEnrollReservation: boolean;
+  eligibleMemberships: DeskEligibleMembership[];
+  singleClassPassOptions: SingleClassPassOption[];
+  ineligibilityReasons: MembershipIneligibilityReason[];
+}
+
+export interface DeskDropInRequest {
+  classSessionId: string;
+  studentId: string;
+  membershipId?: string;
+  singleClassPlanId?: string;
+  paymentMethod?: number;
+  idempotencyKey?: string;
+  notes?: string;
+}
+
+export interface DeskDropInResponse {
+  reservation: Reservation;
+  paymentId?: string;
+  wasIdempotentReplay?: boolean;
+}
+
+export interface RevokeAttendanceRequest {
+  reason: AttendanceRevocationReason;
+  notes: string;
+}
+
+export interface RevokeAttendanceResponse {
+  reservation: Reservation;
+  actionTaken: string;
+  rightsRestored: boolean;
+  refundCreditMovementId?: string;
+  paymentId?: string;
 }
 
 export interface WaitlistEntry {

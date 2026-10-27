@@ -35,6 +35,10 @@ public class MembershipPlanConfiguration : IEntityTypeConfiguration<MembershipPl
         builder.Property(p => p.AppliesToAllActivities)
             .IsRequired();
 
+        builder.Property(p => p.IsSingleClassPass)
+            .IsRequired()
+            .HasDefaultValue(false);
+
         builder.HasMany(p => p.AllowedActivities)
             .WithOne(pa => pa.MembershipPlan)
             .HasForeignKey(pa => pa.MembershipPlanId)

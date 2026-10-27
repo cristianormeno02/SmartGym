@@ -188,6 +188,24 @@ import { MonetaryInputDirective } from '../../../shared/directives/monetary-inpu
             }
           </div>
 
+          <!-- Pase de Clase Individual en Recepción -->
+          <div class="p-4 bg-slate-950/60 border border-slate-800 rounded-xl flex items-start gap-3">
+            <input
+              id="isSingleClassPass"
+              type="checkbox"
+              formControlName="isSingleClassPass"
+              class="mt-1 h-4 w-4 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-slate-900"
+            />
+            <div>
+              <label for="isSingleClassPass" class="text-sm font-medium text-white cursor-pointer">
+                Disponible como pase de clase individual en recepción
+              </label>
+              <p class="text-xs text-slate-400 mt-0.5">
+                Permite ofrecer este plan en el portal de mostrador para alumnos sin membresía previa o con cupo agotado. Nota: los planes con 1 crédito se ofrecen automáticamente en recepción.
+              </p>
+            </div>
+          </div>
+
           <!-- Estado en edición -->
           @if (isEditMode) {
             <div class="flex items-center gap-3 pt-1">
@@ -249,7 +267,8 @@ export class MembershipPlanFormModalComponent implements OnInit, OnChanges {
     credits: [null],
     appliesToAllActivities: [true],
     allowedActivityIds: [[]],
-    isActive: [true]
+    isActive: [true],
+    isSingleClassPass: [false]
   }, {
     validators: (group: AbstractControl): ValidationErrors | null => {
       const isUnlimited = group.get('isUnlimited')?.value;
@@ -329,7 +348,8 @@ export class MembershipPlanFormModalComponent implements OnInit, OnChanges {
         isUnlimited: this.plan.isUnlimited,
         credits: this.plan.credits,
         appliesToAllActivities: this.plan.appliesToAllActivities,
-        isActive: this.plan.isActive
+        isActive: this.plan.isActive,
+        isSingleClassPass: !!this.plan.isSingleClassPass
       });
     } else {
       this.selectedActivityIds.set([]);
@@ -341,7 +361,8 @@ export class MembershipPlanFormModalComponent implements OnInit, OnChanges {
         isUnlimited: false,
         credits: null,
         appliesToAllActivities: true,
-        isActive: true
+        isActive: true,
+        isSingleClassPass: false
       });
     }
     this.errorMessage.set(null);
@@ -371,7 +392,8 @@ export class MembershipPlanFormModalComponent implements OnInit, OnChanges {
         isUnlimited: !!val.isUnlimited,
         appliesToAllActivities: !!val.appliesToAllActivities,
         allowedActivityIds: allowedIds,
-        isActive: !!val.isActive
+        isActive: !!val.isActive,
+        isSingleClassPass: !!val.isSingleClassPass
       };
 
       this.gymApi.updateMembershipPlan(this.plan.id, updateReq).subscribe({
@@ -393,7 +415,8 @@ export class MembershipPlanFormModalComponent implements OnInit, OnChanges {
         credits: creditsValue,
         isUnlimited: !!val.isUnlimited,
         appliesToAllActivities: !!val.appliesToAllActivities,
-        allowedActivityIds: allowedIds
+        allowedActivityIds: allowedIds,
+        isSingleClassPass: !!val.isSingleClassPass
       };
 
       this.gymApi.createMembershipPlan(createReq).subscribe({

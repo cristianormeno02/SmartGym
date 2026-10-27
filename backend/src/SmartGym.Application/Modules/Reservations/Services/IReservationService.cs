@@ -28,4 +28,7 @@ public interface IReservationService
     Task<List<WaitlistEntryDto>> GetWaitlistAsync(Guid classSessionId, CancellationToken cancellationToken = default);
     Task<SessionAttendanceSummaryDto> GetSessionAttendanceSummaryAsync(Guid classSessionId, CancellationToken cancellationToken = default);
     Task<List<ReservableClassSessionDto>> GetAvailableClassesAsync(AvailableClassesFilterRequest request, CancellationToken cancellationToken = default);
+    Task<DeskEligibilityDto> GetDeskEligibilityAsync(Guid classSessionId, Guid studentId, CancellationToken cancellationToken = default);
+    Task<DeskDropInResponse> CheckInDeskDropInAsync(DeskDropInRequest request, Guid staffUserId, CancellationToken cancellationToken = default);
+    Task<RevokeAttendanceResponse> RevokeAttendanceAsync(Guid reservationId, RevokeAttendanceRequest request, Guid staffUserId, CancellationToken cancellationToken = default);
 }

@@ -33,6 +33,7 @@ public record ActivityListItemDto(
     int? MinAge,
     int? MaxAge,
     ActivityStatus Status,
+    bool RequiresBooking,
     string? LogoUrl,
     string? PrimaryImageUrl,
     DateTime CreatedAtUtc
@@ -50,6 +51,7 @@ public record ActivityDetailDto(
     int? MinAge,
     int? MaxAge,
     ActivityStatus Status,
+    bool RequiresBooking,
     uint Version,
     List<ActivityMediaDto> Media,
     DateTime CreatedAtUtc,
@@ -65,6 +67,7 @@ public record PublicActivityDto(
     string? ColorHex,
     int? MinAge,
     int? MaxAge,
+    bool RequiresBooking,
     string? LogoUrl,
     string? PrimaryImageUrl,
     List<string> GalleryImageUrls
@@ -93,7 +96,8 @@ public record CreateActivityRequest(
     string? ColorHex,
     int? DefaultCapacity,
     int? MinAge,
-    int? MaxAge
+    int? MaxAge,
+    bool RequiresBooking = true
 );
 
 public record UpdateActivityRequest(
@@ -105,7 +109,8 @@ public record UpdateActivityRequest(
     int? DefaultCapacity,
     int? MinAge,
     int? MaxAge,
-    uint Version
+    uint Version,
+    bool RequiresBooking = true
 );
 
 public record ChangeActivityStatusRequest(

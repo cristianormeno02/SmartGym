@@ -70,6 +70,11 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<bool>("RequiresBooking")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<string>("ShortDescription")
                         .HasMaxLength(250)
                         .HasColumnType("character varying(250)");
@@ -1033,6 +1038,11 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
+
+                    b.Property<bool>("IsSingleClassPass")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<bool>("IsUnlimited")
                         .HasColumnType("boolean");
@@ -2104,6 +2114,19 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
 
+                    b.Property<string>("AttendanceRevocationNotes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int?>("AttendanceRevocationReason")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("AttendanceRevokedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("AttendanceRevokedByUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<int?>("AttendanceSource")
                         .HasColumnType("integer");
 
@@ -2147,6 +2170,11 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDropIn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<bool>("IsLateCancellation")
                         .ValueGeneratedOnAdd()
@@ -2222,6 +2250,8 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AttendanceRevokedByUserId");
 
                     b.HasIndex("CancelledByUserId");
 
@@ -3026,6 +3056,11 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("SmartGym.Domain.Entities.Reservations.Reservation", b =>
                 {
+                    b.HasOne("SmartGym.Domain.Entities.Identity.User", "AttendanceRevokedByUser")
+                        .WithMany()
+                        .HasForeignKey("AttendanceRevokedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SmartGym.Domain.Entities.Identity.User", "CancelledByUser")
                         .WithMany()
                         .HasForeignKey("CancelledByUserId")
@@ -3087,6 +3122,8 @@ namespace SmartGym.Infrastructure.Persistence.Migrations
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("AttendanceRevokedByUser");
 
                     b.Navigation("CancelledByUser");
 

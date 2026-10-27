@@ -25,6 +25,7 @@ public class Reservation : BaseEntity, IHasDomainEvents
 
     public ReservationStatus Status { get; set; } = ReservationStatus.Confirmed;
     public ReservationOrigin Origin { get; set; } = ReservationOrigin.StudentSelfService;
+    public bool IsDropIn { get; set; } = false;
     public ReservationAccessType AccessType { get; set; } = ReservationAccessType.MembershipCredit;
 
     public Guid? MembershipId { get; set; }
@@ -73,6 +74,12 @@ public class Reservation : BaseEntity, IHasDomainEvents
     public Guid? CheckedInByUserId { get; set; }
     public User? CheckedInByUser { get; set; }
     public AttendanceSource? AttendanceSource { get; set; }
+
+    public DateTime? AttendanceRevokedAtUtc { get; set; }
+    public Guid? AttendanceRevokedByUserId { get; set; }
+    public User? AttendanceRevokedByUser { get; set; }
+    public AttendanceRevocationReason? AttendanceRevocationReason { get; set; }
+    public string? AttendanceRevocationNotes { get; set; }
 
     public string? Notes { get; set; }
     public string? IdempotencyKey { get; set; }
@@ -165,6 +172,67 @@ public class Reservation : BaseEntity, IHasDomainEvents
             reservation.StudentId,
             reservation.AccessType,
             nowUtc));
+
+        return reservation;
+    }
+
+    public static Reservation CreateDropInAttended(
+        Guid classSessionId,
+        Guid studentId,
+        ReservationAccessType accessType,
+        DateTime nowUtc,
+        Guid? staffUserId = null,
+        Guid? membershipId = null,
+        Guid? creditMovementId = null,
+        Guid? singleClassTicketMovementId = null,
+        Guid? paymentId = null,
+        string? notes = null,
+        string? idempotencyKey = null)
+    {
+        if (classSessionId == Guid.Empty)
+        {
+            throw new ArgumentException("La clase es obligatoria.", nameof(classSessionId));
+        }
+
+        if (studentId == Guid.Empty)
+        {
+            throw new ArgumentException("El alumno es obligatorio.", nameof(studentId));
+        }
+
+        var reservationId = Guid.NewGuid();
+
+        var reservation = new Reservation
+        {
+            Id = reservationId,
+            ClassSessionId = classSessionId,
+            StudentId = studentId,
+            Status = ReservationStatus.Attended,
+            Origin = ReservationOrigin.StaffDesk,
+            IsDropIn = true,
+            AccessType = accessType,
+            MembershipId = membershipId,
+            CreditMovementId = creditMovementId,
+            SingleClassTicketMovementId = singleClassTicketMovementId,
+            PaymentId = paymentId,
+            ReservedAtUtc = nowUtc,
+            ConfirmedAtUtc = nowUtc,
+            AttendedAtUtc = nowUtc,
+            AttendanceSource = SmartGym.Domain.Enums.AttendanceSource.DeskDropIn,
+            CheckedInByUserId = staffUserId,
+            CreatedAtUtc = nowUtc,
+            CreatedByUserId = staffUserId,
+            Notes = NormalizeOptional(notes),
+            IdempotencyKey = NormalizeOptional(idempotencyKey),
+            IsActive = true
+        };
+
+        reservation.RecordStatusChange(
+            previousStatus: null,
+            newStatus: ReservationStatus.Attended,
+            reason: "Check-in directo en mostrador (Drop-in)",
+            changedByUserId: staffUserId,
+            trigger: ReservationChangeTrigger.Attendance,
+            changedAtUtc: nowUtc);
 
         return reservation;
     }
@@ -494,6 +562,67 @@ public class Reservation : BaseEntity, IHasDomainEvents
             changedByUserId,
             ReservationChangeTrigger.Attendance,
             effectiveNowUtc);
+    }
+
+    public void RevokeAttendance(
+        AttendanceRevocationReason reason,
+        string notes,
+        Guid? byUserId,
+        DateTime nowUtc)
+    {
+        if (Status != ReservationStatus.Attended)
+        {
+            throw new InvalidOperationException($"Sólo se puede anular la asistencia sobre una reserva en estado Asistida (estado actual: {Status}).");
+        }
+
+        if (string.IsNullOrWhiteSpace(notes))
+        {
+            throw new ArgumentException("El motivo u observación de la anulación es obligatorio.", nameof(notes));
+        }
+
+        var normalizedNotes = notes.Trim();
+        AttendanceRevokedAtUtc = nowUtc;
+        AttendanceRevokedByUserId = byUserId;
+        AttendanceRevocationReason = reason;
+        AttendanceRevocationNotes = normalizedNotes;
+        UpdatedAtUtc = nowUtc;
+
+        var previousStatus = Status;
+
+        if (!IsDropIn && reason == SmartGym.Domain.Enums.AttendanceRevocationReason.StaffError)
+        {
+            // Reserva regular marcada por error de personal -> revierte a Confirmed
+            Status = ReservationStatus.Confirmed;
+            AttendedAtUtc = null;
+            CheckedInByUserId = null;
+            AttendanceSource = null;
+
+            RecordStatusChange(
+                previousStatus: previousStatus,
+                newStatus: ReservationStatus.Confirmed,
+                reason: $"Asistencia anulada por error de personal: {normalizedNotes}",
+                changedByUserId: byUserId,
+                trigger: ReservationChangeTrigger.Attendance,
+                changedAtUtc: nowUtc);
+        }
+        else
+        {
+            // Drop-in o Alumno se retiró -> pasa a Cancelled con CancellationSource = AttendanceRevoked
+            Status = ReservationStatus.Cancelled;
+            CancelledAtUtc = nowUtc;
+            CancelledByUserId = byUserId;
+            CancellationSource = ReservationCancellationSource.AttendanceRevoked;
+            CancellationReason = normalizedNotes;
+            IsLateCancellation = false;
+
+            RecordStatusChange(
+                previousStatus: previousStatus,
+                newStatus: ReservationStatus.Cancelled,
+                reason: $"Asistencia anulada ({reason}): {normalizedNotes}",
+                changedByUserId: byUserId,
+                trigger: ReservationChangeTrigger.Attendance,
+                changedAtUtc: nowUtc);
+        }
     }
 
     private void ApplyConfirmedAccessRight(

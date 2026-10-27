@@ -38,6 +38,7 @@ describe('StudentPortalComponent', () => {
       hasActiveReservation: false,
       canReserve: true,
       canJoinWaitlist: false,
+      requiresBooking: true,
       ineligibilityReasons: []
     },
     {
@@ -61,6 +62,7 @@ describe('StudentPortalComponent', () => {
       hasActiveReservation: false,
       canReserve: false,
       canJoinWaitlist: true,
+      requiresBooking: true,
       ineligibilityReasons: []
     },
     {
@@ -84,6 +86,31 @@ describe('StudentPortalComponent', () => {
       hasActiveReservation: false,
       canReserve: true,
       canJoinWaitlist: false,
+      requiresBooking: true,
+      ineligibilityReasons: []
+    },
+    {
+      classSessionId: 'cs-4-dropin',
+      activityId: 'act-3',
+      activityName: 'Musculación Libre',
+      roomId: 'room-3',
+      roomName: 'Sala de Pesas',
+      effectiveInstructorId: 'inst-3',
+      instructorName: 'Prof. Mario',
+      classDate: '2026-10-28',
+      startTime: '08:00:00',
+      endTime: '22:00:00',
+      startsAtUtc: '2026-10-28T11:00:00Z',
+      endsAtUtc: '2026-10-29T01:00:00Z',
+      capacity: 50,
+      reservedCount: 0,
+      availableSpots: 50,
+      waitlistCount: 0,
+      isWithinBookingWindow: true,
+      hasActiveReservation: false,
+      canReserve: false,
+      canJoinWaitlist: false,
+      requiresBooking: false,
       ineligibilityReasons: []
     }
   ];
@@ -127,10 +154,10 @@ describe('StudentPortalComponent', () => {
   });
 
   it('loads available classes and derives available activities and rooms', () => {
-    expect(component.availableClasses().length).toBe(3);
-    expect(component.filteredAvailableClasses().length).toBe(3);
-    expect(component.availableActivities().length).toBe(2);
-    expect(component.availableRooms().length).toBe(2);
+    expect(component.availableClasses().length).toBe(4);
+    expect(component.filteredAvailableClasses().length).toBe(4);
+    expect(component.availableActivities().length).toBe(3);
+    expect(component.availableRooms().length).toBe(3);
   });
 
   it('filters by activity correctly', () => {
@@ -144,8 +171,7 @@ describe('StudentPortalComponent', () => {
   it('filters by time slot (morning < 12:00, afternoon 12:00-17:59, night >= 18:00)', () => {
     component.filterTimeSlot.set('MORNING');
     fixture.detectChanges();
-    expect(component.filteredAvailableClasses().length).toBe(1);
-    expect(component.filteredAvailableClasses()[0].classSessionId).toBe('cs-1');
+    expect(component.filteredAvailableClasses().length).toBe(2); // cs-1 y cs-4-dropin
 
     component.filterTimeSlot.set('AFTERNOON');
     fixture.detectChanges();
@@ -162,7 +188,7 @@ describe('StudentPortalComponent', () => {
     component.filterOnlyAvailableSpots.set(true);
     fixture.detectChanges();
 
-    expect(component.filteredAvailableClasses().length).toBe(2);
+    expect(component.filteredAvailableClasses().length).toBe(3);
     expect(component.filteredAvailableClasses().every(c => c.availableSpots > 0)).toBe(true);
   });
 
@@ -199,7 +225,7 @@ describe('StudentPortalComponent', () => {
     fixture.detectChanges();
 
     expect(component.hasActiveFilters()).toBe(false);
-    expect(component.filteredAvailableClasses().length).toBe(3);
+    expect(component.filteredAvailableClasses().length).toBe(4);
   });
 
   it('displays dates in DD/MM/AAAA and times in HH:mm in rendered template', () => {
@@ -207,5 +233,11 @@ describe('StudentPortalComponent', () => {
     expect(textContent).toContain('26/10/2026');
     expect(textContent).toContain('08:30');
     expect(textContent).not.toContain('08:30:00');
+  });
+
+  it('para clases que no requieren reserva (requiresBooking: false), muestra aviso de acceso libre y oculta botones de reserva', () => {
+    const textContent = fixture.nativeElement.textContent;
+    expect(textContent).toContain('Acceso libre');
+    expect(textContent).toContain('recepción');
   });
 });

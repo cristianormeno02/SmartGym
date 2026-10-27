@@ -61,6 +61,7 @@ public class MembershipPlanService : IMembershipPlanService
             Credits = request.Credits,
             IsUnlimited = request.IsUnlimited,
             AppliesToAllActivities = request.AppliesToAllActivities,
+            IsSingleClassPass = request.IsSingleClassPass,
             CreatedAtUtc = DateTime.UtcNow,
             IsActive = true
         };
@@ -99,6 +100,7 @@ public class MembershipPlanService : IMembershipPlanService
         plan.Credits = request.Credits;
         plan.IsUnlimited = request.IsUnlimited;
         plan.AppliesToAllActivities = request.AppliesToAllActivities;
+        plan.IsSingleClassPass = request.IsSingleClassPass;
         plan.IsActive = request.IsActive;
         plan.UpdatedAtUtc = DateTime.UtcNow;
 
@@ -140,6 +142,7 @@ public class MembershipPlanService : IMembershipPlanService
             p.AppliesToAllActivities,
             p.AllowedActivities.Select(pa => pa.ActivityId).ToList(),
             p.AllowedActivities.Select(pa => pa.Activity?.Name ?? string.Empty).Where(n => !string.IsNullOrEmpty(n)).ToList(),
-            p.IsActive
+            p.IsActive,
+            p.IsSingleClassPass
         );
 }

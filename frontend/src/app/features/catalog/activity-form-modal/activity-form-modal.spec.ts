@@ -182,4 +182,37 @@ describe('ActivityFormModalComponent', () => {
     expect(component.activity?.version).toBe(4);
     expect(component.form.get('name')?.value).toBe('Spinning Modificado Por Otro');
   });
+
+  it('should initialize requiresBooking to true on create and pass to request', () => {
+    expect(component.form.get('requiresBooking')?.value).toBe(true);
+
+    gymApiSpy.createActivity.mockReturnValue(of({ ...mockActivity, requiresBooking: false }));
+    component.form.patchValue({
+      code: 'BOXING',
+      name: 'Boxeo DropIn',
+      requiresBooking: false
+    });
+    component.onSubmit();
+
+    expect(gymApiSpy.createActivity).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'BOXING',
+      name: 'Boxeo DropIn',
+      requiresBooking: false
+    }));
+  });
+
+  it('should populate requiresBooking from activity in edit mode', () => {
+    component.activity = { ...mockActivity, requiresBooking: false };
+    component.ngOnChanges();
+
+    expect(component.form.get('requiresBooking')?.value).toBe(false);
+
+    gymApiSpy.updateActivity.mockReturnValue(of({ ...mockActivity, requiresBooking: true }));
+    component.form.patchValue({ requiresBooking: true });
+    component.onSubmit();
+
+    expect(gymApiSpy.updateActivity).toHaveBeenCalledWith('act-1', expect.objectContaining({
+      requiresBooking: true
+    }));
+  });
 });

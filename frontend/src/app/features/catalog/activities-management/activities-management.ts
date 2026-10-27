@@ -91,11 +91,20 @@ import { ActivityStatusActionsComponent } from '../activity-status-actions/activ
                     <div class="flex items-center gap-3">
                       <span class="w-3.5 h-3.5 rounded-full shrink-0" [style.background-color]="act.colorHex || '#06B6D4'"></span>
                       <div>
-                        <div class="font-bold text-white flex items-center gap-2">
+                        <div class="font-bold text-white flex flex-wrap items-center gap-2">
                           {{ act.name }}
                           <span class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
                             {{ act.code }}
                           </span>
+                          @if (act.requiresBooking === false) {
+                            <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                              Acceso libre sin reserva
+                            </span>
+                          } @else {
+                            <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+                              Con reserva previa
+                            </span>
+                          }
                         </div>
                         @if (act.shortDescription) {
                           <p class="text-xs text-slate-400 line-clamp-1 mt-0.5">{{ act.shortDescription }}</p>

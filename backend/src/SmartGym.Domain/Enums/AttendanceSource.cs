@@ -4,5 +4,6 @@ public enum AttendanceSource
 {
     SecretaryDesk = 1,
     InstructorInRoom = 2,
-    SelfCheckIn = 3
+    SelfCheckIn = 3,
+    DeskDropIn = 4
 }

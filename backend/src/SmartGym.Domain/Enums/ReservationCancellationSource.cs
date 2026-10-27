@@ -8,5 +8,6 @@ public enum ReservationCancellationSource
     MembershipChange = 4,
     WaitlistOfferExpired = 5,
     WaitlistDeclined = 6,
-    WaitlistExpired = 7
+    WaitlistExpired = 7,
+    AttendanceRevoked = 8
 }

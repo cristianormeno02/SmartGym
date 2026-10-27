@@ -141,7 +141,8 @@ describe('MembershipPlanFormModalComponent', () => {
       credits: 0,
       isUnlimited: true,
       appliesToAllActivities: true,
-      allowedActivityIds: []
+      allowedActivityIds: [],
+      isSingleClassPass: false
     });
     expect(emitSpy).toHaveBeenCalledWith(mockPlan);
   });
@@ -210,5 +211,41 @@ describe('MembershipPlanFormModalComponent', () => {
 
     expect(priceInput.value).toBe('20.000,50');
     expect(component.form.get('price')?.value).toBe(20000.5);
+  });
+
+  it('should initialize isSingleClassPass to false on create and pass to request when checked', () => {
+    expect(component.form.get('isSingleClassPass')?.value).toBe(false);
+
+    gymApiSpy.createMembershipPlan.mockReturnValue(of({ ...mockPlan, isSingleClassPass: true }));
+    component.form.patchValue({
+      name: 'Pase 1 Clase',
+      price: 5000,
+      durationDays: 1,
+      isUnlimited: false,
+      credits: 1,
+      appliesToAllActivities: true,
+      isSingleClassPass: true
+    });
+    component.onSubmit();
+
+    expect(gymApiSpy.createMembershipPlan).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Pase 1 Clase',
+      isSingleClassPass: true
+    }));
+  });
+
+  it('should populate isSingleClassPass from plan in edit mode', () => {
+    component.plan = { ...mockPlan, isSingleClassPass: true };
+    component.ngOnChanges();
+
+    expect(component.form.get('isSingleClassPass')?.value).toBe(true);
+
+    gymApiSpy.updateMembershipPlan.mockReturnValue(of({ ...mockPlan, isSingleClassPass: false }));
+    component.form.patchValue({ isSingleClassPass: false });
+    component.onSubmit();
+
+    expect(gymApiSpy.updateMembershipPlan).toHaveBeenCalledWith('plan-1', expect.objectContaining({
+      isSingleClassPass: false
+    }));
   });
 });

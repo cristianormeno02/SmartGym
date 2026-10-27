@@ -187,6 +187,24 @@ export const ageRangeValidator: ValidatorFn = (control: AbstractControl): Valida
             </div>
           </div>
 
+          <!-- Requires Booking Checkbox -->
+          <div class="p-4 bg-slate-950/60 border border-slate-800 rounded-xl flex items-start gap-3">
+            <input
+              id="requiresBooking"
+              type="checkbox"
+              formControlName="requiresBooking"
+              class="mt-1 h-4 w-4 rounded border-slate-700 bg-slate-900 text-cyan-600 focus:ring-cyan-500 focus:ring-offset-slate-900"
+            />
+            <div>
+              <label for="requiresBooking" class="text-sm font-medium text-white cursor-pointer">
+                ¿Requiere reserva previa online?
+              </label>
+              <p class="text-xs text-slate-400 mt-0.5">
+                Si está desmarcado, la actividad funciona como acceso libre/mostrador (Drop-in). Los alumnos no reservarán por el portal; su asistencia se registrará directamente en recepción debitando crédito o cobrando el pase.
+              </p>
+            </div>
+          </div>
+
           <!-- Actions -->
           <div class="flex justify-end gap-3 pt-4 border-t border-slate-800">
             <button
@@ -232,7 +250,8 @@ export class ActivityFormModalComponent implements OnInit, OnChanges {
     colorHex: ['', [Validators.pattern('^#[0-9A-Fa-f]{6}$')]],
     defaultCapacity: [null, [Validators.min(1)]],
     minAge: [null, [Validators.min(0)]],
-    maxAge: [null, [Validators.min(0)]]
+    maxAge: [null, [Validators.min(0)]],
+    requiresBooking: [true]
   }, { validators: ageRangeValidator });
 
   get isEditMode(): boolean {
@@ -272,11 +291,12 @@ export class ActivityFormModalComponent implements OnInit, OnChanges {
         colorHex: this.activity.colorHex || '',
         defaultCapacity: this.activity.defaultCapacity ?? null,
         minAge: this.activity.minAge ?? null,
-        maxAge: this.activity.maxAge ?? null
+        maxAge: this.activity.maxAge ?? null,
+        requiresBooking: this.activity.requiresBooking ?? true
       });
       this.form.get('code')?.disable();
     } else {
-      this.form.reset();
+      this.form.reset({ requiresBooking: true });
       this.form.get('code')?.enable();
     }
     if (clearError) {
@@ -310,6 +330,7 @@ export class ActivityFormModalComponent implements OnInit, OnChanges {
         defaultCapacity: val.defaultCapacity ? Number(val.defaultCapacity) : undefined,
         minAge: val.minAge !== null && val.minAge !== '' ? Number(val.minAge) : undefined,
         maxAge: val.maxAge !== null && val.maxAge !== '' ? Number(val.maxAge) : undefined,
+        requiresBooking: val.requiresBooking !== undefined ? !!val.requiresBooking : true,
         version: this.activity.version!
       };
 
@@ -344,7 +365,8 @@ export class ActivityFormModalComponent implements OnInit, OnChanges {
         colorHex: val.colorHex?.trim()?.toUpperCase() || undefined,
         defaultCapacity: val.defaultCapacity ? Number(val.defaultCapacity) : undefined,
         minAge: val.minAge !== null && val.minAge !== '' ? Number(val.minAge) : undefined,
-        maxAge: val.maxAge !== null && val.maxAge !== '' ? Number(val.maxAge) : undefined
+        maxAge: val.maxAge !== null && val.maxAge !== '' ? Number(val.maxAge) : undefined,
+        requiresBooking: val.requiresBooking !== undefined ? !!val.requiresBooking : true
       };
 
       this.gymApi.createActivity(createReq).subscribe({

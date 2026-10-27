@@ -38,7 +38,7 @@ public class PublicActivitiesControllerTests
     {
         var items = new List<PublicActivityDto>
         {
-            new("ZUMBA", "Zumba", "Resumen", "Desc", "Notas", "#FFFFFF", 10, 60, "http://cdn/logo.webp", "http://cdn/primary.webp", new List<string>())
+            new("ZUMBA", "Zumba", "Resumen", "Desc", "Notas", "#FFFFFF", 10, 60, true, "http://cdn/logo.webp", "http://cdn/primary.webp", new List<string>())
         };
 
         _mockService.Setup(s => s.GetPublicCatalogAsync(18, It.IsAny<CancellationToken>()))
@@ -54,7 +54,7 @@ public class PublicActivitiesControllerTests
     [Fact]
     public async Task GetByCode_WhenFound_ShouldReturnOk()
     {
-        var item = new PublicActivityDto("ZUMBA", "Zumba", "Resumen", "Desc", "Notas", "#FFFFFF", 10, 60, null, null, new List<string>());
+        var item = new PublicActivityDto("ZUMBA", "Zumba", "Resumen", "Desc", "Notas", "#FFFFFF", 10, 60, true, null, null, new List<string>());
 
         _mockService.Setup(s => s.GetPublicByCodeAsync("ZUMBA", It.IsAny<CancellationToken>()))
             .ReturnsAsync(item);

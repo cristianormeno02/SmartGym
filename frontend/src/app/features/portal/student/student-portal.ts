@@ -309,7 +309,11 @@ import { formatDateDisplay } from '../../../core/utils/date-format';
                           <p>👤 {{ c.instructorName }}</p>
                         </div>
 
-                        @if (!c.hasActiveReservation && !c.canReserve && !c.canJoinWaitlist) {
+                        @if (c.requiresBooking === false) {
+                          <p class="mt-2 text-xs text-cyan-300 font-medium">
+                            ℹ️ Acceso libre sin reserva previa. El ingreso se registra en recepción por orden de llegada.
+                          </p>
+                        } @else if (!c.hasActiveReservation && !c.canReserve && !c.canJoinWaitlist) {
                           <ul class="mt-2 text-xs text-rose-300 space-y-0.5">
                             @for (reason of c.ineligibilityReasons; track reason.code) {
                               <li>• {{ reason.message }}</li>
@@ -322,7 +326,11 @@ import { formatDateDisplay } from '../../../core/utils/date-format';
 
                       <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between">
                         <span class="text-xs text-slate-500">Cupo: {{ c.reservedCount }}/{{ c.capacity }}</span>
-                        @if (c.hasActiveReservation) {
+                        @if (c.requiresBooking === false) {
+                          <span class="text-xs font-semibold text-cyan-400 bg-cyan-950/60 border border-cyan-800/80 px-2 py-0.5 rounded">
+                            Acceso libre (ingreso en recepción)
+                          </span>
+                        } @else if (c.hasActiveReservation) {
                           <span class="text-xs font-semibold text-cyan-300">
                             {{ c.activeReservationStatus === ReservationStatus.Waitlisted
                                 ? 'En espera #' + c.activeWaitlistPosition

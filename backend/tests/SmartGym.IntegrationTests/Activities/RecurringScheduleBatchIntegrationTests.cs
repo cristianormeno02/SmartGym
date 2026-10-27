@@ -235,5 +235,8 @@ public class RecurringScheduleBatchIntegrationTests : IDisposable
 
             return _inner.SyncAsync(scheduleId, nowUtc, cancellationToken);
         }
+
+        public Task<int> SyncAllActiveAsync(DateTime? nowUtc = null, CancellationToken cancellationToken = default) =>
+            _inner.SyncAllActiveAsync(nowUtc, cancellationToken);
     }
 }

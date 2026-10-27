@@ -78,7 +78,9 @@ public class NotifyStudentOnReservationLifecycleHandler :
     public Task HandleAsync(ReservationCancelledEvent domainEvent, CancellationToken cancellationToken = default)
     {
         // El cambio de clase ya lo avisa NotifyStudentsOnSessionChangeHandler.
-        if (domainEvent.CancellationSource == ReservationCancellationSource.ClassSessionChange)
+        // La anulación de presente en mostrador no envía notificación para evitar confusiones al alumno presencial.
+        if (domainEvent.CancellationSource == ReservationCancellationSource.ClassSessionChange ||
+            domainEvent.CancellationSource == ReservationCancellationSource.AttendanceRevoked)
         {
             return Task.CompletedTask;
         }

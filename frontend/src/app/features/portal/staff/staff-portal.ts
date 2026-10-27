@@ -7,16 +7,29 @@ import { AuthService } from '../../../core/services/auth.service';
 import { GymApiService } from '../../../core/services/gym-api.service';
 import {
   ACTIVE_RESERVATION_STATUSES,
+  AttendanceRevocationReason,
   AttendanceSource,
   ClassSession,
+  DeskEligibility,
+  DeskEligibleMembership,
   Membership,
   PagedResult,
+  PaymentMethodType,
   Reservation,
   ReservationAccessType,
   ReservationApiError,
   ReservationStatus,
+  SingleClassPassOption,
   WaitlistEntry
 } from '../../../core/models/gym.models';
+
+interface StudentSearchResult {
+  id: string;
+  fullName: string;
+  documentNumber?: string;
+  dni?: string;
+  email: string;
+}
 
 @Component({
   selector: 'app-staff-portal',
@@ -144,7 +157,7 @@ import {
                 </div>
 
                 <!-- Session Suspension Notice if suspended -->
-                @if (session.status === 3) {
+                @if (session.status === 3 || session.status === 4) {
                   <div class="p-3 bg-amber-950/40 border border-amber-800 rounded-xl text-amber-200 text-xs">
                     ⚠️ Esta clase ha sido suspendida. Motivo: {{ session.cancellationReason || 'Sin motivo especificado' }}
                   </div>
@@ -175,7 +188,12 @@ import {
                         <tbody class="divide-y divide-slate-800/80">
                           @for (item of roster(); track item.id) {
                             <tr class="hover:bg-slate-800/30 transition">
-                              <td class="py-3 px-4 font-semibold text-slate-100">{{ item.studentName }}</td>
+                              <td class="py-3 px-4 font-semibold text-slate-100">
+                                {{ item.studentName }}
+                                @if (item.isDropIn) {
+                                  <span class="ml-2 text-[10px] bg-cyan-900/60 text-cyan-300 border border-cyan-700/60 px-1.5 py-0.5 rounded font-normal">DROP-IN</span>
+                                }
+                              </td>
                               <td class="py-3 px-4 text-slate-400 text-xs">{{ item.documentNumber ?? item.studentDni }}</td>
                               <td class="py-3 px-4">
                                 <span class="text-xs px-2 py-0.5 rounded font-bold"
@@ -192,7 +210,14 @@ import {
                                     ✗ Ausente
                                   </button>
                                 } @else if (item.status === ReservationStatus.Attended) {
-                                  <span class="text-xs text-emerald-400 font-semibold">Asistencia Registrada</span>
+                                  <span class="text-xs text-emerald-400 font-semibold mr-2">✓ Presente</span>
+                                  @if (authService.isStaff()) {
+                                    <button (click)="openRevokeAttendanceModal(item)"
+                                            class="text-xs bg-amber-950 hover:bg-amber-900 text-amber-300 border border-amber-800/60 px-2.5 py-1 rounded transition"
+                                            title="Anular presente por error o retiro del alumno">
+                                      Anular presente
+                                    </button>
+                                  }
                                 } @else if (item.status === ReservationStatus.NoShow) {
                                   <span class="text-xs text-rose-400 font-semibold">No Show Registrado</span>
                                 }
@@ -238,22 +263,180 @@ import {
                   }
                 </div>
 
-                <!-- Reserva en nombre de un alumno -->
+                <!-- Recepción y Mostrador: Check-in Drop-in / Cobro de Pase / Reserva -->
                 @if (authService.isStaff()) {
-                <div class="pt-4 border-t border-slate-800">
-                  <h3 class="text-lg font-bold text-white mb-1">Reservar para un Alumno</h3>
-                  <p class="text-xs text-slate-400 mb-3">Se aplican las mismas reglas de cupo y de derecho de acceso que al alumno.</p>
-                  <div class="flex flex-col sm:flex-row gap-2">
-                    <input [(ngModel)]="deskStudentId" type="text" placeholder="ID del alumno (Guid)"
-                           class="flex-1 bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-cyan-500" />
-                    <label class="flex items-center gap-2 text-xs text-slate-300">
-                      <input type="checkbox" [(ngModel)]="deskAllowWaitlist" /> Lista de espera si está completa
-                    </label>
-                    <button (click)="reserveForStudent()" [disabled]="!deskStudentId.trim() || isSubmitting()"
-                            class="text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-4 py-2 rounded-lg transition disabled:opacity-40">
-                      Reservar
-                    </button>
+                <div id="desk-checkin-section" class="pt-6 border-t border-slate-800 space-y-4">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                        <span>🛎️ Ingreso en Mostrador / Recepción</span>
+                      </h3>
+                      <p class="text-xs text-slate-400">
+                        Busca al alumno por Apellido, Nombre o DNI para registrar su ingreso o cobrarle un pase en 1 clic.
+                      </p>
+                    </div>
+                    @if (selectedDeskStudent()) {
+                      <button (click)="clearSelectedDeskStudent()" class="text-xs text-slate-400 hover:text-white underline">
+                        ✕ Cambiar Alumno
+                      </button>
+                    }
                   </div>
+
+                  <!-- Buscador reactivo de alumno -->
+                  @if (!selectedDeskStudent()) {
+                    <div class="relative">
+                      <div class="relative">
+                        <input type="text"
+                               [ngModel]="deskSearchInput()"
+                               (ngModelChange)="onDeskStudentSearch($event)"
+                               placeholder="🔍 Buscar por DNI, Nombre o Apellido..."
+                               class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition shadow-inner" />
+                        @if (isSearchingStudents()) {
+                          <span class="absolute right-3 top-3 text-xs text-slate-500 animate-spin">⏳</span>
+                        }
+                      </div>
+
+                      <!-- Sugerencias de búsqueda -->
+                      @if (studentSearchResults().length > 0) {
+                        <div class="absolute z-20 w-full mt-2 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden divide-y divide-slate-800">
+                          @for (st of studentSearchResults(); track st.id) {
+                            <div (click)="selectDeskStudent(st)"
+                                 class="p-3 hover:bg-slate-800/80 cursor-pointer transition flex items-center justify-between">
+                              <div>
+                                <p class="text-sm font-bold text-white">{{ st.fullName }}</p>
+                                <p class="text-xs text-slate-400">DNI: {{ st.documentNumber ?? st.dni ?? 'Sin documento' }} · {{ st.email }}</p>
+                              </div>
+                              <span class="text-xs font-semibold text-cyan-400 bg-cyan-950/60 border border-cyan-800/80 px-2.5 py-1 rounded-lg">
+                                Seleccionar →
+                              </span>
+                            </div>
+                          }
+                        </div>
+                      }
+                    </div>
+                  } @else {
+                    <!-- Ficha del Alumno Seleccionado & Acciones Rápidas -->
+                    <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-5 space-y-4">
+                      <div class="flex items-start justify-between border-b border-slate-800/80 pb-3">
+                        <div>
+                          <div class="flex items-center gap-2">
+                            <span class="text-base font-bold text-white">{{ selectedDeskStudent()?.fullName }}</span>
+                            <span class="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded">
+                              DNI: {{ selectedDeskStudent()?.documentNumber ?? selectedDeskStudent()?.dni ?? 'Sin DNI' }}
+                            </span>
+                          </div>
+                          <p class="text-xs text-slate-400 mt-0.5">{{ selectedDeskStudent()?.email }}</p>
+                        </div>
+                        <button (click)="clearSelectedDeskStudent()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded transition">
+                          Cambiar alumno
+                        </button>
+                      </div>
+
+                      @if (isLoadingEligibility()) {
+                        <div class="py-6 text-center text-slate-400 text-sm">
+                          <span class="animate-pulse">Consultando estado de membresía y habilitación...</span>
+                        </div>
+                      } @else if (deskEligibility(); as el) {
+
+                        <!-- Caso 1: Ya tiene reserva confirmada -->
+                        @if (el.hasActiveReservation && el.existingReservationStatus === ReservationStatus.Confirmed) {
+                          <div class="bg-cyan-950/40 border border-cyan-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                              <p class="text-sm font-bold text-cyan-300">✓ Reserva previa confirmada</p>
+                              <p class="text-xs text-cyan-400/80">El alumno ya reservó esta clase. Podés registrar su presencia directamente.</p>
+                            </div>
+                            <button (click)="checkInConfirmedDeskStudent()"
+                                    [disabled]="isSubmitting()"
+                                    class="text-xs bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold px-4 py-2.5 rounded-lg transition shadow-md disabled:opacity-50">
+                              ✓ Dar Presente
+                            </button>
+                          </div>
+                        }
+
+                        <!-- Caso 2: Membresía con créditos disponible (Check-in directo Drop-in) -->
+                        @if (el.canCheckInWithMembership && el.eligibleMemberships.length > 0) {
+                          <div class="space-y-2">
+                            <label class="text-xs font-semibold text-slate-300 block">Membresía activa encontrada:</label>
+                            @for (mem of el.eligibleMemberships; track mem.membershipId) {
+                              <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div>
+                                  <span class="font-bold text-sm text-white">{{ mem.planName }}</span>
+                                  <div class="text-xs text-slate-400 mt-0.5">
+                                    {{ mem.isUnlimited ? 'Pase Ilimitado' : mem.usableCredits + ' créditos restantes' }} · Válida hasta {{ mem.validUntil | appDate }}
+                                  </div>
+                                </div>
+                                <button (click)="confirmDeskDropIn(mem.membershipId)"
+                                        [disabled]="isSubmitting()"
+                                        class="text-xs bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-4 py-2 rounded-lg transition disabled:opacity-50">
+                                  ✓ Dar Presente Directo (Drop-in)
+                                </button>
+                              </div>
+                            }
+                          </div>
+                        }
+
+                        <!-- Caso 3: Cobro de Pase Individual in situ -->
+                        @if (el.canPurchaseSingleClassPass && el.singleClassPassOptions.length > 0) {
+                          <div class="bg-slate-900 border border-amber-800/40 rounded-xl p-4 space-y-3">
+                            <div class="flex items-center justify-between">
+                              <h4 class="text-sm font-bold text-amber-300">💳 Cobro de Pase Individual en Mostrador</h4>
+                              <span class="text-xs text-slate-400">Sin membresía previa requerida</span>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                              <div>
+                                <label class="block text-slate-400 mb-1">Plan de Pase Individual</label>
+                                <select [(ngModel)]="selectedSingleClassPlanId" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200">
+                                  @for (opt of el.singleClassPassOptions; track opt.planId) {
+                                    <option [value]="opt.planId">{{ opt.planName }} - $ {{ opt.price }}</option>
+                                  }
+                                </select>
+                              </div>
+                              <div>
+                                <label class="block text-slate-400 mb-1">Forma de Pago</label>
+                                <select [(ngModel)]="selectedPaymentMethod" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200">
+                                  <option [value]="PaymentMethodType.Cash">Efectivo</option>
+                                  <option [value]="PaymentMethodType.DebitCard">Tarjeta de Débito</option>
+                                  <option [value]="PaymentMethodType.CreditCard">Tarjeta de Crédito</option>
+                                  <option [value]="PaymentMethodType.BankTransfer">Transferencia Bancaria</option>
+                                  <option [value]="PaymentMethodType.DigitalWallet">Billetera Virtual</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            <div class="flex justify-end pt-1">
+                              <button (click)="confirmSingleClassDeskDropIn(selectedSingleClassPlanId!, selectedPaymentMethod)"
+                                      [disabled]="!selectedSingleClassPlanId || isSubmitting()"
+                                      class="text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-extrabold px-4 py-2 rounded-lg transition disabled:opacity-50">
+                                💳 Cobrar Pase y Dar Presente
+                              </button>
+                            </div>
+                          </div>
+                        }
+
+                        <!-- Caso 4: Reserva previa si la actividad lo requiere -->
+                        @if (el.requiresBooking && el.canEnrollReservation && !el.hasActiveReservation) {
+                          <div class="pt-2 border-t border-slate-800 flex items-center justify-between">
+                            <span class="text-xs text-slate-400">Esta actividad requiere reserva previa:</span>
+                            <button (click)="enrollDeskReservation()"
+                                    [disabled]="isSubmitting()"
+                                    class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-50">
+                              📋 Inscribir Reserva
+                            </button>
+                          </div>
+                        }
+
+                        <!-- Ineligibilidad / Advertencias -->
+                        @if (el.ineligibilityReasons.length > 0) {
+                          <div class="p-3 bg-rose-950/40 border border-rose-800/80 rounded-xl space-y-1">
+                            @for (r of el.ineligibilityReasons; track r.code) {
+                              <p class="text-xs text-rose-300">⚠️ {{ r.message }}</p>
+                            }
+                          </div>
+                        }
+                      }
+                    </div>
+                  }
                 </div>
                 }
 
@@ -381,6 +564,39 @@ import {
         </div>
         }
 
+        <!-- Modal: Anular Asistencia (Revoke Attendance) -->
+        @if (reservationToRevoke(); as toRevoke) {
+          <div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+              <h3 class="text-xl font-bold text-white">Anular Asistencia</h3>
+              <p class="text-xs text-slate-400">
+                {{ toRevoke.studentName }} · {{ toRevoke.activityName }}
+              </p>
+              <div class="space-y-3">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-300 mb-1">Motivo de la anulación</label>
+                  <select [(ngModel)]="revokeReasonValue" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:border-cyan-500">
+                    <option [value]="AttendanceRevocationReason.StaffError">Error de recepción / carga errónea (Restituye crédito)</option>
+                    <option [value]="AttendanceRevocationReason.StudentWithdrew">Alumno se retiró antes de iniciar (Restituye crédito)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-300 mb-1">Observación / Justificación</label>
+                  <textarea [(ngModel)]="revokeNotes" rows="2" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:border-cyan-500" placeholder="Ej: Se marcó por equivocación de fila"></textarea>
+                </div>
+              </div>
+              <div class="flex justify-end gap-3 pt-2">
+                <button (click)="reservationToRevoke.set(null)" class="text-xs bg-slate-800 text-slate-300 px-4 py-2 rounded-lg">Volver</button>
+                <button (click)="confirmRevokeAttendance()"
+                        [disabled]="isSubmitting()"
+                        class="text-xs bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-2 rounded-lg transition disabled:opacity-40">
+                  Confirmar Anulación
+                </button>
+              </div>
+            </div>
+          </div>
+        }
+
         <!-- Modal: Cancel Reservation -->
         @if (reservationToCancel(); as target) {
           <div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -486,6 +702,8 @@ export class StaffPortalComponent implements OnInit {
 
   readonly ReservationStatus = ReservationStatus;
   readonly ReservationAccessType = ReservationAccessType;
+  readonly AttendanceRevocationReason = AttendanceRevocationReason;
+  readonly PaymentMethodType = PaymentMethodType;
 
   readonly statusOptions = [
     { value: ReservationStatus.Confirmed, label: 'Confirmada' },
@@ -508,9 +726,21 @@ export class StaffPortalComponent implements OnInit {
   isSubmitting = signal(false);
   isGenerating = signal(false);
 
-  // Reserva en mostrador
-  deskStudentId = '';
-  deskAllowWaitlist = true;
+  // Mostrador / Recepción Drop-in
+  deskSearchInput = signal('');
+  isSearchingStudents = signal(false);
+  studentSearchResults = signal<StudentSearchResult[]>([]);
+  selectedDeskStudent = signal<StudentSearchResult | null>(null);
+  deskEligibility = signal<DeskEligibility | null>(null);
+  isLoadingEligibility = signal(false);
+
+  selectedSingleClassPlanId: string | null = null;
+  selectedPaymentMethod: number = PaymentMethodType.Cash;
+
+  // Anulación de asistencia (Revoke Attendance)
+  reservationToRevoke = signal<Reservation | null>(null);
+  revokeReasonValue: AttendanceRevocationReason = AttendanceRevocationReason.StaffError;
+  revokeNotes = '';
 
   // Listado general
   reservationsPage = signal<PagedResult<Reservation> | null>(null);
@@ -534,13 +764,198 @@ export class StaffPortalComponent implements OnInit {
     }
   }
 
+  // --- Búsqueda de Alumno en Mostrador ---
+  onDeskStudentSearch(term: string): void {
+    this.deskSearchInput.set(term);
+    const query = term?.trim() ?? '';
+    if (query.length < 2) {
+      this.studentSearchResults.set([]);
+      this.isSearchingStudents.set(false);
+      return;
+    }
+
+    this.isSearchingStudents.set(true);
+    this.gymApi.searchPeople({ role: 'Student', search: query, pageSize: 8 }).subscribe({
+      next: (res: PagedResult<any>) => {
+        this.isSearchingStudents.set(false);
+        this.studentSearchResults.set(res?.items ?? []);
+      },
+      error: () => {
+        this.isSearchingStudents.set(false);
+        this.studentSearchResults.set([]);
+      }
+    });
+  }
+
+  selectDeskStudent(student: StudentSearchResult): void {
+    this.selectedDeskStudent.set(student);
+    this.studentSearchResults.set([]);
+    this.deskSearchInput.set('');
+
+    const session = this.selectedSession();
+    if (session) {
+      this.loadDeskEligibility(session.id, student.id);
+    }
+  }
+
+  clearSelectedDeskStudent(): void {
+    this.selectedDeskStudent.set(null);
+    this.deskEligibility.set(null);
+    this.selectedSingleClassPlanId = null;
+    this.studentSearchResults.set([]);
+  }
+
+  loadDeskEligibility(sessionId: string, studentId: string): void {
+    this.isLoadingEligibility.set(true);
+    this.gymApi.getDeskEligibility(sessionId, studentId).subscribe({
+      next: (eligibility) => {
+        this.isLoadingEligibility.set(false);
+        this.deskEligibility.set(eligibility);
+        if (eligibility.singleClassPassOptions.length > 0) {
+          this.selectedSingleClassPlanId = eligibility.singleClassPassOptions[0].planId;
+        }
+      },
+      error: (err) => {
+        this.isLoadingEligibility.set(false);
+        this.deskEligibility.set(null);
+        this.showFeedback(err.error?.message || 'Error al consultar elegibilidad del alumno.', false);
+      }
+    });
+  }
+
+  confirmDeskDropIn(membershipId: string): void {
+    const session = this.selectedSession();
+    const student = this.selectedDeskStudent();
+    if (!session || !student) return;
+
+    this.isSubmitting.set(true);
+    this.gymApi.deskDropInCheckIn({
+      classSessionId: session.id,
+      studentId: student.id,
+      membershipId
+    }).subscribe({
+      next: (res) => {
+        this.isSubmitting.set(false);
+        this.showFeedback(`✓ Presente registrado para ${res.reservation?.studentName ?? student.fullName}.`, true);
+        this.clearSelectedDeskStudent();
+        this.refreshAfterReservationChange();
+      },
+      error: (err) => {
+        this.isSubmitting.set(false);
+        this.showFeedback(this.describeError(err, 'Error al registrar presente directo.'), false);
+      }
+    });
+  }
+
+  confirmSingleClassDeskDropIn(singleClassPlanId: string, paymentMethod: number): void {
+    const session = this.selectedSession();
+    const student = this.selectedDeskStudent();
+    if (!session || !student || !singleClassPlanId) return;
+
+    this.isSubmitting.set(true);
+    this.gymApi.deskDropInCheckIn({
+      classSessionId: session.id,
+      studentId: student.id,
+      singleClassPlanId,
+      paymentMethod,
+      idempotencyKey: crypto.randomUUID()
+    }).subscribe({
+      next: (res) => {
+        this.isSubmitting.set(false);
+        this.showFeedback(`✓ Pase cobrado y presente registrado para ${res.reservation?.studentName ?? student.fullName}.`, true);
+        this.clearSelectedDeskStudent();
+        this.refreshAfterReservationChange();
+      },
+      error: (err) => {
+        this.isSubmitting.set(false);
+        this.showFeedback(this.describeError(err, 'Error al cobrar pase individual.'), false);
+      }
+    });
+  }
+
+  checkInConfirmedDeskStudent(): void {
+    const eligibility = this.deskEligibility();
+    const reservationId = eligibility?.existingReservationId;
+    if (!reservationId) return;
+
+    this.isSubmitting.set(true);
+    this.gymApi.recordAttendance(reservationId, AttendanceSource.SecretaryDesk).subscribe({
+      next: () => {
+        this.isSubmitting.set(false);
+        this.showFeedback('✓ Presente registrado correctamente.', true);
+        this.clearSelectedDeskStudent();
+        this.refreshAfterReservationChange();
+      },
+      error: (err) => {
+        this.isSubmitting.set(false);
+        this.showFeedback(this.describeError(err, 'Error al registrar presente.'), false);
+      }
+    });
+  }
+
+  enrollDeskReservation(): void {
+    const session = this.selectedSession();
+    const student = this.selectedDeskStudent();
+    if (!session || !student) return;
+
+    this.isSubmitting.set(true);
+    this.gymApi.createReservation({
+      classSessionId: session.id,
+      studentId: student.id,
+      allowWaitlist: true
+    }).subscribe({
+      next: (res) => {
+        this.isSubmitting.set(false);
+        this.showFeedback(`Reserva registrada para ${res.studentName}.`, true);
+        this.clearSelectedDeskStudent();
+        this.refreshAfterReservationChange();
+      },
+      error: (err) => {
+        this.isSubmitting.set(false);
+        this.showFeedback(this.describeError(err, 'Error al inscribir reserva.'), false);
+      }
+    });
+  }
+
+  // --- Anulación de Asistencia (Revoke) ---
+  openRevokeAttendanceModal(reservation: Reservation): void {
+    this.reservationToRevoke.set(reservation);
+    this.revokeReasonValue = AttendanceRevocationReason.StaffError;
+    this.revokeNotes = '';
+  }
+
+  confirmRevokeAttendance(reason?: AttendanceRevocationReason, notes?: string): void {
+    const target = this.reservationToRevoke();
+    if (!target) return;
+
+    const chosenReason = reason ?? this.revokeReasonValue;
+    const chosenNotes = (notes ?? this.revokeNotes).trim() || 'Anulación por personal administrativo';
+
+    this.isSubmitting.set(true);
+    this.gymApi.revokeAttendance(target.id, {
+      reason: chosenReason,
+      notes: chosenNotes
+    }).subscribe({
+      next: (res) => {
+        this.isSubmitting.set(false);
+        this.reservationToRevoke.set(null);
+        const restoredMsg = res.rightsRestored ? ' (crédito restituido)' : '';
+        this.showFeedback(`Asistencia anulada para ${target.studentName}${restoredMsg}.`, true);
+        this.refreshAfterReservationChange();
+      },
+      error: (err) => {
+        this.isSubmitting.set(false);
+        this.showFeedback(this.describeError(err, 'Error al anular asistencia.'), false);
+      }
+    });
+  }
+
   loadReservations(page: number): void {
     this.gymApi.getReservations({
       status: this.filterStatus,
       accessType: this.filterAccessType,
       from: this.filterFrom || undefined,
       to: this.filterTo || undefined,
-      // Sin tildar no se filtra; tildado trae sólo las que cumplen.
       affectedBySessionChange: this.filterAffectedBySessionChange || undefined,
       isLateCancellation: this.filterLateCancellation || undefined,
       page,
@@ -550,34 +965,6 @@ export class StaffPortalComponent implements OnInit {
       error: (err) => {
         this.reservationsPage.set(null);
         this.showFeedback(err.error?.message || 'Error al consultar las reservas.', false);
-      }
-    });
-  }
-
-  reserveForStudent(): void {
-    const session = this.selectedSession();
-    const studentId = this.deskStudentId.trim();
-    if (!session || !studentId) return;
-
-    this.isSubmitting.set(true);
-    this.gymApi.createReservation({
-      classSessionId: session.id,
-      studentId,
-      allowWaitlist: this.deskAllowWaitlist
-    }).subscribe({
-      next: (res) => {
-        this.isSubmitting.set(false);
-        this.deskStudentId = '';
-        this.showFeedback(
-          res.status === ReservationStatus.Waitlisted
-            ? `Clase completa: ${res.studentName} quedó en lista de espera, posición ${res.waitListPosition}.`
-            : `Reserva confirmada para ${res.studentName}.`,
-          true);
-        this.refreshAfterReservationChange();
-      },
-      error: (err) => {
-        this.isSubmitting.set(false);
-        this.showFeedback(this.describeError(err, 'Error al crear la reserva.'), false);
       }
     });
   }
@@ -624,7 +1011,6 @@ export class StaffPortalComponent implements OnInit {
     return this.accessTypeOptions.find(o => o.value === accessType)?.label ?? 'Desconocido';
   }
 
-  /** Mensaje del error de la API más los motivos de inelegibilidad, cuando los informa. */
   private describeError(err: any, fallback: string): string {
     const body = err.error as Partial<ReservationApiError> | undefined;
     const reasons = Array.isArray(body?.reasons) ? body!.reasons.map(r => r.message).join(' · ') : '';
@@ -694,6 +1080,9 @@ export class StaffPortalComponent implements OnInit {
   selectSession(session: ClassSession): void {
     this.selectedSession.set(session);
     this.loadRoster(session.id);
+    if (this.selectedDeskStudent()) {
+      this.loadDeskEligibility(session.id, this.selectedDeskStudent()!.id);
+    }
   }
 
   loadRoster(sessionId: string): void {

@@ -20,6 +20,12 @@ public static class ReservationErrorCodes
     public const string InvalidStateTransition = "INVALID_STATE_TRANSITION";
     public const string AttendanceWindowClosed = "ATTENDANCE_WINDOW_CLOSED";
     public const string ConcurrencyConflict = "CONCURRENCY_CONFLICT";
+    public const string BookingNotRequired = "BOOKING_NOT_REQUIRED";
+    public const string DropInWindowClosed = "DROP_IN_WINDOW_CLOSED";
+    public const string AlreadyCheckedIn = "ALREADY_CHECKED_IN";
+    public const string SingleClassPlanNotAvailable = "SINGLE_CLASS_PLAN_NOT_AVAILABLE";
+    public const string AttendanceRevocationWindowClosed = "ATTENDANCE_REVOCATION_WINDOW_CLOSED";
+    public const string PaymentFailed = "PAYMENT_FAILED";
 }
 
 public record ReservationStatusChangeDto(
@@ -81,7 +87,12 @@ public record ReservationDto(
     IReadOnlyList<ReservationStatusChangeDto>? StatusHistory = null,
     Guid? ActivityId = null,
     DateTime? StartsAtUtc = null,
-    DateTime? EndsAtUtc = null
+    DateTime? EndsAtUtc = null,
+    bool IsDropIn = false,
+    DateTime? AttendanceRevokedAtUtc = null,
+    Guid? AttendanceRevokedByUserId = null,
+    AttendanceRevocationReason? AttendanceRevocationReason = null,
+    string? AttendanceRevocationNotes = null
 );
 
 public record ReservationDetailDto(
@@ -131,7 +142,12 @@ public record ReservationDetailDto(
     AttendanceSource? AttendanceSource,
     string? Notes,
     string? IdempotencyKey,
-    IReadOnlyList<ReservationStatusChangeDto> StatusHistory
+    IReadOnlyList<ReservationStatusChangeDto> StatusHistory,
+    bool IsDropIn = false,
+    DateTime? AttendanceRevokedAtUtc = null,
+    Guid? AttendanceRevokedByUserId = null,
+    AttendanceRevocationReason? AttendanceRevocationReason = null,
+    string? AttendanceRevocationNotes = null
 );
 
 public record CreateReservationRequest(
@@ -220,7 +236,8 @@ public record ReservableClassSessionDto(
     ReservationAccessType? SuggestedAccessType,
     Guid? SelectedMembershipId,
     int? UsableCredits,
-    IReadOnlyList<EligibilityIssueDto> IneligibilityReasons
+    IReadOnlyList<EligibilityIssueDto> IneligibilityReasons,
+    bool RequiresBooking = true
 );
 
 public record ReservationFilterRequest(
@@ -257,4 +274,66 @@ public record WaitlistProcessResultDto(
     int ExpiredOffersCancelled,
     int StartedSessionsWaitlistExpired,
     int CandidatesPromoted
+);
+
+public record DeskEligibleMembershipDto(
+    Guid MembershipId,
+    string PlanName,
+    bool IsUnlimited,
+    int UsableCredits,
+    DateOnly ValidUntil
+);
+
+public record SingleClassPassOptionDto(
+    Guid PlanId,
+    string PlanName,
+    decimal Price
+);
+
+public record DeskEligibilityDto(
+    Guid ClassSessionId,
+    Guid StudentId,
+    string StudentFullName,
+    string StudentDni,
+    bool RequiresBooking,
+    bool IsWithinDropInWindow,
+    int AvailableSpots,
+    bool HasActiveReservation,
+    ReservationStatus? ExistingReservationStatus,
+    Guid? ExistingReservationId,
+    bool CanCheckInWithMembership,
+    bool CanPurchaseSingleClassPass,
+    bool CanEnrollReservation,
+    List<DeskEligibleMembershipDto> EligibleMemberships,
+    List<SingleClassPassOptionDto> SingleClassPassOptions,
+    List<EligibilityIssueDto> IneligibilityReasons
+);
+
+public record DeskDropInRequest(
+    Guid ClassSessionId,
+    Guid StudentId,
+    Guid? MembershipId = null,
+    Guid? SingleClassPlanId = null,
+    PaymentMethod? PaymentMethod = null,
+    string? IdempotencyKey = null,
+    string? Notes = null
+);
+
+public record DeskDropInResponse(
+    ReservationDto Reservation,
+    Guid? PaymentId,
+    bool WasIdempotentReplay = false
+);
+
+public record RevokeAttendanceRequest(
+    AttendanceRevocationReason Reason,
+    string Notes
+);
+
+public record RevokeAttendanceResponse(
+    ReservationDto Reservation,
+    string ActionTaken,
+    bool RightsRestored,
+    Guid? RefundCreditMovementId,
+    Guid? PaymentId
 );

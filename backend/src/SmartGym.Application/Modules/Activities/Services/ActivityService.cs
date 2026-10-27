@@ -156,6 +156,7 @@ public class ActivityService : IActivityService
             defaultCapacity: request.DefaultCapacity,
             minAge: request.MinAge,
             maxAge: request.MaxAge);
+        activity.SetRequiresBooking(request.RequiresBooking);
 
         _dbContext.Activities.Add(activity);
         await SaveChangesMappingConflictsAsync(cancellationToken);
@@ -173,6 +174,7 @@ public class ActivityService : IActivityService
                 activity.DefaultCapacity,
                 activity.MinAge,
                 activity.MaxAge,
+                activity.RequiresBooking,
                 Status = activity.Status.ToString()
             }),
             userId: _currentUserService.UserId,
@@ -217,7 +219,8 @@ public class ActivityService : IActivityService
             ["ColorHex"] = activity.ColorHex,
             ["DefaultCapacity"] = activity.DefaultCapacity,
             ["MinAge"] = activity.MinAge,
-            ["MaxAge"] = activity.MaxAge
+            ["MaxAge"] = activity.MaxAge,
+            ["RequiresBooking"] = activity.RequiresBooking
         };
 
         activity.UpdateDetails(
@@ -229,6 +232,7 @@ public class ActivityService : IActivityService
             defaultCapacity: request.DefaultCapacity,
             minAge: request.MinAge,
             maxAge: request.MaxAge);
+        activity.SetRequiresBooking(request.RequiresBooking);
 
         await SaveChangesMappingConflictsAsync(cancellationToken);
 
@@ -245,7 +249,8 @@ public class ActivityService : IActivityService
             ["ColorHex"] = activity.ColorHex,
             ["DefaultCapacity"] = activity.DefaultCapacity,
             ["MinAge"] = activity.MinAge,
-            ["MaxAge"] = activity.MaxAge
+            ["MaxAge"] = activity.MaxAge,
+            ["RequiresBooking"] = activity.RequiresBooking
         };
 
         foreach (var key in oldSnapshot.Keys)
@@ -777,6 +782,7 @@ public class ActivityService : IActivityService
             MinAge: a.MinAge,
             MaxAge: a.MaxAge,
             Status: a.Status,
+            RequiresBooking: a.RequiresBooking,
             LogoUrl: logo != null ? _publicFileStorageService.GetPublicUrl(logo.ObjectKey) : null,
             PrimaryImageUrl: primaryImage != null ? _publicFileStorageService.GetPublicUrl(primaryImage.ObjectKey) : null,
             CreatedAtUtc: a.CreatedAtUtc
@@ -804,6 +810,7 @@ public class ActivityService : IActivityService
             MinAge: a.MinAge,
             MaxAge: a.MaxAge,
             Status: a.Status,
+            RequiresBooking: a.RequiresBooking,
             Version: a.Version,
             Media: mediaDtos,
             CreatedAtUtc: a.CreatedAtUtc,
@@ -830,6 +837,7 @@ public class ActivityService : IActivityService
             ColorHex: a.ColorHex,
             MinAge: a.MinAge,
             MaxAge: a.MaxAge,
+            RequiresBooking: a.RequiresBooking,
             LogoUrl: logo != null ? _publicFileStorageService.GetPublicUrl(logo.ObjectKey) : null,
             PrimaryImageUrl: primaryImage != null ? _publicFileStorageService.GetPublicUrl(primaryImage.ObjectKey) : null,
             GalleryImageUrls: galleryUrls

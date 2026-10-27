@@ -154,6 +154,39 @@ public class ReservationsController : ControllerBase
     public Task<IActionResult> RecordNoShow(Guid id, CancellationToken cancellationToken) =>
         ExecuteAsync(async () => Ok(await _reservationService.RecordNoShowAsync(id, CurrentUserId, cancellationToken)));
 
+    // ---- Mostrador y Check-in Directo ----
+
+    [HttpGet("desk-eligibility")]
+    [Authorize(Policy = Policies.RequireStaff)]
+    public Task<IActionResult> GetDeskEligibility(
+        [FromQuery] Guid classSessionId,
+        [FromQuery] Guid studentId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () => Ok(await _reservationService.GetDeskEligibilityAsync(classSessionId, studentId, cancellationToken)));
+
+    [HttpPost("desk-drop-in")]
+    [Authorize(Policy = Policies.RequireStaff)]
+    public Task<IActionResult> CheckInDeskDropIn(
+        [FromBody] DeskDropInRequest request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            var key = ReadIdempotencyKey() ?? request.IdempotencyKey;
+            var effectiveRequest = string.IsNullOrWhiteSpace(key) ? request : request with { IdempotencyKey = key };
+            var response = await _reservationService.CheckInDeskDropInAsync(effectiveRequest, CurrentUserId, cancellationToken);
+            return response.WasIdempotentReplay
+                ? Ok(response)
+                : StatusCode(StatusCodes.Status201Created, response);
+        });
+
+    [HttpPost("{id:guid}/revoke-attendance")]
+    [Authorize(Policy = Policies.RequireStaff)]
+    public Task<IActionResult> RevokeAttendance(
+        Guid id,
+        [FromBody] RevokeAttendanceRequest request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () => Ok(await _reservationService.RevokeAttendanceAsync(id, request, CurrentUserId, cancellationToken)));
+
     private Guid CurrentUserId => _currentUserService.UserId ?? Guid.Empty;
 
     private string? ReadIdempotencyKey()

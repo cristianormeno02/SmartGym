@@ -18,6 +18,10 @@ public class ReservationConfiguration : IEntityTypeConfiguration<Reservation>
         builder.Property(r => r.Origin)
             .IsRequired();
 
+        builder.Property(r => r.IsDropIn)
+            .IsRequired()
+            .HasDefaultValue(false);
+
         builder.Property(r => r.AccessType)
             .IsRequired();
 
@@ -47,6 +51,9 @@ public class ReservationConfiguration : IEntityTypeConfiguration<Reservation>
 
         builder.Property(r => r.Notes)
             .HasMaxLength(1000);
+
+        builder.Property(r => r.AttendanceRevocationNotes)
+            .HasMaxLength(500);
 
         builder.Property(r => r.IdempotencyKey)
             .HasMaxLength(100);
@@ -170,6 +177,11 @@ public class ReservationConfiguration : IEntityTypeConfiguration<Reservation>
         builder.HasOne(r => r.CheckedInByUser)
             .WithMany()
             .HasForeignKey(r => r.CheckedInByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(r => r.AttendanceRevokedByUser)
+            .WithMany()
+            .HasForeignKey(r => r.AttendanceRevokedByUserId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(r => r.RescheduledToSession)

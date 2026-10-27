@@ -20,6 +20,7 @@ public class Activity : BaseEntity
     public int? DefaultCapacity { get; private set; }
     public int? MinAge { get; private set; }
     public int? MaxAge { get; private set; }
+    public bool RequiresBooking { get; private set; } = true;
     public ActivityStatus Status { get; private set; } = ActivityStatus.Active;
     public uint Version { get; set; } // xmin
 
@@ -47,10 +48,11 @@ public class Activity : BaseEntity
         string? colorHex = null,
         int? defaultCapacity = null,
         int? minAge = null,
-        int? maxAge = null)
+        int? maxAge = null,
+        bool requiresBooking = true)
     {
         SetCode(code);
-        UpdateDetails(name, shortDescription, description, equipmentNotes, colorHex, defaultCapacity, minAge, maxAge);
+        UpdateDetails(name, shortDescription, description, equipmentNotes, colorHex, defaultCapacity, minAge, maxAge, requiresBooking);
         UpdatedAtUtc = null;
     }
 
@@ -76,7 +78,8 @@ public class Activity : BaseEntity
         string? colorHex,
         int? defaultCapacity,
         int? minAge,
-        int? maxAge)
+        int? maxAge,
+        bool requiresBooking = true)
     {
         SetName(name);
         ShortDescription = Clean(shortDescription);
@@ -85,6 +88,14 @@ public class Activity : BaseEntity
         SetColorHex(colorHex);
         SetDefaultCapacity(defaultCapacity);
         SetAgeRange(minAge, maxAge);
+        RequiresBooking = requiresBooking;
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    public void SetRequiresBooking(bool requiresBooking)
+    {
+        if (RequiresBooking == requiresBooking) return;
+        RequiresBooking = requiresBooking;
         UpdatedAtUtc = DateTime.UtcNow;
     }
 

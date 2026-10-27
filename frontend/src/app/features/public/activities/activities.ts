@@ -98,6 +98,11 @@ import { ActivityStatusActionsComponent } from '../../catalog/activity-status-ac
                     <span class="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-md bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
                       {{ act.code }}
                     </span>
+                    @if (act.requiresBooking === false) {
+                      <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                        Sin reserva
+                      </span>
+                    }
                     @if (authService.isStaff() && isActivityItem(act)) {
                       <span
                         class="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full"
