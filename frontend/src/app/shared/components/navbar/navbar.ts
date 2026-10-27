@@ -36,7 +36,7 @@ import { AppDatePipe } from '../../pipes/app-date.pipe';
               @if (authService.isStudent()) {
                 <a routerLink="/portal/alumno" routerLinkActive="text-cyan-400 font-semibold" class="bg-cyan-500/20 text-cyan-300 px-3 py-1.5 rounded-lg border border-cyan-500/30 hover:bg-cyan-500/30 transition">Mi Portal</a>
               }
-              @if (authService.isInstructor() || authService.isSecretary()) {
+              @if (authService.isInstructor() || authService.isSecretary() || authService.isAdmin()) {
                 <a routerLink="/portal/docente" routerLinkActive="text-cyan-400 font-semibold" class="bg-emerald-500/20 text-emerald-300 px-3 py-1.5 rounded-lg border border-emerald-500/30 hover:bg-emerald-500/30 transition">Recepción & Sala</a>
               }
               @if (authService.isAdmin()) {

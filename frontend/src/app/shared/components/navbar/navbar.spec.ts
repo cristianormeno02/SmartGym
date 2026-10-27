@@ -191,4 +191,17 @@ describe('NavbarComponent — Notifications Bell & Dropdown', () => {
 
     expect(refreshCalls).toBe(2);
   });
+
+  it('should display "Recepción & Sala" link when user is Administrator', () => {
+    mockAuthService.isAdmin.set(true);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const links = Array.from(compiled.querySelectorAll('a'));
+    const staffPortalLink = links.find(a => a.textContent?.includes('Recepción & Sala'));
+
+    expect(staffPortalLink).toBeTruthy();
+    expect(staffPortalLink?.getAttribute('routerLink') || staffPortalLink?.getAttribute('href')).toContain('/portal/docente');
+    mockAuthService.isAdmin.set(false);
+  });
 });
