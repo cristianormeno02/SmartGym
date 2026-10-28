@@ -187,6 +187,46 @@ describe('StaffPortalComponent - Recepción, Mostrador y Asistencia', () => {
     }
   });
 
+  it('mapea correctamente el nombre, apellido y DNI desde PersonSummaryDto en la lista de búsqueda', () => {
+    vi.useFakeTimers();
+    try {
+      const apiPersonDto = {
+        id: 'student-person-99',
+        firstName: 'Esteban',
+        lastName: 'Quito',
+        document: {
+          type: 1,
+          number: '25163835',
+          issuingCountry: 'AR',
+          numberNormalized: '25163835'
+        },
+        email: 'esteban.quito@gym.com',
+        primaryPhone: '1122334455',
+        status: 1
+      };
+      gymApiSpy.searchPeople.mockReturnValue(of({ items: [apiPersonDto], totalCount: 1 }));
+
+      component.selectSession(mockSession);
+      fixture.detectChanges();
+
+      component.onDeskStudentSearch('835');
+      vi.advanceTimersByTime(300);
+      fixture.detectChanges();
+
+      const results = component.studentSearchResults();
+      expect(results.length).toBe(1);
+      expect(results[0].fullName).toBe('Esteban Quito');
+      expect(results[0].documentNumber).toBe('25163835');
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.textContent).toContain('Esteban Quito');
+      expect(compiled.textContent).toContain('DNI: 25163835');
+      expect(compiled.textContent).not.toContain('Sin documento');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('al seleccionar un alumno, debe cargar su elegibilidad para la clase', () => {
     component.selectSession(mockSession);
     component.selectDeskStudent(mockStudent as any);

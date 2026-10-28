@@ -93,19 +93,16 @@ public class PeopleService : IPeopleService
             var words = normalizedTerm.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
             var digitsOnly = string.Concat(search.Where(char.IsDigit));
-            var alphanumericCount = search.Count(char.IsLetterOrDigit);
-            bool isDocumentCandidate = digitsOnly.Length > 0 && alphanumericCount >= 5;
-
-            string? genericDoc = null;
-            string? dniDoc = null;
-
-            if (isDocumentCandidate)
+            var genericDoc = Regex.Replace(search.Trim(), "[^a-zA-Z0-9]", string.Empty).ToUpperInvariant();
+            var dniDoc = !string.IsNullOrEmpty(digitsOnly) ? digitsOnly.TrimStart('0') : null;
+            if (string.IsNullOrEmpty(dniDoc) && !string.IsNullOrEmpty(digitsOnly))
             {
-                genericDoc = Regex.Replace(search.Trim(), "[^a-zA-Z0-9]", string.Empty).ToUpperInvariant();
-                dniDoc = digitsOnly.TrimStart('0');
+                dniDoc = digitsOnly;
             }
 
-            var predicate = BuildSearchPredicate(words, isDocumentCandidate, genericDoc, dniDoc);
+            bool isDocumentCandidate = !string.IsNullOrEmpty(digitsOnly) || !string.IsNullOrEmpty(genericDoc);
+
+            var predicate = BuildSearchPredicate(search.Trim(), words, isDocumentCandidate, genericDoc, dniDoc);
             query = query.Where(predicate);
         }
 
@@ -698,6 +695,7 @@ public class PeopleService : IPeopleService
     }
 
     private static Expression<Func<Person, bool>> BuildSearchPredicate(
+        string rawSearch,
         string[] words,
         bool isDoc,
         string? genericDoc,
@@ -726,19 +724,27 @@ public class PeopleService : IPeopleService
         var docProp = Expression.Property(parameter, nameof(Person.Document));
         var docNotNull = Expression.NotEqual(docProp, Expression.Constant(null, typeof(IdentificationDocument)));
         var normNumberProp = Expression.Property(docProp, nameof(IdentificationDocument.NormalizedNumber));
+        var rawNumberProp = Expression.Property(docProp, nameof(IdentificationDocument.Number));
 
         Expression? docMatch = null;
-        if (!string.IsNullOrEmpty(genericDoc))
-        {
-            var genericConst = Expression.Constant(genericDoc, typeof(string));
-            docMatch = Expression.Equal(normNumberProp, genericConst);
-        }
-
         if (!string.IsNullOrEmpty(dniDoc))
         {
             var dniConst = Expression.Constant(dniDoc, typeof(string));
-            var dniMatch = Expression.Equal(normNumberProp, dniConst);
-            docMatch = docMatch == null ? dniMatch : Expression.OrElse(docMatch, dniMatch);
+            docMatch = Expression.Call(normNumberProp, containsMethod, dniConst);
+        }
+
+        if (!string.IsNullOrEmpty(genericDoc))
+        {
+            var genericConst = Expression.Constant(genericDoc, typeof(string));
+            var genericMatch = Expression.Call(normNumberProp, containsMethod, genericConst);
+            docMatch = docMatch == null ? genericMatch : Expression.OrElse(docMatch, genericMatch);
+        }
+
+        if (!string.IsNullOrEmpty(rawSearch))
+        {
+            var rawConst = Expression.Constant(rawSearch, typeof(string));
+            var rawMatch = Expression.Call(rawNumberProp, containsMethod, rawConst);
+            docMatch = docMatch == null ? rawMatch : Expression.OrElse(docMatch, rawMatch);
         }
 
         var fullDocCondition = Expression.AndAlso(docNotNull, docMatch ?? Expression.Constant(false));

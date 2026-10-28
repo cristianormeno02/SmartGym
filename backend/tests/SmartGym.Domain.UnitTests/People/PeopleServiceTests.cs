@@ -426,6 +426,20 @@ public class PeopleServiceTests
     }
 
     [Fact]
+    public async Task SearchAsync_PartialDniSubstring_ReturnsMatchingPerson()
+    {
+        var p1 = Person.Create("Esteban", "Quito", document: IdentificationDocument.Create(DocumentType.Dni, "25163835"));
+        var p2 = Person.Create("María", "Gómez", document: IdentificationDocument.Create(DocumentType.Dni, "23861120"));
+        _dbContext.People.AddRange(p1, p2);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.SearchAsync("835", null, null);
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal(p1.Id, result.Items[0].Id);
+    }
+
+    [Fact]
     public async Task SearchAsync_StatusAndTypeFilter_AppliesFilters()
     {
         var p1 = Person.Create("Mario", "Bros", document: IdentificationDocument.Create(DocumentType.Passport, "IT12345", "IT"));

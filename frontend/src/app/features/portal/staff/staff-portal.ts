@@ -306,7 +306,12 @@ interface StudentSearchResult {
                                  class="p-3 cursor-pointer transition flex items-center justify-between">
                               <div>
                                 <p class="text-sm font-bold text-white">{{ st.fullName }}</p>
-                                <p class="text-xs text-slate-400">DNI: {{ st.documentNumber ?? st.dni ?? 'Sin documento' }} · {{ st.email }}</p>
+                                <p class="text-xs text-slate-400">
+                                  <span class="text-slate-300 font-medium">DNI: {{ st.documentNumber || 'Sin documento' }}</span>
+                                  @if (st.email) {
+                                    <span class="text-slate-500"> · {{ st.email }}</span>
+                                  }
+                                </p>
                               </div>
                               <span class="text-xs font-semibold text-cyan-400 bg-cyan-950/60 border border-cyan-800/80 px-2.5 py-1 rounded-lg">
                                 Seleccionar →
@@ -323,11 +328,13 @@ interface StudentSearchResult {
                         <div>
                           <div class="flex items-center gap-2">
                             <span class="text-base font-bold text-white">{{ selectedDeskStudent()?.fullName }}</span>
-                            <span class="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded">
-                              DNI: {{ selectedDeskStudent()?.documentNumber ?? selectedDeskStudent()?.dni ?? 'Sin DNI' }}
+                            <span class="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-medium">
+                              DNI: {{ selectedDeskStudent()?.documentNumber || 'Sin DNI' }}
                             </span>
                           </div>
-                          <p class="text-xs text-slate-400 mt-0.5">{{ selectedDeskStudent()?.email }}</p>
+                          @if (selectedDeskStudent()?.email) {
+                            <p class="text-xs text-slate-400 mt-0.5">{{ selectedDeskStudent()?.email }}</p>
+                          }
                         </div>
                         <button (click)="clearSelectedDeskStudent()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded transition">
                           Cambiar alumno
@@ -671,14 +678,22 @@ interface StudentSearchResult {
                         @for (st of compensatoryStudentResults(); track st.id) {
                           <div (click)="selectCompensatoryStudent(st)" class="p-2 hover:bg-slate-800 cursor-pointer text-xs">
                             <span class="font-bold text-white">{{ st.fullName }}</span>
-                            <span class="text-slate-400 ml-2">{{ st.documentNumber ?? st.dni ?? '' }}</span>
+                            <span class="text-slate-400 ml-2">DNI: {{ st.documentNumber || 'Sin documento' }}</span>
+                            @if (st.email) {
+                              <span class="text-slate-500 text-[11px] ml-2">({{ st.email }})</span>
+                            }
                           </div>
                         }
                       </div>
                     }
                   } @else {
                     <div class="flex items-center justify-between bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs">
-                      <span class="font-semibold text-white">{{ selectedCompensatoryStudent()?.fullName }}</span>
+                      <div>
+                        <span class="font-semibold text-white">{{ selectedCompensatoryStudent()?.fullName }}</span>
+                        @if (selectedCompensatoryStudent()?.documentNumber) {
+                          <span class="text-slate-400 ml-2">DNI: {{ selectedCompensatoryStudent()?.documentNumber }}</span>
+                        }
+                      </div>
                       <button (click)="clearCompensatoryStudent()" class="text-slate-400 hover:text-white underline">Cambiar</button>
                     </div>
                   }
@@ -803,6 +818,28 @@ export class StaffPortalComponent implements OnInit {
     }
   }
 
+  private mapToStudentSearchResult(raw: any): StudentSearchResult {
+    const firstName = raw?.firstName ?? '';
+    const lastName = raw?.lastName ?? '';
+    const nameFromParts = `${firstName} ${lastName}`.trim();
+    const fullName = raw?.fullName || nameFromParts || raw?.email || 'Sin nombre';
+
+    const docNumber =
+      raw?.document?.number ||
+      raw?.document?.numberNormalized ||
+      raw?.documentNumber ||
+      raw?.dni ||
+      '';
+
+    return {
+      id: raw.id,
+      fullName,
+      documentNumber: docNumber,
+      dni: docNumber,
+      email: raw?.email ?? ''
+    };
+  }
+
   // --- Búsqueda de Alumno en Mostrador ---
   onDeskStudentSearch(term: string): void {
     this.deskSearchInput.set(term);
@@ -824,7 +861,8 @@ export class StaffPortalComponent implements OnInit {
       this.gymApi.searchPeople({ role: 'Student', search: query, pageSize: 10 }).subscribe({
         next: (res: PagedResult<any>) => {
           this.isSearchingStudents.set(false);
-          const items = res?.items ?? [];
+          const rawItems = res?.items ?? [];
+          const items = rawItems.map((r: any) => this.mapToStudentSearchResult(r));
           this.studentSearchResults.set(items);
           this.highlightedStudentIndex.set(items.length > 0 ? 0 : -1);
         },
@@ -1279,7 +1317,10 @@ export class StaffPortalComponent implements OnInit {
       return;
     }
     this.gymApi.searchPeople({ role: 'Student', search: query, pageSize: 10 }).subscribe({
-      next: (res: PagedResult<any>) => this.compensatoryStudentResults.set(res?.items ?? []),
+      next: (res: PagedResult<any>) => {
+        const rawItems = res?.items ?? [];
+        this.compensatoryStudentResults.set(rawItems.map((r: any) => this.mapToStudentSearchResult(r)));
+      },
       error: () => this.compensatoryStudentResults.set([])
     });
   }
